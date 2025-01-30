@@ -50,7 +50,10 @@ THIRD_PARTY_APPS = [
     'storages'
 ]
 
-LOCAL_APPS = ["awstest"]
+LOCAL_APPS = [
+    "awstest",
+    "users"
+]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 

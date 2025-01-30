@@ -10,6 +10,7 @@ gunicorn==22.0.0
 inflection==0.5.1
 jmespath==1.0.1
 packaging==24.2
+pillow==11.1.0
 psycopg2==2.9.10
 PyJWT==2.10.1
 python-dateutil==2.9.0.post0
