@@ -3,7 +3,7 @@ boto3==1.36.9
 botocore==1.36.9
 Django==5.1.5
 django-storages==1.14.4
-gunicorn==20.1.0
+gunicorn==22.0.0
 jmespath==1.0.1
 packaging==24.2
 psycopg2==2.9.10
