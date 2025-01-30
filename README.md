@@ -22,33 +22,10 @@ git clone "my repo"
 
 ## run compose
 
-ENSURE: before running, you add an .env file and update
+ENSURE: before running, you add an .env file and update with database config found at the bottom
 
 docker-compose up -d --build
 
 ## to run other commands within docker
 
 docker exec -to "container name" "cmd to execute"
-
-## .env to contain the following
-
-## Django Secret Key
-SECRET_KEY=mysecretkey
-
-## Debug Mode (Set to False in production)
-DEBUG=True
-
-## Allowed Hosts (Comma-separated)
-ALLOWED_HOSTS=localhost,127.0.0.1
-
-## Database Configuration (PostgreSQL)
-DB_ENGINE=django.db.backends.postgresql
-DB_NAME=
-DB_USER=postgres
-DB_PASSWORD=
-DB_HOST=localhost
-DB_PORT=5432
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_STORAGE_BUCKET_NAME=
-AWS_S3_REGION_NAME=
