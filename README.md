@@ -26,22 +26,22 @@ ENSURE: before running, you add an .env file and update
 
 docker-compose up -d --build
 
-# to run other commands within docker
+## to run other commands within docker
 
 docker exec -to "container name" "cmd to execute"
 
 ## .env to contain the following
 
-# Django Secret Key
+## Django Secret Key
 SECRET_KEY=mysecretkey
 
-# Debug Mode (Set to False in production)
+## Debug Mode (Set to False in production)
 DEBUG=True
 
-# Allowed Hosts (Comma-separated)
+## Allowed Hosts (Comma-separated)
 ALLOWED_HOSTS=localhost,127.0.0.1
 
-# Database Configuration (PostgreSQL)
+## Database Configuration (PostgreSQL)
 DB_ENGINE=django.db.backends.postgresql
 DB_NAME=
 DB_USER=postgres
