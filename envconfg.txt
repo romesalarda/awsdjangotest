@@ -1,12 +1,12 @@
 
-SECRET_KEY=mysecretkey
+SECRET_KEY=
 DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
+ALLOWED_HOSTS=<IPV4_LOCAL_IP>,web
 DB_ENGINE=django.db.backends.postgresql
 DB_NAME=
 DB_USER=postgres
 DB_PASSWORD=
-DB_HOST=localhost
+DB_HOST=db
 DB_PORT=5432
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
