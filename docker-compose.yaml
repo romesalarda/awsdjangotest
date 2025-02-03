@@ -11,7 +11,7 @@ services:
       - "8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://web:8000" ]
+      test: ["CMD", "curl", "http://web:8000"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -30,7 +30,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: Postgresdevelopment007
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U myuser -d mydatabase"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d awstestdb"] # change this 
       interval: 10s
       timeout: 5s
       retries: 5

@@ -142,16 +142,8 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-
-
-print("debug:", DEBUG)
-print("AWS_ACCESS_KEY_ID:", os.getenv("AWS_ACCESS_KEY_ID"))
-print("AWS_SECRET_ACCESS_KEY:", os.getenv("AWS_SECRET_ACCESS_KEY"))
-print("AWS_STORAGE_BUCKET_NAME:", os.getenv("AWS_STORAGE_BUCKET_NAME"))
-print("AWS_S3_REGION_NAME:", os.getenv("AWS_S3_REGION_NAME"))
 # Static and Media URLs
 if not DEBUG:
-    print("Debug is OFF - S3 in use")
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
     AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
@@ -190,7 +182,11 @@ if not DEBUG:
         },
     },
     }
-    # STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+    
+    AWS_S3_OBJECT_PARAMETERS = {
+        "CacheControl": "max-age=86400",
+        "ACL": "public-read",
+    }
 else:
     print("Debug is ON - Local storage in usee")
     STATIC_URL = "/static/"
@@ -200,15 +196,6 @@ else:
     MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 STATICFILES_DIRS = (os.path.join(BASE_DIR, 'static'),)
-
-# Optional: Ensure S3 objects are public and cacheable
-
-
-# Optional: Ensure S3 objects are public and cacheable
-AWS_S3_OBJECT_PARAMETERS = {
-    "CacheControl": "max-age=86400",
-    "ACL": "public-read",
-}
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
