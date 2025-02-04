@@ -24,9 +24,20 @@ git clone "my repo"
 
 ## run compose
 
-# What to run before building
+# ENSURE YOU CHECK AND UPDATE CONFIG WHERE NEEDED!
 
-1. update .env file, update with credentials, allowed domains/IPs, SET DEBUG TO FALSE for EC2 
+sudo vim .env
+sudo vim docker-compose.yaml
+
+1. update .env file, update with credentials,
+
+ALLOWED_HOSTS = <your_ip>
+
+DEBUG = FALSE # for EC2
+
+DB_HOST to "db" instead of "localhost"
+
+Update AWS credentials - create a new AWS secret in the dashboard if you don't have one.
 
 2. update docker-compose.yaml with updates to health check
 
@@ -52,7 +63,19 @@ docker-compose up -d --build
 
 docker-compose down 
 
-## to run other commands within docker
+# After all systems are healthy and running
+
+docker exec django_app python manage.py collectstatic --noinput
+
+docker exec django_app python manage.py makemigrations
+
+docker exec django_app python manage.py migrate
+
+docker exec -it django_app bash 
+
+python manage.py createsuperuser
+
+## to run commands within docker
 
 docker exec -to "container name" "cmd to execute"
 
