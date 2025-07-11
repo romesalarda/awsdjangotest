@@ -1,0 +1,42 @@
+server {
+    listen 443 ssl;
+    server_name rsalardadevelop.co.uk www.rsalardadevelop.co.uk;
+
+    ssl_certificate     /etc/letsencrypt/live/rsalardadevelop.co.uk/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/rsalardadevelop.co.uk/privkey.pem;
+
+    location / {
+        proxy_pass http://web:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /static/ {
+        return 301 https://emorawstest.s3.amazonaws.com/static/
+    }
+    
+    location /static/ {
+        return 301 https://emorawstest.s3.amazonaws.com/static/;
+    }
+
+    location /media/ {
+        return 301 https://emorawstest.s3.amazonaws.com/media/;
+    }
+
+    # switch for local development
+    # location /static/ {
+    #     alias /app/static/
+    # }
+
+    # location /media/ {
+    #     alias /app/media/
+    # }
+}
+
+server {
+        listen 80;
+        server_name rsalardadevelop.co.uk www.rsalardadevelop.co.uk;
+        return 301 https://$host$request_uri;
+}
