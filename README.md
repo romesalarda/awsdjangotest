@@ -150,3 +150,5 @@ CSRF_COOKIE_SECURE = True
 # TODO:
 
 add IAM to S3 bucket instead of access keys which if leaked is bad.
+add a elastic IP so I dont have to keep changing cloudflare DNS pointer to public IPV4 everytime
+

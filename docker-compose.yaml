@@ -30,7 +30,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: Postgresdevelopment007
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d awstestdb"] # change this 
+      test: ["CMD-SHELL", "pg_isready -U postgres -d awstestdb"] # change this
       interval: 10s
       timeout: 5s
       retries: 5
@@ -42,8 +42,11 @@ services:
     container_name: nginx_server
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - /etc/letsencrypt/live/rsalardadevelop.co.uk/fullchain.pem:/etc/letsencrypt/live/rsalardadevelop.co.uk/fullchain.pem:ro
+      - /etc/letsencrypt/live/rsalardadevelop.co.uk/privkey.pem:/etc/letsencrypt/live/rsalardadevelop.co.uk/privkey.pem:ro
     depends_on:
       web:
         condition: service_healthy
