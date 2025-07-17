@@ -147,8 +147,35 @@ SECURE_SSL_REDIRECT = True  # Force HTTPS
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 
-# TODO:
+# IAM roles for S3 verification
 
-add IAM to S3 bucket instead of access keys which if leaked is bad.
+Simply type in IAM in the AWS console, add a new role, select the preset about EC2. 
+Then name it whataver, under top right of console -> actions -> security -> modify IAM role and select the one we just made
+Done
+
+# Using SSM for paramater store
+
+Ensure in docker-compose.yaml file the database says ${POSTGRES_PASSWORD}
+
+# USE THIS COMMAND TO INJECT
+export POSTGRES_PASSWORD=$(aws ssm get-parameter --name "/prod/db/password" --with-decryption --query "Parameter.Value" --output text)
+
+For django, use boto3
+
+import boto3
+
+def get_secret(name):
+    client = boto3.client('ssm', region_name='your-region')
+    return client.get_parameter(Name=name, WithDecryption=True)['Parameter']['Value']
+
+SECRET_KEY = get_secret('/prod/django/secret_key')
+
+
+# TODO:
 add a elastic IP so I dont have to keep changing cloudflare DNS pointer to public IPV4 everytime
+
+Implement CI/CD using github actions
+Implement simple tests
+
+Implement monitoring using sentry
 
