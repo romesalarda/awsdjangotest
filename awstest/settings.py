@@ -59,7 +59,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = get_secret("/prod/django/workoutapi/DEBUG") == "True"
 
-ALLOWED_HOSTS = get_secret("//prod/django/workoutapi/ALLOWED_HOSTS").split(",")
+ALLOWED_HOSTS = get_secret("/prod/django/workoutapi/ALLOWED_HOSTS").split(",")
 
 # Application definition
 
