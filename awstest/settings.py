@@ -15,21 +15,30 @@ from dotenv import load_dotenv
 import os
 import boto3
 import botocore.session
+from botocore.session import Session
 
+from botocore.exceptions import NoCredentialsError
 from botocore.config import Config
 
 # Configure Boto3 to enforce IMDSv2 and retries.
-boto_config = Config(
-    retries={"max_attempts": 5, "mode": "standard"},
-    connect_timeout=5, 
-    read_timeout=5
-)
-
 
 load_dotenv()
 client = boto3.client('ssm', region_name='eu-west-2')
 
-session = botocore.session.get_session()
+try:
+    sts = boto3.client('sts')
+    print("Caller Identity:", sts.get_caller_identity())  # Should show IAM role ARN
+except NoCredentialsError:
+    print("FAIL: No credentials found")
+except Exception as e:
+    print(f"ERROR: {str(e)}")
+    
+session = Session()
+cred_provider = session.get_component('credential_provider')
+creds = cred_provider.load_credentials()
+print("Resolved Credentials:", creds)  # Should show temp credentials
+
+# session = botocore.session.get_session()
 creds = session.get_credentials()
 print("Credentials found? :", creds)
 
