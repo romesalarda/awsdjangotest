@@ -18,7 +18,7 @@ import botocore.session
 
 from botocore.config import Config
 
-# Configure Boto3 to enforce IMDSv2 and retries
+# Configure Boto3 to enforce IMDSv2 and retries.
 boto_config = Config(
     retries={"max_attempts": 5, "mode": "standard"},
     connect_timeout=5, 
