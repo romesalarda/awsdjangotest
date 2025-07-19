@@ -164,6 +164,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 if not DEBUG:
     #AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     #AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+    # NOTE: no need to define secret key if using IAM roles
+    # AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+    # AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
     AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
     AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "eu-west-2")
 
@@ -181,8 +184,6 @@ if not DEBUG:
         "default": {
             "BACKEND": "storages.backends.s3.S3Storage",
                 "OPTIONS": {
-#                    "access_key": AWS_ACCESS_KEY_ID,
-#                    "secret_key": AWS_SECRET_ACCESS_KEY,
                     "bucket_name": AWS_STORAGE_BUCKET_NAME,
                     "region_name": AWS_S3_REGION_NAME,
             },
@@ -190,8 +191,6 @@ if not DEBUG:
         "staticfiles": {
             "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
             "OPTIONS": {
-#               "access_key": AWS_ACCESS_KEY_ID,
-#               "secret_key": AWS_SECRET_ACCESS_KEY,
                 "bucket_name": AWS_STORAGE_BUCKET_NAME,
                 "region_name": AWS_S3_REGION_NAME,
                 "location": "static",  # Folder in the bucket for static files
@@ -227,3 +226,15 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
 }
+
+## USE WHEN TLS/SSL SETUP IS COMPLETE
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://rsalardadevelop.com',
+    'https://www.rsalardadevelop.com',
+]
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # For Cloudflare/Proxy
+SECURE_SSL_REDIRECT = True  # Force HTTPS
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
