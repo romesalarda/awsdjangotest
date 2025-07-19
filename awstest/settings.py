@@ -57,7 +57,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECRET_KEY = os.getenv("SECRET_KEY", "your-default-secret-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = get_secret("/prod/django/workoutapi/DEBUG", "True") == "True"
+DEBUG = get_secret("/prod/django/workoutapi/DEBUG") == "True"
 
 ALLOWED_HOSTS = get_secret("/prod/django/workoutapi/ALLOWED_HOST").split(",")
 
