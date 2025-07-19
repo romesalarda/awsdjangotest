@@ -14,12 +14,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 import boto3
+import botocore.session
 
 
 load_dotenv()
+client = boto3.client('ssm', region_name='eu-west-2')
+
+session = botocore.session.get_session()
+creds = session.get_credentials()
+print("Credentials found:", creds)
 
 def get_secret(name):
-    client = boto3.client('ssm', region_name='eu-west-2')
     return client.get_parameter(Name=name, WithDecryption=True)['Parameter']['Value']
 
 SECRET_KEY = get_secret('/prod/django/workoutapi/SECRET_KEY')
