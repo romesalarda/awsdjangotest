@@ -22,7 +22,7 @@ client = boto3.client('ssm', region_name='eu-west-2')
 
 session = botocore.session.get_session()
 creds = session.get_credentials()
-print("Credentials found:", creds)
+print("Credentials found? :", creds)
 
 def get_secret(name):
     return client.get_parameter(Name=name, WithDecryption=True)['Parameter']['Value']
