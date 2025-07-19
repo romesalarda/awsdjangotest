@@ -126,8 +126,8 @@ DATABASES = {
     'default': {
         'ENGINE': get_secret("/prod/django/workoutapi/DB_ENGINE"),
         'NAME': get_secret("/prod/django/workoutapi/DB_NAME"),
-        'USER': get_secret("/prod/django/workoutapi/POSTGRES_USER"),
-        'PASSWORD': get_secret("/prod/django/workoutapi/POSTGRES_PASSWORD"),
+        'USER': get_secret("/prod/django/workoutapi/DB_USER"),
+        'PASSWORD': get_secret("/prod/django/workoutapi/DB_PASSWORD"),
         'HOST': get_secret("/prod/django/workoutapi/DB_HOST"),
         'PORT': get_secret("/prod/django/workoutapi/DB_PORT"),
     }
