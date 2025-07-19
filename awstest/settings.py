@@ -22,7 +22,7 @@ def get_secret(name):
     client = boto3.client('ssm', region_name='eu-west-2')
     return client.get_parameter(Name=name, WithDecryption=True)['Parameter']['Value']
 
-SECRET_KEY = get_secret('/prod/django/secret_key')
+SECRET_KEY = get_secret('/prod/django/workoutapi/SECRET_KEY')
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -34,9 +34,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECRET_KEY = os.getenv("SECRET_KEY", "your-default-secret-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "True") == "True"
+DEBUG = get_secret("/prod/django/workoutapi/DEBUG", "True") == "True"
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
+ALLOWED_HOSTS = get_secret("/prod/django/workoutapi/ALLOWED_HOST", "").split(",")
 
 # Application definition
 
@@ -101,12 +101,12 @@ SECURITY_HEADERS = {
 
 DATABASES = {
     'default': {
-        'ENGINE': os.getenv("DB_ENGINE"),
-        'NAME': os.getenv("DB_NAME"),
-        'USER': os.getenv("DB_USER"),
-        'PASSWORD': os.getenv("DB_PASSWORD"),
-        'HOST': os.getenv("DB_HOST"),
-        'PORT': os.getenv("DB_PORT"),
+        'ENGINE': get_secret("/prod/django/workoutapi/DB_ENGINE"),
+        'NAME': get_secret("/prod/django/workoutapi/DB_NAME"),
+        'USER': get_secret("/prod/django/workoutapi/POSTGRES_USER"),
+        'PASSWORD': get_secret("/prod/django/workoutapi/POSTGRES_PASSWORD"),
+        'HOST': get_secret("/prod/django/workoutapi/DB_HOST"),
+        'PORT': get_secret("/prod/django/workoutapi/DB_PORT"),
     }
 }
 
@@ -157,8 +157,8 @@ if not DEBUG:
     # NOTE: no need to define secret key if using IAM roles
     # AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     # AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-    AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
-    AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "eu-west-2")
+    AWS_STORAGE_BUCKET_NAME = get_secret("/prod/django/workoutapi/AWS_STORAGE_BUCKET_NAME")
+    AWS_S3_REGION_NAME = get_secret("/prod/django/workoutapi/AWS_S3_REGION_NAME")
 
     AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com"
     AWS_S3_OBJECT_PARAMETERS = {

@@ -42,16 +42,25 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Run deployment via SSM
+      - name: Deploy to EC2 via SSM
+        id: deploy_ssm
         run: |
           aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy Django Docker App" \
-            --parameters 'commands=[
+            --parameters commands='[
               "cd /home/ec2-user/awsdjangotest",
               "git pull origin main",
               "docker-compose down",
               "docker-compose up -d --build"
             ]' \
-            --output text
+            --output json > result.json
+          COMMAND_ID=$(jq -r '.Command.CommandId' result.json)
+          echo "Command ID: $COMMAND_ID"
+
+      - name: Wait for deployment command to complete
+        run: |
+          COMMAND_ID=${{ steps.deploy_ssm.outputs.command_id }}
+          aws ssm wait command-executed --command-id $COMMAND_ID --instance-id ${{ secrets.EC2_INSTANCE_ID }}
+
