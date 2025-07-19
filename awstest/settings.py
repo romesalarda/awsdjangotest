@@ -244,7 +244,7 @@ if not DEBUG:
         'https://www.rsalardadevelop.com',
     ]
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # For Cloudflare/Proxy
-    SECURE_SSL_REDIRECT = True  # Force HTTPS
+    SECURE_SSL_REDIRECT = True  # Force HTTPSs
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
