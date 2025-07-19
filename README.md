@@ -5,13 +5,13 @@ simple testing repository that is dockerised to be used in an EC2 instance using
 
 sudo yum install -y docker git
 
-sudo systemctl start docker
+sudo systemctl start docker # starts docker deamon and makes docker available to use now
 
-sudo systemctl enable docker
+sudo systemctl enable docker # configures docker to start automatically when the system boots up
 
-sudo usermod -aG docker ec2-user
+sudo usermod -aG docker ec2-user # By default, only root can run Docker commands. This gives your regular user (ec2-user) permission to use Docker without sudo every time.
 
-newgrp docker
+newgrp docker # applys current changes to our session if you run the commands above
 
 Create a new key so that you can push and pull to git, ensure to add it to git
 ssh-keygen -t ed25519 -C "Romxsalarda45@gmail.com"
