@@ -20,14 +20,9 @@ from botocore.config import Config
 
 # Configure Boto3 to enforce IMDSv2 and retries
 boto_config = Config(
-    retries={
-        'max_attempts': 5,
-        'mode': 'standard'
-    },
-    # Enforce IMDSv2 (recommended for security)
-    ec2_metadata_service_endpoint="http://169.254.169.254",
-    ec2_metadata_service_timeout=2,
-    ec2_metadata_num_attempts=3,
+    retries={"max_attempts": 5, "mode": "standard"},
+    connect_timeout=5, 
+    read_timeout=5
 )
 
 
