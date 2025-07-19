@@ -4,13 +4,23 @@ on:
   push:
     branches: [main]
 
+env:
+  AWS_REGION: eu-west-2
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -22,10 +32,17 @@ jobs:
           docker-compose --version
 
       - name: Build Docker containers
-        run: docker-compose build
+        run: |
+          docker-compose build --build-arg AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+                              --build-arg AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+                              --build-arg AWS_REGION=$AWS_REGION
 
       - name: Run Django tests
-        run: docker-compose run --rm web python manage.py test
+        run: |
+          docker-compose run --rm -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+                               -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+                               -e AWS_REGION=$AWS_REGION \
+                               web python manage.py test
 
   deploy:
     needs: build-and-test
