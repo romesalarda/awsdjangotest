@@ -20,7 +20,7 @@ from botocore.session import Session
 from botocore.exceptions import NoCredentialsError
 from botocore.config import Config
 
-# Configure Boto3 to enforce IMDSv2 and retries.
+# Configure Boto3 to enforce IMDSv2 and retries. ?
 
 load_dotenv()
 client = boto3.client('ssm', region_name='eu-west-2')
