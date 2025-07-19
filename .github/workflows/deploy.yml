@@ -64,20 +64,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Verify SSM Connectivity
+      - name: Verify EC2 Status
         run: |
-          for i in {1..10}; do
-            if aws ssm describe-instance-information \
-              --filters "Key=InstanceIds,Values=${{ secrets.EC2_INSTANCE_ID }}" \
-              --query 'InstanceInformationList[0].PingStatus' \
-              --output text | grep -q "Online"; then
-              echo "SSM agent online"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "SSM agent not responding"
-          exit 1
+          aws ec2 describe-instance-status \
+            --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
+            --query 'InstanceStatuses[0].InstanceState.Name'
+          
+          aws ssm describe-instance-information \
+            --filters "Key=InstanceIds,Values=${{ secrets.EC2_INSTANCE_ID }}"
 
       - name: Deploy to EC2 via SSM
         id: deploy_ssm
