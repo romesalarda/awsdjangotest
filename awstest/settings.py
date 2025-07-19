@@ -13,9 +13,16 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+import boto3
+
 
 load_dotenv()
 
+def get_secret(name):
+    client = boto3.client('ssm', region_name='eu-west-2')
+    return client.get_parameter(Name=name, WithDecryption=True)['Parameter']['Value']
+
+SECRET_KEY = get_secret('/prod/django/secret_key')
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -24,13 +31,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY", "your-default-secret-key")
+# SECRET_KEY = os.getenv("SECRET_KEY", "your-default-secret-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "True") == "True"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://rsalardadevelop.co.uk',
+    'https://www.rsalardadevelop.co.uk',
+]
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # For Cloudflare/Proxy
+SECURE_SSL_REDIRECT = True  # Force HTTPS
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
 
 # Application definition
 
@@ -87,7 +103,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "awstest.wsgi.application"
 
-
+SECURITY_HEADERS = {
+    'Cross-Origin-Opener-Policy': 'unsafe-none',  # TEMPORARY for HTTP
+}
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
@@ -144,6 +162,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Static and Media URLs
 if not DEBUG:
+    #AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+    #AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
     # NOTE: no need to define secret key if using IAM roles
     # AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     # AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -164,8 +184,6 @@ if not DEBUG:
         "default": {
             "BACKEND": "storages.backends.s3.S3Storage",
                 "OPTIONS": {
-                    # "access_key": AWS_ACCESS_KEY_ID,
-                    # "secret_key": AWS_SECRET_ACCESS_KEY,
                     "bucket_name": AWS_STORAGE_BUCKET_NAME,
                     "region_name": AWS_S3_REGION_NAME,
             },
@@ -173,8 +191,6 @@ if not DEBUG:
         "staticfiles": {
             "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
             "OPTIONS": {
-                # "access_key": AWS_ACCESS_KEY_ID,
-                # "secret_key": AWS_SECRET_ACCESS_KEY,
                 "bucket_name": AWS_STORAGE_BUCKET_NAME,
                 "region_name": AWS_S3_REGION_NAME,
                 "location": "static",  # Folder in the bucket for static files
@@ -223,3 +239,4 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True  # Force HTTPS
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+
