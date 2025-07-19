@@ -204,6 +204,8 @@ if not DEBUG:
         "CacheControl": "max-age=86400",
         "ACL": "public-read",
     }
+    STATICFILES_DIRS = (os.path.join(BASE_DIR, 'static'),)
+
 else:
     print("Debug is ON - Local storage in usee")
     STATIC_URL = "/static/"
@@ -212,7 +214,6 @@ else:
     MEDIA_URL = "/media/"
     MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
-# STATICFILES_DIRS = (os.path.join(BASE_DIR, 'static'),)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -229,12 +230,13 @@ SIMPLE_JWT = {
 
 ## USE WHEN TLS/SSL SETUP IS COMPLETE
 
-CSRF_TRUSTED_ORIGINS = [
-    'https://rsalardadevelop.com',
-    'https://www.rsalardadevelop.com',
-]
+if not DEBUG:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://rsalardadevelop.com',
+        'https://www.rsalardadevelop.com',
+    ]
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # For Cloudflare/Proxy
+    SECURE_SSL_REDIRECT = True  # Force HTTPS
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # For Cloudflare/Proxy
-SECURE_SSL_REDIRECT = True  # Force HTTPS
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
