@@ -27,7 +27,7 @@ boto_config = Config(
 
 
 load_dotenv()
-client = boto3.client('ssm', region_name='eu-west-2', config=boto_config)
+client = boto3.client('ssm', region_name='eu-west-2')
 
 session = botocore.session.get_session()
 creds = session.get_credentials()
