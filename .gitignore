@@ -3,8 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-=43.0.0
-
 # C extensions
 *.so
 
@@ -178,3 +176,4 @@ migrations/
 
 aws/
 
+.env
