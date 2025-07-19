@@ -13,6 +13,9 @@ sudo usermod -aG docker ec2-user
 
 newgrp docker
 
+Create a new key so that you can push and pull to git, ensure to add it to git
+ssh-keygen -t ed25519 -C "Romxsalarda45@gmail.com"
+
 ## install docker compose
 
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
