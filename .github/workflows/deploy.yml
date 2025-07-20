@@ -64,6 +64,17 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Fetch Postgres Password from SSM
+        id: fetch_pgpass
+        run: |
+          POSTGRES_PASSWORD=$(aws ssm get-parameter \
+            --name "/prod/django/POSTGRES_PASSWORD" \
+            --with-decryption \
+            --query "Parameter.Value" \
+            --output text)
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> $GITHUB_ENV
+
       - name: Verify EC2 Status
         run: |
           aws ec2 describe-instance-status \
@@ -81,6 +92,7 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --comment "Deploy Django Docker App" \
             --parameters commands='[
+              "export POSTGRES_PASSWORD='${{ env.POSTGRES_PASSWORD }}'",
               "cd /home/ec2-user/awsdjangotest",
               "git pull origin main",
               "docker-compose down",
@@ -89,10 +101,7 @@ jobs:
             --output json > result.json
 
           COMMAND_ID=$(jq -r '.Command.CommandId' result.json)
-          echo "Command ID: $COMMAND_ID"
-          
-          # Set output for use in next step
-          echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
+          echo "command_id=$COMMAND_ID" >> $GITHUB_OUTPUT
 
       - name: Wait for deployment command to complete
         run: |

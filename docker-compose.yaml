@@ -26,7 +26,7 @@ services:
     environment:
       POSTGRES_DB: awstestdb
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: Postgresdevelopment007 # ${POSTGRES_PASSWORD} - use this and inject
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d awstestdb"] # change this
       interval: 10s
