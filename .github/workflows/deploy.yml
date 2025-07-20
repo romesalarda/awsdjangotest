@@ -41,14 +41,14 @@ jobs:
           docker-compose build --build-arg AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
                               --build-arg AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
                               --build-arg AWS_REGION=$AWS_REGION \
-                              --build-arg DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+                              --build-arg DB_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}
 
       - name: Run Django tests
         run: |
           docker-compose run --rm -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
                                -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
                                -e AWS_REGION=$AWS_REGION \
-                               -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+                               -e DB_PASSWORD=${{ secrets.TEST_DB_PASSWORD }} \
                                web python manage.py test
 
   deploy:
