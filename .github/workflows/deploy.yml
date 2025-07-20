@@ -71,7 +71,7 @@ jobs:
         id: fetch_pgpass
         run: |
           DB_PASSWORD=$(aws ssm get-parameter \
-            --name "/prod/django/DB_PASSWORD" \
+            --name "/prod/django/workoutapi/DB_PASSWORD" \
             --with-decryption \
             --query "Parameter.Value" \
             --output text)
