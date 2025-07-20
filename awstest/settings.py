@@ -13,39 +13,36 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+
+# AWS Boto
 import boto3
 import botocore.session
 from botocore.session import Session
-
 from botocore.exceptions import NoCredentialsError
 from botocore.config import Config
 
-# Configure Boto3 to enforce IMDSv2 and retries. ?
-
 load_dotenv()
+
 client = boto3.client('ssm', region_name='eu-west-2')
 
 try:
+    # simple tests to ensure that boto3 can find credentials, may need to be removed in the future
     sts = boto3.client('sts')
-    print("Caller Identity:", sts.get_caller_identity())  # Should show IAM role ARN
+    session = Session()
+    cred_provider = session.get_component('credential_provider')
+    creds = cred_provider.load_credentials()
+    creds = session.get_credentials()
 except NoCredentialsError:
     print("FAIL: No credentials found")
 except Exception as e:
     print(f"ERROR: {str(e)}")
     
-session = Session()
-cred_provider = session.get_component('credential_provider')
-creds = cred_provider.load_credentials()
-print("Resolved Credentials:", creds)  # Should show temp credentials
-
-# session = botocore.session.get_session()
-creds = session.get_credentials()
-print("Credentials found? :", creds)
+SSM_PARAM_SUFFIX = "/prod/django/workoutapi/"
 
 def get_secret(name):
-    return client.get_parameter(Name=name, WithDecryption=True)['Parameter']['Value']
+    return client.get_parameter(Name=SSM_PARAM_SUFFIX + name, WithDecryption=True)['Parameter']['Value']
 
-SECRET_KEY = get_secret('/prod/django/workoutapi/SECRET_KEY')
+SECRET_KEY = get_secret('SECRET_KEY')
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -57,9 +54,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECRET_KEY = os.getenv("SECRET_KEY", "your-default-secret-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = get_secret("/prod/django/workoutapi/DEBUG") == "True"
+DEBUG = get_secret("DEBUG") == "True"
 
-ALLOWED_HOSTS = get_secret("/prod/django/workoutapi/ALLOWED_HOSTS").split(",")
+ALLOWED_HOSTS = get_secret("ALLOWED_HOSTS").split(",")
 
 # Application definition
 
@@ -124,12 +121,12 @@ SECURITY_HEADERS = {
 
 DATABASES = {
     'default': {
-        'ENGINE': get_secret("/prod/django/workoutapi/DB_ENGINE"),
-        'NAME': get_secret("/prod/django/workoutapi/DB_NAME"),
-        'USER': get_secret("/prod/django/workoutapi/DB_USER"),
-        'PASSWORD': get_secret("/prod/django/workoutapi/DB_PASSWORD"),
-        'HOST': get_secret("/prod/django/workoutapi/DB_HOST"),
-        'PORT': get_secret("/prod/django/workoutapi/DB_PORT"),
+        'ENGINE': get_secret("DB_ENGINE"),
+        'NAME': get_secret("DB_NAME"),
+        'USER': get_secret("DB_USER"),
+        'PASSWORD': get_secret("DB_PASSWORD"),
+        'HOST': get_secret("DB_HOST"),
+        'PORT': get_secret("DB_PORT"),
     }
 }
 
@@ -175,8 +172,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Static and Media URLs
 if not DEBUG:
-    AWS_STORAGE_BUCKET_NAME = get_secret("/prod/django/workoutapi/AWS_STORAGE_BUCKET_NAME")
-    AWS_S3_REGION_NAME = get_secret("/prod/django/workoutapi/AWS_S3_REGION_NAME")
+    AWS_STORAGE_BUCKET_NAME = get_secret("AWS_STORAGE_BUCKET_NAME")
+    AWS_S3_REGION_NAME = get_secret("AWS_S3_REGION_NAME")
 
     AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com"
     AWS_S3_OBJECT_PARAMETERS = {
@@ -212,16 +209,17 @@ if not DEBUG:
         "CacheControl": "max-age=86400",
         "ACL": "public-read",
     }
+    STATICFILES_DIRS = (os.path.join(BASE_DIR, 'static'),)
 
 else:
-    print("Debug is ON - Local storage in usee")
+    print("\n ### DEBUG is ON - Local storage in use ### ")
+    
     STATIC_URL = "/static/"
     STATIC_ROOT = os.path.join(BASE_DIR, "static")
 
     MEDIA_URL = "/media/"
     MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
-STATICFILES_DIRS = (os.path.join(BASE_DIR, 'static'),)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
