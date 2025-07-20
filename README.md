@@ -145,10 +145,11 @@ CSRF_TRUSTED_ORIGINS = [
     'https://www.yourdomain.com',
 ]
 
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # For Cloudflare/Proxy
-SECURE_SSL_REDIRECT = True  # Force HTTPS
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+if not debug:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # For Cloudflare/Proxy
+    SECURE_SSL_REDIRECT = True  # Force HTTPS
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # IAM roles for S3 verification
 
@@ -156,11 +157,11 @@ Simply type in IAM in the AWS console, add a new role, select the preset about E
 Then name it whataver, under top right of console -> actions -> security -> modify IAM role and select the one we just made
 Done
 
-# Using SSM for paramater store
+## Using SSM for paramater store
 
 Ensure in docker-compose.yaml file the database says ${POSTGRES_PASSWORD}
 
-# USE THIS COMMAND TO INJECT
+## USE THIS COMMAND TO INJECT
 export POSTGRES_PASSWORD=$(aws ssm get-parameter --name "/prod/db/password" --with-decryption --query "Parameter.Value" --output text)
 
 For django, use boto3
@@ -173,11 +174,51 @@ def get_secret(name):
 
 SECRET_KEY = get_secret('/prod/django/secret_key')
 
+# CI/CD
+
+Look at .github/workflows/deploy.yml
+
+On the AWS dashboard side, ensure that all the SSM paramaters are setup properly. Ensure the policies attached are correct too.
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ssm:SendCommand",
+                "ssm:ListCommands",
+                "ssm:ListCommandInvocations",
+                "ssm:GetCommandInvocation"
+            ],
+            "Resource": [
+                "arn:aws:ec2:eu-west-2:047719661321:instance/<EC2-INSTANCE-ID>",
+                "arn:aws:ssm:eu-west-2:047719661321:document/AWS-RunShellScript"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ssm:DescribeInstanceInformation",
+                "ec2:DescribeInstances"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+                "ssm:GetParametersByPath"
+            ],
+            "Resource": "arn:aws:ssm:eu-west-2:<ACCOUNT-ID-OMMITED>:parameter/prod/django/*" # This param changes depending on the SSM configuration set
+        }
+    ]
+}
 
 # TODO:
 add a elastic IP so I dont have to keep changing cloudflare DNS pointer to public IPV4 everytime
 
-Implement CI/CD using github actions
 Implement simple tests
 
 Implement monitoring using sentry
