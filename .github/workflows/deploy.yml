@@ -40,13 +40,15 @@ jobs:
         run: |
           docker-compose build --build-arg AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
                               --build-arg AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
-                              --build-arg AWS_REGION=$AWS_REGION
+                              --build-arg AWS_REGION=$AWS_REGION \
+                              --build-arg DB_PASSWORD=${{ secrets.DB_PASSWORD }}
 
       - name: Run Django tests
         run: |
           docker-compose run --rm -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
                                -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
                                -e AWS_REGION=$AWS_REGION \
+                               -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
                                web python manage.py test
 
   deploy:
@@ -67,13 +69,13 @@ jobs:
       - name: Fetch Postgres Password from SSM
         id: fetch_pgpass
         run: |
-          POSTGRES_PASSWORD=$(aws ssm get-parameter \
+          DB_PASSWORD=$(aws ssm get-parameter \
             --name "/prod/django/DB_PASSWORD" \
             --with-decryption \
             --query "Parameter.Value" \
             --output text)
-          echo "::add-mask::$POSTGRES_PASSWORD"
-          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> $GITHUB_ENV
+          echo "::add-mask::$DB_PASSWORD"
+          echo "DB_PASSWORD=$DB_PASSWORD" >> $GITHUB_ENV
 
       - name: Verify EC2 Status
         run: |
