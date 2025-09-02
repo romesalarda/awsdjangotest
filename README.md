@@ -218,6 +218,14 @@ On the AWS dashboard side, ensure that all the SSM paramaters are setup properly
 
 ASWELL AS: AmazonSSMManagedInstanceCore
 
+# FAST START UP
+Reminders to do when starting up this EC2 instance
+1. Ensure cloudflare has the updated IP
+2. Ensure Github Actions has the updated Instance ID and host
+
+then run...
+docker-compose up -d 
+
 # TODO:
 add a elastic IP so I dont have to keep changing cloudflare DNS pointer to public IPV4 everytime
 
