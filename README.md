@@ -230,12 +230,12 @@ docker-compose up -d
 add a elastic IP so I dont have to keep changing cloudflare DNS pointer to public IPV4 everytime
 
 Low priority
-Implement simple tests
-Add staging environment - I.e. configure deploy.yml to create a staging environment?
+1. Implement simple tests
+2. Add staging environment - I.e. configure deploy.yml to create a staging environment?
 
 Higher Priority
-Implement monitoring using sentry for Django, cloudwatch for EC2 
-Setting up Emails to notify me if the build fails.
-Switching to RDS instead of local postgres??
+1. Implement monitoring using sentry for Django, cloudwatch for EC2 
+2. Setting up Emails to notify me if the build fails.
+3. Switching to RDS instead of local postgres??
 
 Other projects -> To help with SEO, to either learn SSR? or learn how to improve SEO in SPA (single page applications)
