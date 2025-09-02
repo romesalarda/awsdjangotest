@@ -21,6 +21,18 @@ from botocore.session import Session
 from botocore.exceptions import NoCredentialsError
 from botocore.config import Config
 
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
+
+sentry_sdk.init(
+    dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
+    integrations=[DjangoIntegration()],
+
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+)
+
 load_dotenv()
 
 client = boto3.client('ssm', region_name='eu-west-2')
@@ -248,11 +260,3 @@ if not DEBUG:
 
 # Sentry configuration (Django monitoring)
 
-import sentry_sdk
-
-sentry_sdk.init(
-    dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
-    # Add data like request headers and IP for users,
-    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-    send_default_pii=True,
-)
