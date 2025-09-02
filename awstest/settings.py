@@ -246,3 +246,13 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
+# Sentry configuration (Django monitoring)
+
+import sentry_sdk
+
+sentry_sdk.init(
+    dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+)
