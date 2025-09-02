@@ -115,7 +115,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 chmod 644 ./nginx/cloudflare.crt
 chmod 600 ./nginx/cloudflare.key
 
-# For setting up TLS/SSL (CLOUDFLARE FULL STRICT SSL)
+# IMPORTANT: For setting up TLS/SSL (CLOUDFLARE FULL STRICT SSL)
 
 sudo pip3 install certbot certbot-nginx
 sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
@@ -123,17 +123,17 @@ sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
 It will ask a few questions and then populate /etc/letsencrypt/live/... with our certificates
 ensure all resources point to there and that docker compose sees the mounted volume - what is a volume?
 
-# nginx config
+nginx config
 ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
 ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
 
-# docker-compose
+Docker-compose config under nginx
 volumes:
     - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
     - /etc/letsencrypt/live/rsalardadevelop.co.uk/fullchain.pem:/etc/letsencrypt/live/rsalardadevelop.co.uk/fullchain.pem:ro
     - /etc/letsencrypt/live/rsalardadevelop.co.uk/privkey.pem:/etc/letsencrypt/live/rsalardadevelop.co.uk/privkey.pem:ro
 
-# Add a cron job for auto renewal
+Add a cron job for auto renewal
 echo "0 0 * * * /usr/local/bin/certbot renew --quiet --post-hook 'systemctl reload nginx'" | sudo tee -a /etc/crontab
 
 # CSRF
@@ -192,8 +192,8 @@ On the AWS dashboard side, ensure that all the SSM paramaters are setup properly
                 "ssm:GetCommandInvocation"
             ],
             "Resource": [
-                "arn:aws:ec2:eu-west-2:047719661321:instance/<EC2-INSTANCE-ID>",
-                "arn:aws:ssm:eu-west-2:047719661321:document/AWS-RunShellScript"
+                "arn:aws:ec2:eu-west-2:#INSTANCEID#:instance/#EC2-INSTANCE-ID#",
+                "arn:aws:ssm:eu-west-2:#INSTANCEID#:document/AWS-RunShellScript"
             ]
         },
         {
@@ -211,15 +211,23 @@ On the AWS dashboard side, ensure that all the SSM paramaters are setup properly
                 "ssm:GetParameters",
                 "ssm:GetParametersByPath"
             ],
-            "Resource": "arn:aws:ssm:eu-west-2:<ACCOUNT-ID-OMMITED>:parameter/prod/django/*" # This param changes depending on the SSM configuration set
+            "Resource": "arn:aws:ssm:eu-west-2:#ACCOUNT-ID-OMMITED#:parameter/prod/django/*" # This param changes depending on the SSM configuration set
         }
     ]
 }
 
+ASWELL AS: AmazonSSMManagedInstanceCore
+
 # TODO:
 add a elastic IP so I dont have to keep changing cloudflare DNS pointer to public IPV4 everytime
 
+Low priority
 Implement simple tests
+Add staging environment - I.e. configure deploy.yml to create a staging environment?
 
-Implement monitoring using sentry
+Higher Priority
+Implement monitoring using sentry for Django, cloudwatch for EC2 
+Setting up Emails to notify me if the build fails.
+Switching to RDS instead of local postgres??
 
+Other projects -> To help with SEO, to either learn SSR? or learn how to improve SEO in SPA (single page applications)
