@@ -97,18 +97,24 @@ jobs:
 
       - name: Deploy to EC2 via SSM
         id: deploy_ssm
+      - name: Deploy to EC2 via SSM
+        id: deploy_ssm
         run: |
           aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy Django Docker App" \
+            --comment "Deploy Django Docker App (RESET MODE)" \
             --parameters commands='[
               "export POSTGRES_PASSWORD='${{ env.POSTGRES_PASSWORD }}'",
               "cd /home/ec2-user/awsdjangotest",
-              "git pull origin main",
-              "docker-compose down",
-              "docker-compose up -d --build",
-              "docker-compose exec -T web python manage.py migrate --noinput"
+              "git fetch origin main",
+              "git reset --hard origin/main",
+              "git log -1",
+              "docker-compose down -v",                
+              "docker-compose build --no-cache",       
+              "docker-compose up -d",
+              "docker-compose run --rm web python manage.py migrate --noinput",  # fresh schema
+              "docker-compose run --rm web python manage.py createsuperuser --noinput --username admin --email admin@example.com || true"
             ]' \
             --output json > result.json
 
