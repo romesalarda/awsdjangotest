@@ -240,3 +240,6 @@ Higher Priority
 3. Switching to RDS instead of local postgres??
 
 Other projects -> To help with SEO, to either learn SSR? or learn how to improve SEO in SPA (single page applications)
+
+docker-compose run --rm web python manage.py makemigrations --noinput
+docker-compose run --rm web python manage.py migrate --noinput
