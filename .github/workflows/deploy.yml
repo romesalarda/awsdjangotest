@@ -94,7 +94,7 @@ jobs:
           
           aws ssm describe-instance-information \
             --filters "Key=InstanceIds,Values=${{ secrets.EC2_INSTANCE_ID }}"
-            
+
       - name: Deploy to EC2 via SSM
         id: deploy_ssm
         run: |
@@ -111,8 +111,7 @@ jobs:
               "docker-compose down -v",                
               "docker-compose build --no-cache",       
               "docker-compose up -d",
-              "docker-compose run --rm web python manage.py migrate --noinput",  # fresh schema
-              "docker-compose run --rm web python manage.py createsuperuser --noinput --username admin --email admin@example.com || true"
+              "docker-compose run --rm web python manage.py migrate --noinput",
             ]' \
             --output json > result.json
 
