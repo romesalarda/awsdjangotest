@@ -235,7 +235,7 @@ Low priority
 2. Add staging environment - I.e. configure deploy.yml to create a staging environment?
 
 Higher Priority
-1. Implement monitoring using sentry for Django, cloudwatch for EC2 
+1. Implement monitoring using sentry for Django (done), cloudwatch for EC2 
 2. Setting up Emails to notify me if the build fails.
 3. Switching to RDS instead of local postgres??
 
