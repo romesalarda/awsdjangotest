@@ -94,15 +94,7 @@ I.e. docker logs django_app
 
 CSRF not properly setup, SSL certificate not secured yet
 
-# Reminders for myself
-
-REMEMBER IMPORTANT:
-Create a new Elastic IP, otherwise you have to go onto cloudflare, and change the content IP to the new public IP that
-EC2 creates if you dont have an elastic IP.
-
-ENSURE THAT IF NO CERTIFICATE IS IN USE, USE HTTP in the URL. 
-
-# For setting up TLS/SSL (CLOUDFLARE FULL SSL)
+# For setting up TLS/SSL (CLOUDFLARE FULL SSL) - LESS RECOMMENDED
 
 refer to nginx, ensure SSL certificates are ready
 
@@ -115,7 +107,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 chmod 644 ./nginx/cloudflare.crt
 chmod 600 ./nginx/cloudflare.key
 
-# IMPORTANT: For setting up TLS/SSL (CLOUDFLARE FULL STRICT SSL)
+# IMPORTANT: For setting up TLS/SSL (CLOUDFLARE FULL STRICT SSL) - RECOMMENDED
 
 sudo pip3 install certbot certbot-nginx
 sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
@@ -222,9 +214,18 @@ ASWELL AS: AmazonSSMManagedInstanceCore
 Reminders to do when starting up this EC2 instance
 1. Ensure cloudflare has the updated IP
 2. Ensure Github Actions has the updated Instance ID and host
+3. In settings.py ensure that USING_ENV_FILE is False
 
 then run...
 docker-compose up -d 
+
+# Reminders for myself
+
+REMEMBER IMPORTANT:
+Create a new Elastic IP, otherwise you have to go onto cloudflare, and change the content IP to the new public IP that
+EC2 creates if you dont have an elastic IP.
+
+ENSURE THAT IF NO CERTIFICATE IS IN USE, USE HTTP in the URL. 
 
 # TODO:
 add a elastic IP so I dont have to keep changing cloudflare DNS pointer to public IPV4 everytime

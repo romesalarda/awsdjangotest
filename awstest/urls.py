@@ -10,17 +10,23 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from rest_framework.routers import DefaultRouter
 
-from users.views import UserRegistrationView
+# from users.views import UserRegistrationView, UserListCreateView
+from users.views import UserViewSet
+
+router = DefaultRouter()
+router.register(r'users', UserViewSet)
+
     
 # Swagger schema view
 schema_view = get_schema_view(
     openapi.Info(
-        title="Your API",
+        title="PLayground API Application",
         default_version='v1',
-        description="API documentation for Your Project",
+        description="",
         terms_of_service="https://www.yourapp.com/terms/",
-        contact=openapi.Contact(email="contact@yourapp.com"),
+        contact=openapi.Contact(email="romxsalarda45@gmail.com"),
         license=openapi.License(name="MIT License"),
     ),
     public=True,
@@ -35,12 +41,15 @@ urlpatterns = [
     # Your existing API endpoints
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('api/register/', UserRegistrationView.as_view(), name='register'),
+    # path('api/register/', UserRegistrationView.as_view(), name='register'),
+    # path('api/users/', UserListCreateView.as_view(), name='users'),
+    path('api/', include(router.urls)),
+
     # Swagger and ReDoc documentation
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     re_path(r'^swagger/$', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     re_path(r'redoc', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
-    path('sentry-debug/', trigger_error)
+    # path('sentry-debug/', trigger_error)
 ]
 
 if settings.DEBUG:

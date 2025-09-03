@@ -99,7 +99,8 @@ jobs:
               "cd /home/ec2-user/awsdjangotest",
               "git pull origin main",
               "docker-compose down",
-              "docker-compose up -d --build"
+              "docker-compose up -d --build",
+              "docker-compose exec -T django_app python manage.py makemigrations --noinput",
               "docker-compose exec -T django_app python manage.py migrate --noinput"
             ]' \
             --output json > result.json

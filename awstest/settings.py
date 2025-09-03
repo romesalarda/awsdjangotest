@@ -51,7 +51,11 @@ except Exception as e:
     
 SSM_PARAM_SUFFIX = "/prod/django/workoutapi/"
 
+USE_ENV_FILE = False
+
 def get_secret(name):
+    if USE_ENV_FILE:
+        return os.getenv(name)
     return client.get_parameter(Name=SSM_PARAM_SUFFIX + name, WithDecryption=True)['Parameter']['Value']
 
 SECRET_KEY = get_secret('SECRET_KEY')
@@ -69,6 +73,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DEBUG = get_secret("DEBUG") == "True"
 
 ALLOWED_HOSTS = get_secret("ALLOWED_HOSTS").split(",")
+
+AUTH_USER_MODEL = "users.CustomUser"
+
 
 # Application definition
 
@@ -90,7 +97,8 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "awstest",
-    "users"
+    "users",
+    "events"
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -258,5 +266,7 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
-# Sentry configuration (Django monitoring)
-
+REST_FRAMEWORK = {
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 10,  # items per page
+}
