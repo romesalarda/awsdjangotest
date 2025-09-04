@@ -1,7 +1,7 @@
 # awsdjangotest
 simple testing repository that is dockerised to be used in an EC2 instance using amazon linux distro
 
-## install docker compose and git
+## 1. Install docker and git
 
 sudo yum install -y docker git
 
@@ -16,7 +16,7 @@ newgrp docker # applys current changes to our session if you run the commands ab
 Create a new key so that you can push and pull to git, ensure to add it to git
 ssh-keygen -t ed25519 -C "Romxsalarda45@gmail.com"
 
-## install docker compose
+## 2. Install docker compose
 
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
@@ -25,9 +25,9 @@ docker-compose --version
 
 git clone "my repo"
 
-## run compose
+## 3. run compose
 
-# ENSURE YOU CHECK AND UPDATE CONFIG WHERE NEEDED!
+### ENSURE YOU CHECK AND UPDATE CONFIG WHERE NEEDED!
 
 sudo vim .env
 sudo vim docker-compose.yaml
@@ -60,13 +60,13 @@ if needed, update default security key, but .env should defined one anyway
 
 return 301 https://<your_s3_bucket>/static/;
 
-## run to build 
+## 4. run to build 
 
 docker-compose up -d --build
 
 docker-compose down 
 
-# After all systems are healthy and running
+## 5. After all systems are healthy and running
 
 docker exec django_app python manage.py collectstatic --noinput
 
@@ -78,7 +78,7 @@ docker exec -it django_app bash
 
 python manage.py createsuperuser
 
-## to run commands within docker
+### 6. to run commands within docker
 
 docker exec -to "container name" "cmd to execute"
 
@@ -90,11 +90,7 @@ docker exec -it django_app bash
 docker logs "app name"
 I.e. docker logs django_app
 
-# Future notes and practices
-
-CSRF not properly setup, SSL certificate not secured yet
-
-# For setting up TLS/SSL (CLOUDFLARE FULL SSL) - LESS RECOMMENDED
+### 7. For setting up TLS/SSL (CLOUDFLARE FULL SSL) - LESS RECOMMENDED
 
 refer to nginx, ensure SSL certificates are ready
 
@@ -107,7 +103,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 chmod 644 ./nginx/cloudflare.crt
 chmod 600 ./nginx/cloudflare.key
 
-# IMPORTANT: For setting up TLS/SSL (CLOUDFLARE FULL STRICT SSL) - RECOMMENDED
+## 8. IMPORTANT: For setting up TLS/SSL (CLOUDFLARE FULL STRICT SSL) - RECOMMENDED
 
 sudo pip3 install certbot certbot-nginx
 sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
@@ -128,7 +124,7 @@ volumes:
 Add a cron job for auto renewal
 echo "0 0 * * * /usr/local/bin/certbot renew --quiet --post-hook 'systemctl reload nginx'" | sudo tee -a /etc/crontab
 
-# CSRF
+## 9. CSRF
 
 In manage.py add this
 
@@ -143,20 +139,20 @@ if not debug:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
-# IAM roles for S3 verification
+## 10. IAM roles for S3 verification
 
 Simply type in IAM in the AWS console, add a new role, select the preset about EC2. 
 Then name it whataver, under top right of console -> actions -> security -> modify IAM role and select the one we just made
 Done
 
-## Using SSM for paramater store
+## 11. Using SSM for paramater store
 
 Ensure in docker-compose.yaml file the database says ${POSTGRES_PASSWORD}
 
-## USE THIS COMMAND TO INJECT
+### For manual injection via command line
 export POSTGRES_PASSWORD=$(aws ssm get-parameter --name "/prod/db/password" --with-decryption --query "Parameter.Value" --output text)
 
-For django, use boto3
+### For django, use boto3
 
 import boto3
 
@@ -166,12 +162,15 @@ def get_secret(name):
 
 SECRET_KEY = get_secret('/prod/django/secret_key')
 
-# CI/CD
+## CI/CD
 
-Look at .github/workflows/deploy.yml
+Look at .github/workflows/deploy.yml for the full details of the file. In essence, when a change is made locally, and it's pushed,
+the actions file will run, first to build and test, and then deploy to the actual EC2 instance
+NOTE: Ensure that the EC2 ID instance paramater in the github secret matches the EC2 instance ID
 
 On the AWS dashboard side, ensure that all the SSM paramaters are setup properly. Ensure the policies attached are correct too.
 
+```
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -207,10 +206,11 @@ On the AWS dashboard side, ensure that all the SSM paramaters are setup properly
         }
     ]
 }
+```
 
 ASWELL AS: AmazonSSMManagedInstanceCore
 
-# FAST START UP
+## FAST START UP
 Reminders to do when starting up this EC2 instance
 1. Ensure cloudflare has the updated IP
 2. Ensure Github Actions has the updated Instance ID and host
@@ -219,7 +219,7 @@ Reminders to do when starting up this EC2 instance
 then run...
 docker-compose up -d 
 
-# Reminders for myself
+## Reminders for myself
 
 REMEMBER IMPORTANT:
 Create a new Elastic IP, otherwise you have to go onto cloudflare, and change the content IP to the new public IP that
@@ -227,19 +227,24 @@ EC2 creates if you dont have an elastic IP.
 
 ENSURE THAT IF NO CERTIFICATE IS IN USE, USE HTTP in the URL. 
 
-# TODO:
-add a elastic IP so I dont have to keep changing cloudflare DNS pointer to public IPV4 everytime
-
-Low priority
-1. Implement simple tests
-2. Add staging environment - I.e. configure deploy.yml to create a staging environment?
-
-Higher Priority
-1. Implement monitoring using sentry for Django (done), cloudwatch for EC2 
-2. Setting up Emails to notify me if the build fails.
-3. Switching to RDS instead of local postgres??
-
-Other projects -> To help with SEO, to either learn SSR? or learn how to improve SEO in SPA (single page applications)
+CORS is NOT setup yet. 
 
 docker-compose run --rm web python manage.py makemigrations --noinput
 docker-compose run --rm web python manage.py migrate --noinput
+
+## TODO:
+
+### Higher Priority
+1. Implement monitoring using sentry for Django (done), cloudwatch for EC2 (not yet) 
+2. Implementing JWT access token and securing endpoints
+3. Finishing of YFC Database API endpoints (in-progress)
+4. Test endpoints (in-progress)
+
+### Low priority
+1. Implement simple tests in Django
+2. Add staging environment - I.e. configure deploy.yml to create a staging environment?
+3. add a elastic IP so I dont have to keep changing cloudflare DNS pointer to public IPV4 everytime (costs money though)
+4. Switching to RDS instead of local postgres?? (deferred)
+
+
+Other projects -> To help with SEO, to either learn SSR? or learn how to improve SEO in SPA (single page applications)
