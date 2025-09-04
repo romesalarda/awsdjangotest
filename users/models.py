@@ -83,6 +83,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         
         if not self.member_id:
             name_slug = slugify(f"{self.first_name[:MAX_MEMBER_ID_FIRST_NAME]}{self.last_name[:MAX_MEMBER_ID_LAST_NAME]}").upper()
+            self.uploaded_at = datetime.date.today()
             self.member_id = f"{str(self.uploaded_at.year)}-{name_slug}{str(self.id)[:MAX_MEMBER_ID_LENGTH - len(name_slug) - 4]}"
             
         self.username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
