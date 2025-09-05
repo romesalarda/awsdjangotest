@@ -51,7 +51,10 @@ except Exception as e:
     
 SSM_PARAM_SUFFIX = "/prod/django/workoutapi/"
 
-USE_ENV_FILE = False
+try: # local development only
+    USE_ENV_FILE = os.getenv("DEBUG")
+except Exception:
+    USE_ENV_FILE = False
 
 def get_secret(name):
     if USE_ENV_FILE:
@@ -74,7 +77,8 @@ DEBUG = get_secret("DEBUG") == "True"
 
 ALLOWED_HOSTS = get_secret("ALLOWED_HOSTS").split(",")
 
-AUTH_USER_MODEL = "users.CustomUser"
+AUTH_USER_MODEL = "users.CommunityUser"
+
 
 
 # Application definition
@@ -269,4 +273,49 @@ if not DEBUG:
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,  # items per page
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        # 'rest_framework_simplejwt.authentication.JWTStatelessUserAuthentication',
+
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.TokenAuthentication",
+    ),
+    # WARNING - THIS PERMISSION MUST BE SET TO 'ISUATHENTICATED' DURING PRODUCTION TO PROTECT ENDPOINTS
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.AllowAny",),
+    'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema'
+}
+
+import datetime
+
+SIMPLE_JWT = {
+    # WARNING CHANGE ACCESS TOKEN TO BE SHORTER
+    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(minutes=100),
+    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': False,
+
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+    'JWK_URL': None,
+    'LEEWAY': 0,
+
+    'AUTH_HEADER_TYPES': ('Bearer','JWT'),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'uuid',
+    'USER_ID_CLAIM': 'user_id',
+    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
+
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
+
+    'JTI_CLAIM': 'jti',
+
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': datetime.timedelta(minutes=5),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': datetime.timedelta(days=1),
 }

@@ -1,10 +1,10 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser
+from .models import CommunityUser, UserCommunityRole, CommunityRole
 
-@admin.register(CustomUser)
+@admin.register(CommunityUser)
 class CustomUserAdmin(UserAdmin):
-    model = CustomUser
+    model = CommunityUser
 
     # Show these fields in the list view
     list_display = ("member_id", "first_name", "last_name", "ministry", "email", "is_staff", "is_active", "gender", "age", "date_of_birth")
@@ -31,3 +31,6 @@ class CustomUserAdmin(UserAdmin):
 
     search_fields = ("member_id", "email", "first_name", "last_name")
     ordering = ("member_id",)
+
+admin.site.register(UserCommunityRole)
+admin.site.register(CommunityRole)

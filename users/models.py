@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.utils.text import slugify
 import datetime
 
@@ -34,7 +34,7 @@ MAX_MEMBER_ID_LENGTH = 20
 MAX_MEMBER_ID_FIRST_NAME = 5
 MAX_MEMBER_ID_LAST_NAME = 5
 
-class CustomUser(AbstractBaseUser, PermissionsMixin):
+class CommunityUser(AbstractBaseUser, PermissionsMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     member_id = models.CharField(max_length=100, unique=True, editable=False)
@@ -70,6 +70,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     profile_picture = models.ImageField(upload_to="profile-images/", blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    
+    community_roles = models.ManyToManyField(
+        "CommunityRole",         
+        through="UserCommunityRole",
+        through_fields=("user", "role"),
+        related_name="users", 
+        help_text="role/s in the community", 
+        blank=True
+        )
 
     objects = CustomUserManager()
 
@@ -92,3 +101,40 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.member_id
+    
+class CommunityRole (models.Model):
+    '''
+    Role in the community
+    '''
+    class RoleType(models.TextChoices):
+        MEMBER = "MEM", _("MEMBER")
+        
+        NATIONAL_HEAD = "NAH", _("NATIONAL_HEAD")
+        YCOM_NATIONAL_HEAD = "YNH", _("YCOM_NATIONAL_HEAD")
+        MUSIC_MIN_NATIONAL_HEAD = "MNH", _ ("MUSIC_MIN_NATIONAL_HEAD")
+        
+        CLUSTER_YOUTH_HEAD = "CLH", _("CLUSTER_HEAD")
+        AREA_YOUTH_HEAD = "ARH", _("AREA_HEAD")
+        CHAPTER_YOUTH_HEAD = "CPH", _("CHAPTER_HEAD")
+        HOUSEHOLD_YOUTH_HEAD = "HHH", _("HOUSEHOLD_HEAD")
+        SUPPORTING_HOUSEHOLD_HEAD = "SHH", _("SUPPORTING_HOUSEHOLD_HEAD")
+        SECTOR_YOUTH_HEAD = "SCH", _("SECTOR_HEAD")
+    
+    role_name = models.CharField(verbose_name="name-of-role", choices=RoleType, default=RoleType.MEMBER)
+    role_description = models.TextField(max_length=500)
+    is_core = models.BooleanField(verbose_name="is_core_role", default=False, help_text="Defines if the role is a core role")
+    
+    def __str__(self):
+        return self.role_name
+    
+class UserCommunityRole(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="role_links")
+    role = models.ForeignKey("CommunityRole", on_delete=models.CASCADE, related_name="user_links")
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    assigned_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_roles") 
+    
+    class Meta:
+        unique_together = ("user", "role") 
+
+    def __str__(self):
+        return f"{self.user} → {self.role} (by {self.assigned_by or 'system'})"
