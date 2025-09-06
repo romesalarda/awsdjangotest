@@ -5,7 +5,10 @@ from events.models import (
 )
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
-from users.api.serializers import SimplifiedCommunityUserSerializer  # Assuming you have this
+from users.api.serializers import SimplifiedCommunityUserSerializer  
+
+# TODO: create resources serializer, then to add a field onto the event serializer, for memo and extra resources attached to the event
+# TODO: create guest participant serializer
 
 class EventRoleSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(source='get_role_name_display', read_only=True)
@@ -35,6 +38,9 @@ class EventServiceTeamMemberSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class EventSerializer(serializers.ModelSerializer):
+    '''
+    Main event serializer
+    '''
     # Simplified service team info (just IDs for writes, details for reads)
     service_team_members = SimplifiedEventServiceTeamMemberSerializer(
         many=True, read_only=True
@@ -52,12 +58,7 @@ class EventSerializer(serializers.ModelSerializer):
     participants_count = serializers.IntegerField(
         source='participants.count', read_only=True
     )
-    # event_type_display = serializers.CharField(
-    #     source='get_event_type_display', read_only=True
-    # )
-    # area_type_display = serializers.CharField(
-    #     source='get_area_type_display', read_only=True
-    # )
+
     duration_days = serializers.IntegerField(read_only=True)
     
     # For write operations, keep the original field names
@@ -74,7 +75,7 @@ class EventSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'event_type', 'name', 'start_date', 'end_date', 'duration_days',
             'venue_address', 'venue_name', 'area_type', 'number_of_pax', 'theme',
-            'anchor_verse', 'specific_area', 'areas_involved',
+            'anchor_verse', 'specific_area', 'areas_involved', # TODO add memo and resources
             
             # Read-only display fields
             'service_team_members', 'participants_count',

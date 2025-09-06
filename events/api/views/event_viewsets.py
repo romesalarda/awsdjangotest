@@ -10,7 +10,12 @@ from events.api.serializers import *
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 
+# TODO: Add guest viewset
+
 class EventViewSet(viewsets.ModelViewSet):
+    '''
+    Viewset for CRUD operations with all types of events in the community
+    '''
     queryset = Event.objects.all()
     serializer_class = EventSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]

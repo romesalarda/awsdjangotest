@@ -74,6 +74,17 @@ class Event(models.Model):
         blank=True
     )
     
+    resources = models.ManyToManyField("PublicEventResource", blank=True, related_name="event_resources")
+    memo = models.ForeignKey(
+        "PublicEventResource",
+        verbose_name=_("main event memo"),
+        on_delete=models.SET_NULL, 
+        blank=True, 
+        null=True,
+        related_name="event_memos"
+        )
+    
+    
     # ADDED: Useful methods
     def __str__(self):
         event_type = self.get_event_type_display()
@@ -226,16 +237,7 @@ class EventParticipant(models.Model):
     
     notes = models.TextField(_("notes"), blank=True, null=True)
     # further resources and memo
-    resources = models.ManyToManyField("PublicEventResource", blank=True, related_name="event_resources")
-    memo = models.ForeignKey(
-        "PublicEventResource",
-        verbose_name=_("main event memo"),
-        on_delete=models.SET_NULL, 
-        blank=True, 
-        null=True,
-        related_name="event_memos"
-        )
-    
+
     class Meta:
         unique_together = ("event", "user")
         verbose_name = _("Event Participant")
@@ -245,7 +247,7 @@ class EventParticipant(models.Model):
     def __str__(self):
         return f"{self.user} - {self.event} ({self.get_status_display()})"
     
-class GuestParticipant (models.Model):
+class GuestParticipant (models.Model): # TODO
     '''
     Represents a person coming to the event who isn't registered within the community, data can be used later to register into the
     community.
@@ -476,7 +478,7 @@ class EventWorkshop(models.Model):
         # This would typically be implemented with a through model for workshop participants
         return 0  # Placeholder - you'd implement actual counting logic
 
-class PublicEventResource(models.Model):
+class PublicEventResource(models.Model): #TODO
     '''
     represents a public resource e.g. a link to a further google form or a memo
     '''
