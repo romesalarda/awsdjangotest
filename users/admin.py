@@ -61,7 +61,7 @@ class CommunityUserAdmin(UserAdmin):
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
         # Make date_of_birth more user-friendly in admin
-        form.base_fields['date_of_birth'].widget.attrs['placeholder'] = 'YYYY-MM-DD'
+        # form.base_fields['date_of_birth'].widget.attrs['placeholder'] = 'YYYY-MM-DD'
         return form
 
 @admin.register(UserCommunityRole)

@@ -1,4 +1,4 @@
-from rest_framework import viewsets, filters, status
+from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
@@ -10,6 +10,8 @@ from events.api.serializers import *
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 
+from events.api.filters import EventFilter
+
 # TODO: Add guest viewset
 
 class EventViewSet(viewsets.ModelViewSet):
@@ -19,7 +21,8 @@ class EventViewSet(viewsets.ModelViewSet):
     queryset = Event.objects.all()
     serializer_class = EventSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['event_type', 'area_type', 'specific_area', 'name']
+    filterset_class = EventFilter
+    # filterset_fields = ['event_type', 'area_type', 'specific_area', 'name']
     search_fields = ['name', 'theme', 'venue_name', 'venue_address']
     ordering_fields = ['start_date', 'end_date', 'name', 'number_of_pax']
     ordering = ['-start_date']
@@ -133,3 +136,20 @@ class EventWorkshopViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
             
+
+class GuestParticipantViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint to create, update, delete, and list guest participants.
+    """
+    queryset = GuestParticipant.objects.all()
+    serializer_class = GuestParticipantSerializer
+    permission_classes = [permissions.IsAuthenticated]  # adjust as needed
+
+
+class PublicEventResourceViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing public event resources (memos, files, links).
+    """
+    queryset = PublicEventResource.objects.all()
+    serializer_class = PublicEventResourceSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]  # anyone can GET, only logged-in can modify

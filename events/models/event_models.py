@@ -15,15 +15,15 @@ class Event(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     class EventType(models.TextChoices):
-        YOUTH_CAMP = "YOUTH_CAMP", _("Youth Camp")
-        CONFERENCE = "CONFERENCE", _("Conference")
-        RETREAT = "RETREAT", _("Retreat")
-        WORKSHOP = "WORKSHOP", _("Workshop")
-        TRAINING = "TRAINING", _("Training")
+        YOUTH_CAMP = "YOUTH_CAMP", _("YYC")
+        CONFERENCE = "CONFERENCE", _("CNF")
+        RETREAT = "RETREAT", _("RTR")
+        WORKSHOP = "WORKSHOP", _("WKS")
+        TRAINING = "TRAINING", _("TRN")
         PFO = "PFO", _("PFO")
-        HOUSEHOLD = "HOUSEHOLD", _("Household")
-        FELLOWSHIP = "FELLOWSHIP", _("Fellowship")
-        OTHER = "OTHER", _("Other")
+        HOUSEHOLD = "HOUSEHOLD", _("HLD")
+        FELLOWSHIP = "FELLOWSHIP", _("FLS")
+        OTHER = "OTHER", _("OTH")
         
     class EventAreaType(models.TextChoices):
         AREA = "AREA", _("Area")
@@ -35,6 +35,7 @@ class Event(models.Model):
         
     # Event type and basic information
     event_type = models.CharField(_("event type"), max_length=20, choices=EventType.choices, default=EventType.YOUTH_CAMP)
+    event_code = models.CharField(_("event code"), blank=True, null=True) # pretty name id for the event
     event_description = models.TextField(verbose_name=_("event description"), blank=True, null=True)
     name = models.CharField(_("event name"), max_length=200, blank=True, null=True)  
     
@@ -83,6 +84,12 @@ class Event(models.Model):
         null=True,
         related_name="event_memos"
         )
+    
+    def save(self, *args, **kwargs):
+        if not self.event_code:
+            self.event_code = f"{str(self.start_date.year)}-{self.get_event_type_display()}-{self.name.upper()[:10]}"
+        
+        return super().save(*args, **kwargs)
     
     
     # ADDED: Useful methods
@@ -239,10 +246,30 @@ class EventParticipant(models.Model):
     # further resources and memo
 
     class Meta:
-        unique_together = ("event", "user")
         verbose_name = _("Event Participant")
         verbose_name_plural = _("Event Participants")
         ordering = ['registration_date']
+        
+        constraints = [
+            # Official members: can't register twice for the same event
+            models.UniqueConstraint(
+                fields=["event", "user"],
+                name="unique_event_user_participation"
+            ),
+            # Guests: can't register twice for the same event
+            models.UniqueConstraint(
+                fields=["event", "guest_user"],
+                name="unique_event_guest_participation"
+            ),
+            # Prevent both a user and a guest record for the same participant slot
+            models.CheckConstraint(
+                check=(
+                    models.Q(user__isnull=False, guest_user__isnull=True) |
+                    models.Q(user__isnull=True, guest_user__isnull=False)
+                ),
+                name="either_user_or_guest_only"
+            ),
+        ]
     
     def __str__(self):
         return f"{self.user} - {self.event} ({self.get_status_display()})"
@@ -253,6 +280,7 @@ class GuestParticipant (models.Model): # TODO
     community.
     '''
     # choice fields
+    # TODO: general these should be guest roles as they should register via the system as an actual authentic user
     class ParticipantMinistryType(models.TextChoices):
         YFC = "YFC", _("Youth for Christ")
         CFC = "CFC", _("Couples for Christ")
@@ -270,6 +298,8 @@ class GuestParticipant (models.Model): # TODO
         PREFER_NOT_TO_SAY = "PREFER_NOT_TO_SAY", _("Prefer not to say")
 
     id = models.UUIDField(verbose_name=_("guest id"), default=uuid.uuid4, editable=False, primary_key=True)
+    
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="guest_events", null=True)
     
     # location
     chapter = models.ManyToManyField(ChapterLocation, related_name="chapter_events", blank=True)
@@ -366,6 +396,11 @@ class GuestParticipant (models.Model): # TODO
         related_name="guest_user_emergency_contacts",
         blank=True
     )
+    
+    def __str__(self):
+        return f"GUEST: {self.first_name} {self.last_name}  {self.event.event_code or 'no-event'}"
+    
+    # TODO: Extra field questions
     
 # EVENT PROPER MODELS
     

@@ -20,7 +20,8 @@ from events.api.views import (
     ChapterLocationViewSet,
     UnitLocationViewSet,
     AreaLocationViewSet,
-    EventViewSet, EventParticipantViewSet, EventRoleViewSet, EventServiceTeamMemberViewSet
+    EventViewSet, EventParticipantViewSet, EventRoleViewSet, EventServiceTeamMemberViewSet,
+    GuestParticipantViewSet, PublicEventResourceViewSet
 )
 
 
@@ -37,6 +38,8 @@ router.register(r'events', EventViewSet)
 router.register(r'event-service-team', EventServiceTeamMemberViewSet)
 router.register(r'event-roles', EventRoleViewSet)
 router.register(r'event-participants', EventParticipantViewSet)
+router.register(r"event-participants-guests", GuestParticipantViewSet)
+router.register(r"public-event-resources", PublicEventResourceViewSet)
 
 urlpatterns = [
     path('api/locations/', include(router.urls)),

@@ -6,7 +6,8 @@ from .models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
     EventTalk, EventWorkshop, 
     CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation,
-    GuestParticipant, PublicEventResource
+    GuestParticipant, PublicEventResource,
+    ExtraQuestion, QuestionChoice, QuestionAnswer
 )
 
 @admin.register(CountryLocation)
@@ -93,6 +94,12 @@ class EventWorkshopInline(admin.TabularInline):
     autocomplete_fields = ('primary_facilitator',)
     filter_horizontal = ('facilitators',)
     fields = ('title', 'primary_facilitator', 'start_time', 'end_time', 'is_published')
+    
+class QuestionChoiceInline(admin.TabularInline):
+    model = QuestionChoice
+    extra = 2  # number of blank choices to show
+    ordering = ["order"]
+
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
@@ -148,14 +155,8 @@ class EventServiceTeamMemberAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user', 'event', 'assigned_by') 
     
-@admin.register(EventParticipant)
-class EventParticipantAdmin(admin.ModelAdmin):
-    list_display = ('user', 'event', 'participant_type', 'status', 'registration_date')
-    list_filter = ('participant_type', 'status', 'registration_date', 'event__event_type')
-    search_fields = ('user__first_name', 'user__last_name', 'event__name')
-    readonly_fields = ('registration_date', 'confirmation_date', 'attended_date')
-    autocomplete_fields = ('user', 'event')
-    date_hierarchy = 'registration_date'
+
+
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user', 'event')
@@ -302,6 +303,42 @@ class PublicEventResourceAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         # Ensure only one of resource_link or resource_file is provided
         if obj.resource_link and obj.resource_file:
-            # You might want to add validation logic here
             pass
         super().save_model(request, obj, form, change)
+        
+
+@admin.register(ExtraQuestion)
+class ExtraQuestionAdmin(admin.ModelAdmin):
+    list_display = ("question_name", "event", "question_type", "required", "order")
+    list_filter = ("event", "question_type", "required")
+    search_fields = ("question_name", "question_body")
+    ordering = ["event", "order"]
+    inlines = [QuestionChoiceInline]
+    
+@admin.register(QuestionAnswer)
+class QuestionAnswerAdmin(admin.ModelAdmin):
+    list_display = ("participant", "question", "get_answer")
+    list_filter = ("question__event", "question__question_type")
+    search_fields = ("participant__user__username", "answer_text")
+
+    def get_answer(self, obj):
+        if obj.question.question_type in ["CHOICE", "MULTICHOICE"]:
+            return ", ".join(c.text for c in obj.selected_choices.all())
+        return obj.answer_text
+    get_answer.short_description = "Answer"
+    
+class QuestionAnswerInline(admin.TabularInline):
+    model = QuestionAnswer
+    extra = 0
+    show_change_link = True
+    filter_horizontal = ("selected_choices",)  # nice UI for multi-select
+    
+@admin.register(EventParticipant)
+class EventParticipantAdmin(admin.ModelAdmin):
+    list_display = ('user', 'event', 'participant_type', 'status', 'registration_date')
+    list_filter = ('participant_type', 'status', 'registration_date', 'event__event_type')
+    search_fields = ('user__first_name', 'user__last_name', 'event__name')
+    readonly_fields = ('registration_date', 'confirmation_date', 'attended_date')
+    autocomplete_fields = ('user', 'event')
+    date_hierarchy = 'registration_date'
+    inlines = [QuestionAnswerInline]
