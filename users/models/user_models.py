@@ -1,11 +1,14 @@
 from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
-import datetime
-import uuid
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.utils.translation import gettext_lazy as _
 from django.core.validators import MinValueValidator, MaxValueValidator
+
+import datetime
+import uuid
+
+from .metadata_models import Alergies, EmergencyContact
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, username=None, password=None, **extra_fields):
@@ -69,7 +72,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
 
     ministry = models.CharField(
         max_length=3, 
-        choices=MinistryType.choices,  # FIXED: Added .choices
+        choices=MinistryType.choices,  
         default=MinistryType.CFC,
         verbose_name=_("ministry")
     )
@@ -81,7 +84,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         verbose_name=_("email address")
     )
     
-    phone_number = models.CharField(  # CHANGED: Better to use CharField for phone numbers
+    phone_number = models.CharField( 
         max_length=20, 
         blank=True, 
         null=True,
@@ -146,6 +149,8 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         default=False,
         verbose_name=_("encoder status")
     )
+    
+    # other information
 
     profile_picture = models.ImageField(
         upload_to="profile-images/", 
@@ -159,6 +164,22 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         verbose_name=_("uploaded at")
     )
     
+    alergies = models.ManyToManyField(
+        Alergies, 
+        verbose_name=_("Individual alergies"),
+        related_name="users", 
+        blank=True, 
+        )
+    
+    emergency_contacts = models.ManyToManyField(
+        EmergencyContact,
+        verbose_name=_("Emergency contacts"),
+        related_name="user_emergency_contacts",
+        blank=True
+    )
+    
+    # service information
+    
     community_roles = models.ManyToManyField(
         "CommunityRole",         
         through="UserCommunityRole",
@@ -167,6 +188,8 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         help_text=_("role/s in the community"), 
         blank=True
     )
+    
+    
 
     objects = CustomUserManager()
 
@@ -326,3 +349,4 @@ class UserCommunityRole(models.Model):
 
     def __str__(self):
         return f"{self.user} → {self.role} (by {self.assigned_by or 'system'})"
+    

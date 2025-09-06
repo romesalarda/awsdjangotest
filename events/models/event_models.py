@@ -1,8 +1,11 @@
 from django.db import models
 from django.core import validators
-from .location_models import AreaLocation
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+
+from .location_models import AreaLocation, ChapterLocation, CountryLocation
+from users.models import Alergies, EmergencyContact
+
 import uuid
 
 class Event(models.Model):
@@ -32,7 +35,9 @@ class Event(models.Model):
         
     # Event type and basic information
     event_type = models.CharField(_("event type"), max_length=20, choices=EventType.choices, default=EventType.YOUTH_CAMP)
+    event_description = models.TextField(verbose_name=_("event description"), blank=True, null=True)
     name = models.CharField(_("event name"), max_length=200, blank=True, null=True)  
+    
     start_date = models.DateField(_("event start date"), blank=True, null=True)
     end_date = models.DateField(_("event end date"), blank=True, null=True)
     
@@ -144,8 +149,6 @@ class EventRole(models.Model):
         GENERAL_SERVICES = "GENERAL_SERVICES", _("General Services")
         CATERING = "CATERING", _("Catering")
         
-
-
     role_name = models.CharField(
         _("role name"), max_length=50, choices=EventRoleTypes.choices,
         unique=True
@@ -160,6 +163,8 @@ class EventRole(models.Model):
     
     def __str__(self):
         return self.get_role_name_display()
+    
+# EVENT PARTICIPANT MODELS
     
 class EventParticipant(models.Model):
     '''
@@ -180,12 +185,16 @@ class EventParticipant(models.Model):
         SPEAKER = "SPEAKER", _("Speaker")
         VOLUNTEER = "VOLUNTEER", _("Volunteer")
     
+    # essential info
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event = models.ForeignKey("Event", on_delete=models.CASCADE, related_name="participants")
+    
+    # if the user already exists in the database, then default to use this 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
                             related_name="event_participations", blank=True, null=True)
-    
-    # Participant information
+    guest_user = models.ForeignKey("GuestParticipant", on_delete=models.CASCADE, 
+                            related_name="event_participations", blank=True, null=True)
+    # Participant meta information
     participant_type = models.CharField(_("participant type"), max_length=20, 
                                       choices=ParticipantType.choices, default=ParticipantType.PARTICIPANT)
     status = models.CharField(_("status"), max_length=20, 
@@ -195,6 +204,11 @@ class EventParticipant(models.Model):
     registration_date = models.DateTimeField(_("registration date"), auto_now_add=True)
     confirmation_date = models.DateTimeField(_("confirmation date"), blank=True, null=True)
     attended_date = models.DateTimeField(_("attended date"), blank=True, null=True)
+    
+    # Consent Details
+    media_consent = models.BooleanField(default=False)
+    data_consent = models.BooleanField(default=False)
+    understood_registration = models.BooleanField(default=False)
     
     # Additional information
     dietary_restrictions = models.TextField(_("dietary restrictions"), blank=True, null=True)
@@ -207,8 +221,17 @@ class EventParticipant(models.Model):
     payment_date = models.DateTimeField(_("payment date"), blank=True, null=True)
     payment_method = models.CharField(_("payment method"), max_length=50, blank=True, null=True)
     
-    # Notes
     notes = models.TextField(_("notes"), blank=True, null=True)
+    # further resources and memo
+    resources = models.ManyToManyField("PublicEventResource", blank=True, related_name="event_resources")
+    memo = models.ForeignKey(
+        "PublicEventResource",
+        verbose_name=_("main event memo"),
+        on_delete=models.SET_NULL, 
+        blank=True, 
+        null=True,
+        related_name="event_memos"
+        )
     
     class Meta:
         unique_together = ("event", "user")
@@ -218,6 +241,126 @@ class EventParticipant(models.Model):
     
     def __str__(self):
         return f"{self.user} - {self.event} ({self.get_status_display()})"
+    
+class GuestParticipant (models.Model):
+    '''
+    Represents a person coming to the event who isn't registered within the community, data can be used later to register into the
+    community.
+    '''
+    # choice fields
+    class ParticipantMinistryType(models.TextChoices):
+        YFC = "YFC", _("Youth for Christ")
+        CFC = "CFC", _("Couples for Christ")
+        SFC = "SFC", _("Singles for Christ")
+        KFC = "KFC", _("Kids for Christ")
+        GUEST_YOUTH = "GTY", _("Guest Youth")
+        GUEST_ADULT = "GTA", _("Guest Adult") 
+        VOLUNTEER = "VLN", _("Volunteer")
+        VISITOR = "VST", _("Visitor")
+        OTHER = "OTH", _("Other")
+        
+    class GenderType(models.TextChoices):
+        MALE = "MALE", _("Male")
+        FEMALE = "FEMALE", _("Female")
+        PREFER_NOT_TO_SAY = "PREFER_NOT_TO_SAY", _("Prefer not to say")
+        
+    # location
+    chapter = models.ManyToManyField(ChapterLocation, related_name="chapter_events", blank=True)
+    outside_of_country = models.BooleanField(default=False)
+    country_of_origin = models.ForeignKey(CountryLocation, on_delete=models.SET_NULL, blank=True, null=True)
+    ministry_type = models.CharField(
+        verbose_name=_("Family Ministry"), 
+        choices=ParticipantMinistryType, 
+        default=ParticipantMinistryType.GUEST_YOUTH,
+        blank=True,
+        null=True
+        )
+    
+    email = models.EmailField(
+        unique=True, 
+        blank=True, 
+        null=True,
+        verbose_name=_("participant email address")
+    )
+    
+    phone_number = models.CharField( 
+        max_length=20, 
+        blank=True, 
+        null=True,
+        verbose_name=_("participant phone number"),
+    )
+    
+    first_name = models.CharField(
+        max_length=50,
+        verbose_name=_("participant first name"),
+        blank=True,
+        null=True
+    )
+    
+    last_name = models.CharField(
+        max_length=50,
+        verbose_name=_("participant last name"),
+        blank=True,
+        null=True
+    )
+    
+    middle_name = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True,
+        verbose_name=_("participant middle name")
+    )
+    
+    preferred_name = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True,
+        verbose_name=_("participant preferred name")
+    )
+    
+    gender = models.CharField(
+        max_length=20, 
+        choices=GenderType.choices,
+        verbose_name=_("participant gender"),
+        blank=True,
+        null=True
+    )
+    
+    date_of_birth = models.DateField(
+        verbose_name=_("participant date of birth"), 
+        blank=True, 
+        null=True,  
+        help_text=_("Format: YYYY-MM-DD")
+    )
+    
+    profile_picture = models.ImageField(
+        upload_to="guest-event-profile-images/", 
+        blank=True, 
+        null=True,
+        verbose_name=_("participant event profile picture")
+    )
+    
+    alergies = models.ManyToManyField(
+        Alergies, 
+        verbose_name=_("Individual alergies"),
+        related_name="user_alergies", 
+        blank=True, 
+        )
+    
+    further_alergy_information = models.TextField(
+        verbose_name=_("other alergy information"), 
+        blank=True, 
+        null=True
+        )
+    
+    emergency_contacts = models.ManyToManyField(
+        EmergencyContact,
+        verbose_name=_("Emergency contacts"),
+        related_name="guest_user_emergency_contacts",
+        blank=True
+    )
+    
+# EVENT PROPER MODELS
     
 class EventTalk(models.Model):
     '''
@@ -245,6 +388,7 @@ class EventTalk(models.Model):
     duration_minutes = models.IntegerField(_("duration in minutes"), validators=[validators.MinValueValidator(1)])
     
     # Speaker information
+    # TODO: Speakers must be registered within the community or guest speaker table too
     speaker = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, 
                                null=True, blank=True, related_name="event_talks")
     speaker_bio = models.TextField(_("speaker bio"), blank=True, null=True)
@@ -287,7 +431,7 @@ class EventWorkshop(models.Model):
     end_time = models.DateTimeField(_("end time"))
     duration_minutes = models.IntegerField(_("duration in minutes"), validators=[validators.MinValueValidator(1)])
     
-    # Facilitators
+    # Facilitators (workshop leader, etc)
     facilitators = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="facilitated_workshops", blank=True)
     primary_facilitator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, 
                                            null=True, blank=True, related_name="primary_workshops")
@@ -326,3 +470,16 @@ class EventWorkshop(models.Model):
     def current_participant_count(self):
         # This would typically be implemented with a through model for workshop participants
         return 0  # Placeholder - you'd implement actual counting logic
+
+class PublicEventResource(models.Model):
+    '''
+    represents a public resource e.g. a link to a further google form or a memo
+    '''
+    resource_name = models.CharField(verbose_name=_("public resource name"))
+    resource_link = models.CharField(verbose_name=_("public resource link"), blank=True, null=True)
+    resource_file = models.FileField(verbose_name=("file resource"), upload_to="public-event-resources")
+    created_at = models.DateTimeField(auto_now_add=True)
+    public_resource = models.BooleanField(default=False)
+    
+
+    
