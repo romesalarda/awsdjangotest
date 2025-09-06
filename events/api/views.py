@@ -83,7 +83,7 @@ class AreaLocationViewSet(viewsets.ModelViewSet):
     ordering = ['unit__unit_name', 'area_name']
     
     
-
+# youth camp viewsets
 
 class YouthCampViewSet(viewsets.ModelViewSet):
     queryset = YouthCamp.objects.all().select_related(

@@ -1,5 +1,6 @@
 from django.db import models
-from .location_models import AreaLocation, ClusterLocation
+from django.core import validators
+from .location_models import AreaLocation
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 import uuid
@@ -24,7 +25,9 @@ class YouthCamp(models.Model):
     areas_involved = models.ManyToManyField(AreaLocation, blank=True, related_name="involved_in_camps")  
     
     # Camp details
-    number_of_pax = models.IntegerField(_("number of participants"), blank=True, null=True)
+    number_of_pax = models.IntegerField(_("number of participants"), blank=True, null=True, default=0, validators=[
+        validators.MinValueValidator(0)
+    ])
     theme = models.CharField(_("camp theme"), max_length=200, blank=True, null=True)
     anchor_verse = models.CharField(_("anchor verse"), max_length=200, blank=True, null=True)
     

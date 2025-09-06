@@ -1,5 +1,5 @@
 from rest_framework import generics, permissions
-from .serialisers import UserSerializer, CommunityRoleSerialiser
+from .serializers import UserSerializer, CommunityRoleSerialiser
 from rest_framework import viewsets, permissions
 
 from django.contrib.auth import get_user_model

@@ -31,7 +31,7 @@ class YouthCampFilter(FilterSet):
         model = YouthCamp
         fields = [
             'area_type', 'specific_area', 'supervising_chapter_youth_head',
-            'supervising_chapter_CFC_coordinator', 'theme'
+            'supervising_chapter_CFC_coordinator', 'theme', 'name'
         ]
     
     def filter_by_status(self, queryset, name, value):
