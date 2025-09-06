@@ -31,7 +31,7 @@ class EventViewSet(viewsets.ModelViewSet):
         serializer = EventParticipantSerializer(participants, many=True)
         return Response(serializer.data)
     
-    @action(detail=True, methods=['get'])
+    @action(detail=True, methods=['get'], url_path="service-team")
     def service_team(self, request, pk=None):
         event = self.get_object()
         service_team = event.service_team_members.all()

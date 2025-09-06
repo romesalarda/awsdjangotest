@@ -1,12 +1,16 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+import uuid
 class Alergies (models.Model):
     '''
     represents allergies
     '''
     alergy_name = models.CharField(verbose_name=_("name of alergy"), max_length=200)
     alergy_description = models.TextField(verbose_name=_("alergy description"), blank=True, null=True)
+    
+    class Meta:
+        verbose_name_plural = _("Alergies")
     
     def __str__(self):
         return self.alergy_name
@@ -15,7 +19,8 @@ class EmergencyContact (models.Model):
     '''
     Represents emergency contact of an individual
     '''
-    
+    id = models.UUIDField(verbose_name=_("emergency contact id"), default=uuid.uuid4, editable=False, primary_key=True)
+
     class ContactRelationshipType (models.TextChoices):
         MOTHER = "MOTHER", _("Mother")
         FATHER = "FATHER", _("Father")

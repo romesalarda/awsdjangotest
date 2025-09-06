@@ -89,6 +89,7 @@ class EventServiceTeamMember(models.Model):
     '''
     Represents the ST member of an event (through model)
     '''
+    id = models.UUIDField(verbose_name=_("serivce team member id"), default=uuid.uuid4, editable=False, primary_key=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
                             related_name="event_memberships")  
     event = models.ForeignKey("Event", on_delete=models.CASCADE, 
@@ -116,6 +117,8 @@ class EventRole(models.Model):
     '''
     Roles in Events
     '''
+    id = models.UUIDField(verbose_name=_("event role id"), default=uuid.uuid4, editable=False, primary_key=True)
+
     class EventRoleTypes(models.TextChoices):
         ASSISTANT_TEAM_LEADER = "ASSISTANT_TEAM_LEADER", _("Assistant Team Leader")
         CAMP_SERVANT = "CAMP_SERVANT", _("Camp Servant")
@@ -263,7 +266,9 @@ class GuestParticipant (models.Model):
         MALE = "MALE", _("Male")
         FEMALE = "FEMALE", _("Female")
         PREFER_NOT_TO_SAY = "PREFER_NOT_TO_SAY", _("Prefer not to say")
-        
+
+    id = models.UUIDField(verbose_name=_("guest id"), default=uuid.uuid4, editable=False, primary_key=True)
+    
     # location
     chapter = models.ManyToManyField(ChapterLocation, related_name="chapter_events", blank=True)
     outside_of_country = models.BooleanField(default=False)
@@ -475,6 +480,7 @@ class PublicEventResource(models.Model):
     '''
     represents a public resource e.g. a link to a further google form or a memo
     '''
+    id = models.UUIDField(verbose_name=_("resource id"), default=uuid.uuid4, editable=False, primary_key=True)
     resource_name = models.CharField(verbose_name=_("public resource name"))
     resource_link = models.CharField(verbose_name=_("public resource link"), blank=True, null=True)
     resource_file = models.FileField(verbose_name=("file resource"), upload_to="public-event-resources")

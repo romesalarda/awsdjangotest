@@ -43,6 +43,9 @@ MAX_MEMBER_ID_FIRST_NAME = 5
 MAX_MEMBER_ID_LAST_NAME = 5
 
 class CommunityUser(AbstractBaseUser, PermissionsMixin):
+    '''
+    Main Auth Class for this project
+    '''
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     member_id = models.CharField(

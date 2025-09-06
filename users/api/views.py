@@ -1,10 +1,13 @@
-from rest_framework import generics, permissions, filters
+from rest_framework import filters, response
 from rest_framework.decorators import action
-from .serializers import *
 from rest_framework import viewsets, permissions
 from django_filters.rest_framework import DjangoFilterBackend
 from users.models import CommunityRole
 from django.contrib.auth import get_user_model
+
+from .serializers import *
+from events.api.serializers import SimplifiedEventSerializer
+from events.models import Event
 
 class CommunityUserViewSet(viewsets.ModelViewSet):
     queryset = get_user_model().objects.all()
@@ -20,7 +23,7 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
         user = self.get_object()
         roles = user.role_links.all()
         serializer = UserCommunityRoleSerializer(roles, many=True)
-        return Response(serializer.data)
+        return response.Response(serializer.data)
     
     @action(detail=True, methods=['get'])
     def events(self, request, pk=None):
@@ -33,7 +36,7 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
         service_serializer = SimplifiedEventSerializer(service_events, many=True)
         participant_serializer = SimplifiedEventSerializer(participant_events, many=True)
         
-        return Response({
+        return response.Response({
             'service_team_events': service_serializer.data,
             'participant_events': participant_serializer.data
         })

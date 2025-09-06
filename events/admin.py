@@ -1,5 +1,13 @@
 from django.contrib import admin
-from .models import CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation
+from django.utils.translation import gettext_lazy as _
+
+import datetime
+from .models import (
+    Event, EventServiceTeamMember, EventRole, EventParticipant,
+    EventTalk, EventWorkshop, 
+    CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation,
+    GuestParticipant, PublicEventResource
+)
 
 @admin.register(CountryLocation)
 class CountryLocationAdmin(admin.ModelAdmin):
@@ -53,13 +61,6 @@ class AreaLocationAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related(
             'unit__chapter__cluster__world_location'
         )
-        
-from django.contrib import admin
-from django.utils.translation import gettext_lazy as _
-from .models import (
-    Event, EventServiceTeamMember, EventRole, EventParticipant,
-    EventTalk, EventWorkshop
-)
 
 @admin.register(EventRole)
 class EventRoleAdmin(admin.ModelAdmin):
@@ -183,3 +184,124 @@ class EventWorkshopAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('event', 'primary_facilitator')
+    
+@admin.register(GuestParticipant)
+class GuestParticipantAdmin(admin.ModelAdmin):
+    list_display = (
+        'get_full_name', 'ministry_type_display', 'gender_display', 
+        'email', 'phone_number', 'outside_of_country'
+    )
+    list_filter = (
+        'ministry_type', 'gender', 'outside_of_country', 'date_of_birth',
+    )
+    search_fields = (
+        'first_name', 'last_name', 'email', 'phone_number', 
+        'preferred_name', 'country_of_origin__name'
+    )
+    filter_horizontal = ('chapter', 'alergies', 'emergency_contacts')
+    autocomplete_fields = ('country_of_origin',)
+    readonly_fields = ('age',)
+    date_hierarchy = 'date_of_birth'
+    
+    fieldsets = (
+        (_('Personal Information'), {
+            'fields': (
+                'first_name', 'last_name', 'middle_name', 'preferred_name',
+                'gender', 'date_of_birth', 'age', 'profile_picture'
+            )
+        }),
+        (_('Contact Information'), {
+            'fields': ('email', 'phone_number')
+        }),
+        (_('Ministry Information'), {
+            'fields': ('ministry_type',)
+        }),
+        (_('Location Information'), {
+            'fields': ('chapter', 'outside_of_country', 'country_of_origin')
+        }),
+        (_('Health & Safety'), {
+            'fields': ('alergies', 'further_alergy_information', 'emergency_contacts'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_full_name(self, obj):
+        names = []
+        if obj.first_name:
+            names.append(obj.first_name)
+        if obj.last_name:
+            names.append(obj.last_name)
+        return " ".join(names) or "Unknown"
+    get_full_name.short_description = _('Full Name')
+    
+    def ministry_type_display(self, obj):
+        return obj.get_ministry_type_display()
+    ministry_type_display.short_description = _('Ministry Type')
+    
+    def gender_display(self, obj):
+        return obj.get_gender_display() if obj.gender else "Not specified"
+    gender_display.short_description = _('Gender')
+    
+    def age(self, obj):
+        if obj.date_of_birth:
+            today = datetime.date.today()
+            return today.year - obj.date_of_birth.year - (
+                (today.month, today.day) < (obj.date_of_birth.month, obj.date_of_birth.day)
+            )
+        return None
+    age.short_description = _('Age')
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('country_of_origin').prefetch_related(
+            'chapter', 'alergies', 'emergency_contacts'
+        )
+
+class GuestParticipantInline(admin.TabularInline):
+    model = GuestParticipant
+    extra = 0
+    max_num = 10
+    fields = ('first_name', 'last_name', 'email', 'phone_number', 'ministry_type')
+    readonly_fields = ('first_name', 'last_name', 'email', 'phone_number', 'ministry_type')
+    can_delete = False
+    
+    def has_add_permission(self, request, obj=None):
+        return False
+
+@admin.register(PublicEventResource)
+class PublicEventResourceAdmin(admin.ModelAdmin):
+    list_display = (
+        'resource_name', 'resource_link_preview', 'has_file', 
+        'public_resource', 'created_at'
+    )
+    list_filter = ('public_resource', 'created_at')
+    search_fields = ('resource_name', 'resource_link')
+    readonly_fields = ('created_at',)
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        (_('Resource Information'), {
+            'fields': ('resource_name', 'resource_link', 'resource_file', 'public_resource')
+        }),
+        (_('Metadata'), {
+            'fields': ('created_at',),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def resource_link_preview(self, obj):
+        if obj.resource_link:
+            return obj.resource_link[:50] + '...' if len(obj.resource_link) > 50 else obj.resource_link
+        return "No link"
+    resource_link_preview.short_description = _('Resource Link Preview')
+    
+    def has_file(self, obj):
+        return bool(obj.resource_file)
+    has_file.boolean = True
+    has_file.short_description = _('Has File')
+    
+    def save_model(self, request, obj, form, change):
+        # Ensure only one of resource_link or resource_file is provided
+        if obj.resource_link and obj.resource_file:
+            # You might want to add validation logic here
+            pass
+        super().save_model(request, obj, form, change)
