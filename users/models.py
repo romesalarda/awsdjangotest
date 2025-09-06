@@ -98,6 +98,9 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         self.username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
             
         super().save(*args, **kwargs)
+        
+    def get_full_name(self):
+        return f"{self.first_name} {self.last_name}"
 
     def __str__(self):
         return self.member_id
@@ -109,16 +112,16 @@ class CommunityRole (models.Model):
     class RoleType(models.TextChoices):
         MEMBER = "MEM", _("MEMBER")
         
-        NATIONAL_HEAD = "NAH", _("NATIONAL_HEAD")
-        YCOM_NATIONAL_HEAD = "YNH", _("YCOM_NATIONAL_HEAD")
-        MUSIC_MIN_NATIONAL_HEAD = "MNH", _ ("MUSIC_MIN_NATIONAL_HEAD")
+        NATIONAL_HEAD = "NATIONAL_HEAD", _("NATIONAL_HEAD")
+        YCOM_NATIONAL_HEAD = "YCOM_NATIONAL_HEAD", _("YCOM_NATIONAL_HEAD")
+        MUSIC_MIN_NATIONAL_HEAD = "MUSIC_MIN_NATIONAL_HEAD", _ ("MUSIC_MIN_NATIONAL_HEAD")
         
-        CLUSTER_YOUTH_HEAD = "CLH", _("CLUSTER_HEAD")
-        AREA_YOUTH_HEAD = "ARH", _("AREA_HEAD")
-        CHAPTER_YOUTH_HEAD = "CPH", _("CHAPTER_HEAD")
-        HOUSEHOLD_YOUTH_HEAD = "HHH", _("HOUSEHOLD_HEAD")
-        SUPPORTING_HOUSEHOLD_HEAD = "SHH", _("SUPPORTING_HOUSEHOLD_HEAD")
-        SECTOR_YOUTH_HEAD = "SCH", _("SECTOR_HEAD")
+        CLUSTER_YOUTH_HEAD = "CLUSTER_HEAD", _("CLUSTER_HEAD")
+        AREA_YOUTH_HEAD = "AREA_HEAD", _("AREA_HEAD")
+        CHAPTER_YOUTH_HEAD = "CHAPTER_HEAD", _("CHAPTER_HEAD")
+        HOUSEHOLD_YOUTH_HEAD = "HOUSEHOLD_HEAD", _("HOUSEHOLD_HEAD")
+        SUPPORTING_HOUSEHOLD_HEAD = "SUPPORTING_HOUSEHOLD_HEAD", _("SUPPORTING_HOUSEHOLD_HEAD")
+        SECTOR_YOUTH_HEAD = "SECTOR_HEAD", _("SECTOR_HEAD")
     
     role_name = models.CharField(verbose_name="name-of-role", choices=RoleType, default=RoleType.MEMBER)
     role_description = models.TextField(max_length=500)

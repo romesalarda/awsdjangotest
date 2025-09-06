@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model 
+from users.models import UserCommunityRole
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -17,3 +18,10 @@ class UserSerializer(serializers.ModelSerializer):
         user = get_user_model().objects.create_user(**validated_data)
         user.save()
         return user 
+    
+class CommunityRoleSerialiser (serializers.ModelSerializer):
+    
+    class Meta:
+        model = UserCommunityRole
+        fields = "__all__"
+        

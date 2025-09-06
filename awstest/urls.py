@@ -13,11 +13,34 @@ from drf_yasg import openapi
 from rest_framework.routers import DefaultRouter
 
 # from users.views import UserRegistrationView, UserListCreateView
-from users.views import UserViewSet
+from users.api.views import UserViewSet, CommunityRoleViewset
+from events.api.views import (
+    CountryLocationViewSet,
+    ClusterLocationViewSet,
+    ChapterLocationViewSet,
+    UnitLocationViewSet,
+    AreaLocationViewSet,
+    YouthCampViewSet,
+    YouthCampServiceTeamMemberViewSet,
+    YouthCampRoleViewSet
+)
+
 
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
+router.register(r'community-roles', CommunityRoleViewset)
+router.register(r'countries', CountryLocationViewSet)
+router.register(r'clusters', ClusterLocationViewSet)
+router.register(r'chapters', ChapterLocationViewSet)
+router.register(r'units', UnitLocationViewSet)
+router.register(r'areas', AreaLocationViewSet)
+router.register(r'youth-camps', YouthCampViewSet)
+router.register(r'youth-camp-st', YouthCampServiceTeamMemberViewSet)
+router.register(r'youth-camp-roles', YouthCampRoleViewSet)
 
+urlpatterns = [
+    path('api/locations/', include(router.urls)),
+]
     
 # Swagger schema view
 schema_view = get_schema_view(

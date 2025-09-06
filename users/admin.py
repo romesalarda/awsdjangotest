@@ -2,6 +2,11 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import CommunityUser, UserCommunityRole, CommunityRole
 
+class UserCommunityThroughInLine(admin.TabularInline):
+    model = UserCommunityRole
+    extra = 1
+    fk_name = "user"
+
 @admin.register(CommunityUser)
 class CustomUserAdmin(UserAdmin):
     model = CommunityUser
@@ -31,6 +36,7 @@ class CustomUserAdmin(UserAdmin):
 
     search_fields = ("member_id", "email", "first_name", "last_name")
     ordering = ("member_id",)
+    inlines = [UserCommunityThroughInLine]
 
 admin.site.register(UserCommunityRole)
 admin.site.register(CommunityRole)
