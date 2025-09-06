@@ -1,6 +1,5 @@
 from django.contrib import admin
-from .models import CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation, YouthCamp, YouthCampServiceTeamMember, YouthCampRole
-from django.utils.html import format_html
+from .models import CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation
 
 @admin.register(CountryLocation)
 class CountryLocationAdmin(admin.ModelAdmin):
@@ -54,84 +53,133 @@ class AreaLocationAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related(
             'unit__chapter__cluster__world_location'
         )
+        
+from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
+from .models import (
+    Event, EventServiceTeamMember, EventRole, EventParticipant,
+    EventTalk, EventWorkshop
+)
 
-@admin.register(YouthCampRole)
-class YouthCampRoleAdmin(admin.ModelAdmin):
-    list_display = ('role_name', 'get_role_name_display', 'description_short')
-    list_filter = ('role_name',)
+@admin.register(EventRole)
+class EventRoleAdmin(admin.ModelAdmin):
+    list_display = ('role_name', 'get_role_name_display', 'description')
     search_fields = ('role_name', 'description')
     ordering = ('role_name',)
-    
-    def description_short(self, obj):
-        return obj.description[:50] + '...' if obj.description and len(obj.description) > 50 else obj.description
-    description_short.short_description = 'Description'
 
-@admin.register(YouthCampServiceTeamMember)
-class YouthCampServiceTeamMemberAdmin(admin.ModelAdmin):
-    list_display = ('user', 'youth_camp', 'roles_list', 'head_of_role', 'assigned_at', 'assigned_by')
-    list_filter = ('youth_camp', 'head_of_role', 'roles', 'assigned_at')
-    search_fields = ('user__first_name', 'user__last_name', 'user__email', 'youth_camp__name')
-    list_select_related = ('user', 'youth_camp', 'assigned_by')
-    autocomplete_fields = ('user', 'youth_camp', 'assigned_by', 'roles')
-    readonly_fields = ('assigned_at',)
-    
-    def roles_list(self, obj):
-        return ", ".join([str(role) for role in obj.roles.all()])
-    roles_list.short_description = 'Roles'
+class EventServiceTeamMemberInline(admin.TabularInline):
+    model = EventServiceTeamMember
+    extra = 1
+    autocomplete_fields = ('user', 'assigned_by')
+    filter_horizontal = ('roles',)
 
-@admin.register(YouthCamp)
-class YouthCampAdmin(admin.ModelAdmin):
-    list_display = ('name', 'start_date', 'end_date', 'venue_name', 'area_type', 'specific_area', 'service_team_count')
-    list_filter = ('area_type', 'start_date', 'end_date', 'specific_area')
-    search_fields = ('name', 'theme', 'venue_name', 'venue_address', 'anchor_verse')
-    filter_horizontal = ('areas_involved',)
-    autocomplete_fields = ('specific_area', 'supervising_chapter_youth_head', 'supervising_chapter_CFC_coordinator')
-    readonly_fields = ('duration_days_display', 'service_team_list')
+class EventParticipantInline(admin.TabularInline):
+    model = EventParticipant
+    extra = 1
+    autocomplete_fields = ('user',)
+    readonly_fields = ('registration_date', 'confirmation_date', 'attended_date')
+    fields = ('user', 'participant_type', 'status', 'registration_date')
+
+class EventTalkInline(admin.TabularInline):
+    model = EventTalk
+    extra = 1
+    autocomplete_fields = ('speaker',)
+    fields = ('title', 'talk_type', 'speaker', 'start_time', 'end_time', 'is_published')
+
+class EventWorkshopInline(admin.TabularInline):
+    model = EventWorkshop
+    extra = 1
+    autocomplete_fields = ('primary_facilitator',)
+    filter_horizontal = ('facilitators',)
+    fields = ('title', 'primary_facilitator', 'start_time', 'end_time', 'is_published')
+
+@admin.register(Event)
+class EventAdmin(admin.ModelAdmin):
+    list_display = ('name', 'event_type', 'start_date', 'end_date', 'venue_name', 'number_of_pax')
+    list_filter = ('event_type', 'area_type', 'start_date')
+    search_fields = ('name', 'theme', 'venue_name', 'venue_address')
+    date_hierarchy = 'start_date'
+    ordering = ('-start_date',)
+    readonly_fields = ('duration_days',)
+    
     fieldsets = (
-        ('Basic Information', {
-            'fields': ('name', 'start_date', 'end_date', 'theme', 'anchor_verse', 'number_of_pax')
-        }),
-        ('Location Information', {
-            'fields': ('venue_name', 'venue_address', 'specific_area', 'area_type', 'areas_involved')
-        }),
-        ('Supervision', {
-            'fields': ('supervising_chapter_youth_head', 'supervising_chapter_CFC_coordinator')
-        }),
-        ('Statistics', {
-            'fields': ('duration_days_display', 'service_team_list'),
-            'classes': ('collapse',)
-        }),
+        (_('Basic Information'), {'fields': (
+            'name', 'event_type', 'start_date', 'end_date', 'duration_days'
+        )}),
+        (_('Location Information'), {'fields': (
+            'venue_name', 'venue_address', 'specific_area', 'area_type', 'areas_involved'
+        )}),
+        (_('Event Details'), {'fields': (
+            'number_of_pax', 'theme', 'anchor_verse'
+        )}),
+        (_('Supervision'), {'fields': (
+            'supervising_chapter_youth_head', 'supervising_chapter_CFC_coordinator'
+        )}),
     )
     
-    def service_team_count(self, obj):
-        return obj.service_team_members.count()
-    service_team_count.short_description = 'Service Team Count'
+    filter_horizontal = ('areas_involved',)
+    autocomplete_fields = (
+        'specific_area', 'supervising_chapter_youth_head', 
+        'supervising_chapter_CFC_coordinator'
+    )
     
-    def duration_days_display(self, obj):
-        return obj.duration_days
-    duration_days_display.short_description = 'Duration (days)'
+    inlines = [
+        EventServiceTeamMemberInline,
+        EventParticipantInline,
+        EventTalkInline,
+        EventWorkshopInline
+    ]
     
-    def service_team_list(self, obj):
-        members = obj.service_team_members.all().select_related('user')
-        if not members:
-            return "No service team members assigned"
-        
-        html = '<ul>'
-        for member in members:
-            roles = ", ".join([str(role) for role in member.roles.all()])
-            html += f'<li>{member.user.get_full_name()} - {roles} {"(Head)" if member.head_of_role else ""}</li>'
-        html += '</ul>'
-        return format_html(html)
-    service_team_list.short_description = 'Service Team Members'
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related(
+            'areas_involved', 'service_team'
+        )
+
+@admin.register(EventServiceTeamMember)
+class EventServiceTeamMemberAdmin(admin.ModelAdmin):
+    list_display = ('user', 'event', 'head_of_role', 'assigned_at')  
+    list_filter = ('head_of_role', 'assigned_at', 'event__event_type')  
+    search_fields = ('user__first_name', 'user__last_name', 'event__name')  
+    autocomplete_fields = ('user', 'event', 'assigned_by')
+    filter_horizontal = ('roles',)
+    date_hierarchy = 'assigned_at'
     
-    # Inline for service team members
-    class YouthCampServiceTeamMemberInline(admin.TabularInline):
-        model = YouthCampServiceTeamMember
-        extra = 1
-        autocomplete_fields = ('user', 'assigned_by', 'roles')
-        readonly_fields = ('assigned_at',)
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('user', 'event', 'assigned_by') 
     
-    def get_inlines(self, request, obj=None):
-        if obj:  # Only show inline when editing an existing object
-            return [self.YouthCampServiceTeamMemberInline]
-        return []
+@admin.register(EventParticipant)
+class EventParticipantAdmin(admin.ModelAdmin):
+    list_display = ('user', 'event', 'participant_type', 'status', 'registration_date')
+    list_filter = ('participant_type', 'status', 'registration_date', 'event__event_type')
+    search_fields = ('user__first_name', 'user__last_name', 'event__name')
+    readonly_fields = ('registration_date', 'confirmation_date', 'attended_date')
+    autocomplete_fields = ('user', 'event')
+    date_hierarchy = 'registration_date'
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('user', 'event')
+
+@admin.register(EventTalk)
+class EventTalkAdmin(admin.ModelAdmin):
+    list_display = ('title', 'event', 'talk_type', 'speaker', 'start_time', 'is_published')
+    list_filter = ('talk_type', 'is_published', 'start_time')
+    search_fields = ('title', 'event__name', 'speaker__first_name', 'speaker__last_name')
+    autocomplete_fields = ('event', 'speaker')
+    date_hierarchy = 'start_time'
+    ordering = ('-start_time',)
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('event', 'speaker')
+
+@admin.register(EventWorkshop)
+class EventWorkshopAdmin(admin.ModelAdmin):
+    list_display = ('title', 'event', 'primary_facilitator', 'start_time', 'is_published')
+    list_filter = ('is_published', 'is_full', 'start_time')
+    search_fields = ('title', 'event__name', 'primary_facilitator__first_name', 'primary_facilitator__last_name')
+    autocomplete_fields = ('event', 'primary_facilitator')
+    filter_horizontal = ('facilitators',)
+    date_hierarchy = 'start_time'
+    ordering = ('-start_time',)
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('event', 'primary_facilitator')

@@ -2,21 +2,26 @@ from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
 import datetime
-
 import uuid
-
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.utils.translation import gettext_lazy as _
-
-from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, username=None, password=None, **extra_fields):
         if not extra_fields.get("first_name") or not extra_fields.get("last_name"):
             raise ValueError("Users must have a first and last name")
+        
+        # Generate username if not provided
+        if not username:
+            ministry = extra_fields.get("ministry", "CFC")
+            first_name = extra_fields.get("first_name", "")
+            last_name = extra_fields.get("last_name", "")
+            username = slugify(f"{ministry}-{first_name}{last_name}").upper()
+            
         email = extra_fields.get("email")
         user = self.model(
+            username=username,
             email=self.normalize_email(email) if email else None,
             **extra_fields
         )        
@@ -37,107 +42,287 @@ MAX_MEMBER_ID_LAST_NAME = 5
 class CommunityUser(AbstractBaseUser, PermissionsMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
-    member_id = models.CharField(max_length=100, unique=True, editable=False)
+    member_id = models.CharField(
+        max_length=100, 
+        unique=True, 
+        editable=False,
+        verbose_name=_("member ID")
+    )
 
-    username = models.CharField(max_length=100, unique=True)
+    username = models.CharField(
+        max_length=100, 
+        unique=True,
+        verbose_name=_("username")
+    )
 
     class MinistryType(models.TextChoices):
-        YFC = "YFC", _("YOUTH_FOR_CHRIST")
-        CFC = "CFC", _("COUPLES_FOR_CHRIST")
-        SFC = "SFC", _("SINGLES_FOR_CHRIST")
-        KFC = "KFC", _("KIDS_FOR_CHRIST")
+        YFC = "YFC", _("Youth for Christ")
+        CFC = "CFC", _("Couples for Christ")
+        SFC = "SFC", _("Singles for Christ")
+        KFC = "KFC", _("Kids for Christ")
+        GUEST = "GST", _("Guest") 
+        VOLUNTEER = "VLN", _("Volunteer")
         
     class GenderType(models.TextChoices):
-        MALE = "MALE", _("MALE")
-        FEMALE = "FEMALE", _("FEMALE")
+        MALE = "MALE", _("Male")
+        FEMALE = "FEMALE", _("Female")
 
-    ministry = models.CharField(max_length=3, choices=MinistryType, default=MinistryType.CFC)
-    email = models.EmailField(unique=True, blank=True, null=True)
-    phone_number = models.IntegerField(blank=True, null=True)
+    ministry = models.CharField(
+        max_length=3, 
+        choices=MinistryType.choices,  # FIXED: Added .choices
+        default=MinistryType.CFC,
+        verbose_name=_("ministry")
+    )
     
-    first_name = models.CharField(max_length=50)
-    last_name = models.CharField(max_length=50)
-    middle_name = models.CharField(max_length=50, blank=True, null=True)
-    preferred_name = models.CharField(max_length=50, blank=True, null=True)
+    email = models.EmailField(
+        unique=True, 
+        blank=True, 
+        null=True,
+        verbose_name=_("email address")
+    )
     
-    gender = models.CharField(max_length=6, choices=GenderType)
-    age = models.IntegerField(blank=True, null=True, validators=[MinValueValidator(0), MaxValueValidator(150)])
-    date_of_birth = models.DateField(verbose_name="DOB", blank=True, null=True, default=datetime.date.today)
+    phone_number = models.CharField(  # CHANGED: Better to use CharField for phone numbers
+        max_length=20, 
+        blank=True, 
+        null=True,
+        verbose_name=_("phone number")
+    )
+    
+    first_name = models.CharField(
+        max_length=50,
+        verbose_name=_("first name")
+    )
+    
+    last_name = models.CharField(
+        max_length=50,
+        verbose_name=_("last name")
+    )
+    
+    middle_name = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True,
+        verbose_name=_("middle name")
+    )
+    
+    preferred_name = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True,
+        verbose_name=_("preferred name")
+    )
+    
+    gender = models.CharField(
+        max_length=6, 
+        choices=GenderType.choices,  # FIXED: Added .choices
+        verbose_name=_("gender")
+    )
+    
+    age = models.IntegerField(
+        blank=True, 
+        null=True, 
+        validators=[MinValueValidator(0), MaxValueValidator(150)],
+        verbose_name=_("age")
+    )
+    
+    date_of_birth = models.DateField(
+        verbose_name=_("date of birth"), 
+        blank=True, 
+        null=True,  # CHANGED: Removed default value for DOB
+        help_text=_("Format: YYYY-MM-DD")
+    )
 
-    is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
-    is_encoder = models.BooleanField(default=False)
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name=_("active")
+    )
+    
+    is_staff = models.BooleanField(
+        default=False,
+        verbose_name=_("staff status")
+    )
+    
+    is_encoder = models.BooleanField(
+        default=False,
+        verbose_name=_("encoder status")
+    )
 
-    profile_picture = models.ImageField(upload_to="profile-images/", blank=True, null=True)
-    uploaded_at = models.DateTimeField(auto_now_add=True)
+    profile_picture = models.ImageField(
+        upload_to="profile-images/", 
+        blank=True, 
+        null=True,
+        verbose_name=_("profile picture")
+    )
+    
+    uploaded_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("uploaded at")
+    )
     
     community_roles = models.ManyToManyField(
         "CommunityRole",         
         through="UserCommunityRole",
         through_fields=("user", "role"),
         related_name="users", 
-        help_text="role/s in the community", 
+        help_text=_("role/s in the community"), 
         blank=True
-        )
+    )
 
     objects = CustomUserManager()
 
     USERNAME_FIELD = "username"
-    REQUIRED_FIELDS = ["first_name", "last_name"]
+    REQUIRED_FIELDS = ["first_name", "last_name", "gender"]
     
     class Meta:
-        unique_together = ("first_name", "last_name")
+        verbose_name = _("community user")
+        verbose_name_plural = _("community users")
+        # REMOVED: unique_together for first_name/last_name as it's too restrictive
+        ordering = ["last_name", "first_name"]
 
     def save(self, *args, **kwargs):
-        
         if not self.member_id:
-            name_slug = slugify(f"{self.first_name[:MAX_MEMBER_ID_FIRST_NAME]}{self.last_name[:MAX_MEMBER_ID_LAST_NAME]}").upper()
-            self.uploaded_at = datetime.date.today()
-            self.member_id = f"{str(self.uploaded_at.year)}-{name_slug}{str(self.id)[:MAX_MEMBER_ID_LENGTH - len(name_slug) - 4]}"
+            # Generate member ID
+            name_slug = slugify(
+                f"{self.first_name[:MAX_MEMBER_ID_FIRST_NAME]}{self.last_name[:MAX_MEMBER_ID_LAST_NAME]}"
+            ).upper()
             
-        self.username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
+            # Use current year if uploaded_at is not set
+            year = self.uploaded_at.year if self.uploaded_at else datetime.datetime.now().year
+            
+            # Generate unique member ID
+            self.member_id = f"{year}-{name_slug}{str(self.id)[:MAX_MEMBER_ID_LENGTH - len(name_slug) - 5]}"
+            
+        # Ensure username is unique
+        if not self.username:
+            base_username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
+            self.username = base_username
+            
+            # Check for duplicates and append number if needed
+            counter = 1
+            while CommunityUser.objects.filter(username=self.username).exclude(pk=self.pk).exists():
+                self.username = f"{base_username}{counter}"
+                counter += 1
+                
+        # Calculate age from date of birth if provided
+        if self.date_of_birth and not self.age:
+            today = datetime.date.today()
+            self.age = today.year - self.date_of_birth.year - (
+                (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day)
+            )
             
         super().save(*args, **kwargs)
         
     def get_full_name(self):
         return f"{self.first_name} {self.last_name}"
 
+    def get_short_name(self):
+        return self.preferred_name or self.first_name
+
     def __str__(self):
-        return self.member_id
-    
-class CommunityRole (models.Model):
+        return f"{self.member_id} - {self.get_full_name()}"
+
+class CommunityRole(models.Model):
     '''
     Role in the community
     '''
     class RoleType(models.TextChoices):
-        MEMBER = "MEM", _("MEMBER")
-        
-        NATIONAL_HEAD = "NATIONAL_HEAD", _("NATIONAL_HEAD")
-        YCOM_NATIONAL_HEAD = "YCOM_NATIONAL_HEAD", _("YCOM_NATIONAL_HEAD")
-        MUSIC_MIN_NATIONAL_HEAD = "MUSIC_MIN_NATIONAL_HEAD", _ ("MUSIC_MIN_NATIONAL_HEAD")
-        
-        CLUSTER_YOUTH_HEAD = "CLUSTER_HEAD", _("CLUSTER_HEAD")
-        AREA_YOUTH_HEAD = "AREA_HEAD", _("AREA_HEAD")
-        CHAPTER_YOUTH_HEAD = "CHAPTER_HEAD", _("CHAPTER_HEAD")
-        HOUSEHOLD_YOUTH_HEAD = "HOUSEHOLD_HEAD", _("HOUSEHOLD_HEAD")
-        SUPPORTING_HOUSEHOLD_HEAD = "SUPPORTING_HOUSEHOLD_HEAD", _("SUPPORTING_HOUSEHOLD_HEAD")
-        SECTOR_YOUTH_HEAD = "SECTOR_HEAD", _("SECTOR_HEAD")
+        MEMBER = "MEM", _("Member")
+        NATIONAL_HEAD = "NAT_HEAD", _("National Head")
+        YCOM_NATIONAL_HEAD = "YCOM_NAT_HEAD", _("YCOM National Head")
+        MUSIC_MIN_NATIONAL_HEAD = "MUSIC_NAT_HEAD", _("Music Ministry National Head")
+        CLUSTER_YOUTH_HEAD = "CLUSTER_HEAD", _("Cluster Head")
+        AREA_YOUTH_HEAD = "AREA_HEAD", _("Area Head")
+        CHAPTER_YOUTH_HEAD = "CHAPTER_HEAD", _("Chapter Head")
+        HOUSEHOLD_YOUTH_HEAD = "HOUSEHOLD_HEAD", _("Household Head")
+        SUPPORTING_HOUSEHOLD_HEAD = "SUPPORT_HH_HEAD", _("Supporting Household Head")
+        SECTOR_YOUTH_HEAD = "SECTOR_HEAD", _("Sector Head")
+        VOLUNTEER = "VOLUNTEER", _("Volunteer")
+        GUEST = "GUEST", _("Guest")
     
-    role_name = models.CharField(verbose_name="name-of-role", choices=RoleType, default=RoleType.MEMBER)
-    role_description = models.TextField(max_length=500)
-    is_core = models.BooleanField(verbose_name="is_core_role", default=False, help_text="Defines if the role is a core role")
+    role_name = models.CharField(
+        max_length=20,  # FIXED: Added max_length
+        choices=RoleType.choices,  # FIXED: Added .choices
+        default=RoleType.MEMBER,
+        verbose_name=_("role name")
+    )
     
-    def __str__(self):
-        return self.role_name
+    role_description = models.TextField(
+        max_length=500,
+        verbose_name=_("role description")
+    )
     
-class UserCommunityRole(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="role_links")
-    role = models.ForeignKey("CommunityRole", on_delete=models.CASCADE, related_name="user_links")
-    assigned_at = models.DateTimeField(auto_now_add=True)
-    assigned_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_roles") 
+    is_core = models.BooleanField(
+        default=False, 
+        verbose_name=_("is core role"),
+        help_text=_("Defines if the role is a core role")
+    )
     
     class Meta:
-        unique_together = ("user", "role") 
+        verbose_name = _("community role")
+        verbose_name_plural = _("community roles")
+        ordering = ["role_name"]
+    
+    def __str__(self):
+        return self.get_role_name_display()
+
+class UserCommunityRole(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name="role_links",
+        verbose_name=_("user")
+    )
+    
+    role = models.ForeignKey(
+        "CommunityRole", 
+        on_delete=models.CASCADE, 
+        related_name="user_links",
+        verbose_name=_("role")
+    )
+    
+    assigned_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("assigned at")
+    )
+    
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name="assigned_roles",
+        verbose_name=_("assigned by")
+    ) 
+    
+    # Additional fields for role context
+    start_date = models.DateField(
+        verbose_name=_("start date"),
+        default=datetime.date.today
+    )
+    
+    end_date = models.DateField(
+        verbose_name=_("end date"),
+        blank=True,
+        null=True
+    )
+    
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name=_("active")
+    )
+    
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("notes"),
+        help_text=_("Additional information about this role assignment")
+    )
+    
+    class Meta:
+        unique_together = ("user", "role")
+        verbose_name = _("user community role")
+        verbose_name_plural = _("user community roles")
+        ordering = ["-assigned_at"]
 
     def __str__(self):
         return f"{self.user} → {self.role} (by {self.assigned_by or 'system'})"

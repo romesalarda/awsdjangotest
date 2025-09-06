@@ -13,30 +13,30 @@ from drf_yasg import openapi
 from rest_framework.routers import DefaultRouter
 
 # from users.views import UserRegistrationView, UserListCreateView
-from users.api.views import UserViewSet, CommunityRoleViewset
+from users.api.views import *
 from events.api.views import (
     CountryLocationViewSet,
     ClusterLocationViewSet,
     ChapterLocationViewSet,
     UnitLocationViewSet,
     AreaLocationViewSet,
-    YouthCampViewSet,
-    YouthCampServiceTeamMemberViewSet,
-    YouthCampRoleViewSet
+    EventViewSet, EventParticipantViewSet, EventRoleViewSet, EventServiceTeamMemberViewSet
 )
 
 
 router = DefaultRouter()
-router.register(r'users', UserViewSet)
-router.register(r'community-roles', CommunityRoleViewset)
+router.register(r'users', CommunityUserViewSet)
+router.register(r'community-roles', CommunityRoleViewSet)
+router.register(r'user-roles', UserCommunityRoleViewSet)
 router.register(r'countries', CountryLocationViewSet)
 router.register(r'clusters', ClusterLocationViewSet)
 router.register(r'chapters', ChapterLocationViewSet)
 router.register(r'units', UnitLocationViewSet)
 router.register(r'areas', AreaLocationViewSet)
-router.register(r'youth-camps', YouthCampViewSet)
-router.register(r'youth-camp-st', YouthCampServiceTeamMemberViewSet)
-router.register(r'youth-camp-roles', YouthCampRoleViewSet)
+router.register(r'events', EventViewSet)
+router.register(r'event-service-team', EventServiceTeamMemberViewSet)
+router.register(r'event-roles', EventRoleViewSet)
+router.register(r'event-participants', EventParticipantViewSet)
 
 urlpatterns = [
     path('api/locations/', include(router.urls)),

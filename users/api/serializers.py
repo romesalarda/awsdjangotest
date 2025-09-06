@@ -1,27 +1,55 @@
+# serializers.py
 from rest_framework import serializers
-from django.contrib.auth import get_user_model 
-from users.models import UserCommunityRole
+from users.models import (
+    CommunityUser, CommunityRole, UserCommunityRole
+)
+from django.utils.translation import gettext_lazy as _
 
-
-class UserSerializer(serializers.ModelSerializer):
-    
-    ministry = serializers.ChoiceField(choices=get_user_model().MinistryType)
-    username = serializers.CharField(read_only=True)
-    password = serializers.CharField(required=False, write_only=True)
-    profile_picture = serializers.ImageField()
-    
+class CommunityRoleSerializer(serializers.ModelSerializer):
     class Meta:
-        model = get_user_model()
-        fields = ("id", "member_id","username", "password", "last_name", "first_name", "ministry", "profile_picture")
+        model = CommunityRole
+        fields = '__all__'
 
-    def create(self, validated_data):
-        user = get_user_model().objects.create_user(**validated_data)
-        user.save()
-        return user 
-    
-class CommunityRoleSerialiser (serializers.ModelSerializer):
+class UserCommunityRoleSerializer(serializers.ModelSerializer):
+    role_name = serializers.CharField(source='role.get_role_name_display', read_only=True)
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
     
     class Meta:
         model = UserCommunityRole
-        fields = "__all__"
-        
+        fields = '__all__'
+
+class CommunityUserSerializer(serializers.ModelSerializer):
+    roles = UserCommunityRoleSerializer(source='role_links', many=True, read_only=True)
+    full_name = serializers.CharField(source='get_full_name', read_only=True)
+    short_name = serializers.CharField(source='get_short_name', read_only=True)
+    
+    class Meta:
+        model = CommunityUser
+        fields = '__all__'
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'member_id': {'read_only': True},
+            'username': {'read_only': True},
+        }
+    
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        user = CommunityUser.objects.create(**validated_data)
+        if password:
+            user.set_password(password)
+            user.save()
+        return user
+    
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
+
+class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CommunityUser
+        fields = ('id', 'member_id', 'first_name', 'last_name', 'ministry')
