@@ -11,6 +11,9 @@ import uuid
 from .metadata_models import Alergies, EmergencyContact
 
 class CustomUserManager(BaseUserManager):
+    '''
+    Customer user manager for the community user model
+    '''
     def create_user(self, username=None, password=None, **extra_fields):
         if not extra_fields.get("first_name") or not extra_fields.get("last_name"):
             raise ValueError("Users must have a first and last name")
@@ -44,7 +47,7 @@ MAX_MEMBER_ID_LAST_NAME = 5
 
 class CommunityUser(AbstractBaseUser, PermissionsMixin):
     '''
-    Main Auth Class for this project
+    Main Auth Class for all users and is required for all events
     '''
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
@@ -66,8 +69,11 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         CFC = "CFC", _("Couples for Christ")
         SFC = "SFC", _("Singles for Christ")
         KFC = "KFC", _("Kids for Christ")
-        GUEST = "GST", _("Guest") 
-        VOLUNTEER = "VLN", _("Volunteer")
+        GUEST = "GST", _("Guest") # guest is too general, but generally represents a person that is not yet officially part of the community
+        # I.e. those that haven't gone through a youth camp
+        VOLUNTEER = "VLN", _("Volunteer") # not looking to join the community but is attending an event e.g. a priest
+        #TODO: YOUTH_GUEST = "YGT", _ ("Youth Guest") <17
+        #TODO: ADULT_GUEST = "AGT", _ ("Adult Guest") 18 +
         
     class GenderType(models.TextChoices):
         MALE = "MALE", _("Male")

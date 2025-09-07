@@ -64,7 +64,7 @@ class SpecificSectorType(models.TextChoices):
 class CountryLocation (models.Model):
     
     '''
-    national head
+    specific country internationally
     '''
     
     country = CountryField(blank=True, null=True, unique=True) # only one country in the database
@@ -76,7 +76,7 @@ class CountryLocation (models.Model):
     
 class ClusterLocation (models.Model):
     '''
-    clusters are specific to country - cluster head
+    clusters are specific to country - cluster head - major sections of the country
     '''
     cluster_id = models.CharField(verbose_name="cluster-name", max_length=2)
     world_location = models.ForeignKey(CountryLocation, on_delete=models.CASCADE, related_name="clusters")
@@ -88,7 +88,7 @@ MAX_LENGTH_LOCATION_ID = 20
     
 class ChapterLocation (models.Model):
     '''
-    specific chapter - chapter head
+    specific chapter - chapter head - general mass area
     '''
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)    
     chapter_id = models.CharField(verbose_name="chapter-id", blank=True, null=True)
@@ -112,7 +112,8 @@ class ChapterLocation (models.Model):
 
 class UnitLocation (models.Model):
     '''
-    chapter split into different units - unit head
+    Chapter split into different units - unit head. Generally allows the chapter to be 
+    split into more sections I.e. north, south, west, east, etc via letter
     '''
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)    
     unit_id = models.CharField(verbose_name="unit-id", blank=True, null=True) # single letter/2
@@ -135,7 +136,9 @@ class UnitLocation (models.Model):
     
 class AreaLocation (models.Model):
     '''
-    specific area - area head (smallest unit of location)
+    Specific area - area head (smallest unit of location)
+    
+    Generally represents an Area where events are regularly held.
     '''
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)    
     area_id = models.CharField(verbose_name="area-id", blank=True, null=True)
@@ -160,3 +163,38 @@ class AreaLocation (models.Model):
     
     def __str__(self):
         return f"{self.unit} -> {self.area_name}"
+    
+# TODO create a new model to assist with relative searches to a specific area. E.g. 
+# a unit have areas such as Frimley, Horsham, Worthing, Oxford which are active main areas, but dorking, redhill would be extra searches that would be under the specific
+# area. 
+
+# class SearchAreaSupportLocation (models.Model):
+#     '''
+#     supports with smaller or other locations around the main area. E.g. Horsham would be the main area, but crawley, ifield, littlehaven, etc come under it.
+#     So people that query that location would then be referred to horsham as the nearest major location with events.
+#     '''
+#     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)    
+#     name = models.CharField(verbose_name=_("name of relative location"), max_length=100) 
+#     relative_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, null=True, related_name="relative_areas")
+
+# TODO: Create a model that is responsible for keeping track of venues for the event.
+# class EventVenue (models.Model):
+#     '''
+#     Represents the venue being used at the event
+#     '''
+#     class VenueType(models.TextChoices):
+#         ACCOMODATION = "ACCOMODATION", _("Accomodation")
+#         MAIN_VENUE = "MAIN_VENUE", _("Main Venue")
+#         SECONDARY_VENUE = "SECONDARY_VENUE", _("Secondary Venue")
+#         SPORTS_VENUE = "SPORTS_VENUE", _("Sports Venue")
+
+
+        
+#     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)    
+#     name = models.CharField(verbose_name=_("venue name"))
+#     address_line_1 = models.CharField(verbose_name=_("venue address line 1"), blank=True, null=True)
+#     address_line_2 = models.CharField(verbose_name=_("venue address line 2"), blank=True, null=True)
+#     address_line_3 = models.CharField(verbose_name=_("venue address line 2"), blank=True, null=True)
+#     postcode = models.CharField(verbose_name=_("venue address"), blank=True, null=True)
+#     max_allowed_people = models.IntegerField(verbose_name=_("max allowed people"), default=0)
+#     venue_type = models.CharField(verbose_name=_("type of venue"), choices=VenueType, default=VenueType.MAIN_VENUE)

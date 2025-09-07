@@ -186,87 +186,88 @@ class EventWorkshopAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('event', 'primary_facilitator')
     
-@admin.register(GuestParticipant)
-class GuestParticipantAdmin(admin.ModelAdmin):
-    list_display = (
-        'get_full_name', 'ministry_type_display', 'gender_display', 
-        'email', 'phone_number', 'outside_of_country'
-    )
-    list_filter = (
-        'ministry_type', 'gender', 'outside_of_country', 'date_of_birth',
-    )
-    search_fields = (
-        'first_name', 'last_name', 'email', 'phone_number', 
-        'preferred_name', 'country_of_origin__name'
-    )
-    filter_horizontal = ('chapter', 'alergies', 'emergency_contacts')
-    autocomplete_fields = ('country_of_origin',)
-    readonly_fields = ('age',)
-    date_hierarchy = 'date_of_birth'
+#! deprecated
+# @admin.register(GuestParticipant)
+# class GuestParticipantAdmin(admin.ModelAdmin):
+#     list_display = (
+#         'get_full_name', 'ministry_type_display', 'gender_display', 
+#         'email', 'phone_number', 'outside_of_country'
+#     )
+#     list_filter = (
+#         'ministry_type', 'gender', 'outside_of_country', 'date_of_birth',
+#     )
+#     search_fields = (
+#         'first_name', 'last_name', 'email', 'phone_number', 
+#         'preferred_name', 'country_of_origin__name'
+#     )
+#     filter_horizontal = ('chapter', 'alergies', 'emergency_contacts')
+#     autocomplete_fields = ('country_of_origin',)
+#     readonly_fields = ('age',)
+#     date_hierarchy = 'date_of_birth'
     
-    fieldsets = (
-        (_('Personal Information'), {
-            'fields': (
-                'first_name', 'last_name', 'middle_name', 'preferred_name',
-                'gender', 'date_of_birth', 'age', 'profile_picture'
-            )
-        }),
-        (_('Contact Information'), {
-            'fields': ('email', 'phone_number')
-        }),
-        (_('Ministry Information'), {
-            'fields': ('ministry_type',)
-        }),
-        (_('Location Information'), {
-            'fields': ('chapter', 'outside_of_country', 'country_of_origin')
-        }),
-        (_('Health & Safety'), {
-            'fields': ('alergies', 'further_alergy_information', 'emergency_contacts'),
-            'classes': ('collapse',)
-        }),
-    )
+#     fieldsets = (
+#         (_('Personal Information'), {
+#             'fields': (
+#                 'first_name', 'last_name', 'middle_name', 'preferred_name',
+#                 'gender', 'date_of_birth', 'age', 'profile_picture'
+#             )
+#         }),
+#         (_('Contact Information'), {
+#             'fields': ('email', 'phone_number')
+#         }),
+#         (_('Ministry Information'), {
+#             'fields': ('ministry_type',)
+#         }),
+#         (_('Location Information'), {
+#             'fields': ('chapter', 'outside_of_country', 'country_of_origin')
+#         }),
+#         (_('Health & Safety'), {
+#             'fields': ('alergies', 'further_alergy_information', 'emergency_contacts'),
+#             'classes': ('collapse',)
+#         }),
+#     )
     
-    def get_full_name(self, obj):
-        names = []
-        if obj.first_name:
-            names.append(obj.first_name)
-        if obj.last_name:
-            names.append(obj.last_name)
-        return " ".join(names) or "Unknown"
-    get_full_name.short_description = _('Full Name')
+#     def get_full_name(self, obj):
+#         names = []
+#         if obj.first_name:
+#             names.append(obj.first_name)
+#         if obj.last_name:
+#             names.append(obj.last_name)
+#         return " ".join(names) or "Unknown"
+#     get_full_name.short_description = _('Full Name')
     
-    def ministry_type_display(self, obj):
-        return obj.get_ministry_type_display()
-    ministry_type_display.short_description = _('Ministry Type')
+#     def ministry_type_display(self, obj):
+#         return obj.get_ministry_type_display()
+#     ministry_type_display.short_description = _('Ministry Type')
     
-    def gender_display(self, obj):
-        return obj.get_gender_display() if obj.gender else "Not specified"
-    gender_display.short_description = _('Gender')
+#     def gender_display(self, obj):
+#         return obj.get_gender_display() if obj.gender else "Not specified"
+#     gender_display.short_description = _('Gender')
     
-    def age(self, obj):
-        if obj.date_of_birth:
-            today = datetime.date.today()
-            return today.year - obj.date_of_birth.year - (
-                (today.month, today.day) < (obj.date_of_birth.month, obj.date_of_birth.day)
-            )
-        return None
-    age.short_description = _('Age')
+#     def age(self, obj):
+#         if obj.date_of_birth:
+#             today = datetime.date.today()
+#             return today.year - obj.date_of_birth.year - (
+#                 (today.month, today.day) < (obj.date_of_birth.month, obj.date_of_birth.day)
+#             )
+#         return None
+#     age.short_description = _('Age')
     
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related('country_of_origin').prefetch_related(
-            'chapter', 'alergies', 'emergency_contacts'
-        )
+#     def get_queryset(self, request):
+#         return super().get_queryset(request).select_related('country_of_origin').prefetch_related(
+#             'chapter', 'alergies', 'emergency_contacts'
+#         )
 
-class GuestParticipantInline(admin.TabularInline):
-    model = GuestParticipant
-    extra = 0
-    max_num = 10
-    fields = ('first_name', 'last_name', 'email', 'phone_number', 'ministry_type')
-    readonly_fields = ('first_name', 'last_name', 'email', 'phone_number', 'ministry_type')
-    can_delete = False
+# class GuestParticipantInline(admin.TabularInline):
+#     model = GuestParticipant
+#     extra = 0
+#     max_num = 10
+#     fields = ('first_name', 'last_name', 'email', 'phone_number', 'ministry_type')
+#     readonly_fields = ('first_name', 'last_name', 'email', 'phone_number', 'ministry_type')
+#     can_delete = False
     
-    def has_add_permission(self, request, obj=None):
-        return False
+#     def has_add_permission(self, request, obj=None):
+#         return False
 
 @admin.register(PublicEventResource)
 class PublicEventResourceAdmin(admin.ModelAdmin):

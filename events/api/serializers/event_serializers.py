@@ -66,44 +66,45 @@ class EventWorkshopSerializer(serializers.ModelSerializer):
         model = EventWorkshop
         fields = '__all__'
 
-class GuestParticipantSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = GuestParticipant
-        fields = "__all__"
-        read_only_fields = ("id",)
+# ! deprecated: remove model
+# class GuestParticipantSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = GuestParticipant
+#         fields = "__all__"
+#         read_only_fields = ("id",)
         
-    def to_representation(self, instance):
-        rep = super().to_representation(instance)
-        return {
-            "id": rep["id"],
-            "personal_info": {
-                "first_name": rep["first_name"],
-                "last_name": rep["last_name"],
-                "middle_name": rep["middle_name"],
-                "preferred_name": rep["preferred_name"],
-                "gender": rep["gender"],
-                "date_of_birth": rep["date_of_birth"],
-                "profile_picture": rep["profile_picture"],
-            },
-            "contact_info": {
-                "email": rep["email"],
-                "phone_number": rep["phone_number"],
-                "emergency_contacts": rep["emergency_contacts"],
-            },
-            "location_info": {
-                "outside_of_country": rep["outside_of_country"],
-                "country_of_origin": rep["country_of_origin"],
-                "chapter": rep["chapter"],
-            },
-            "event_info": {
-                "event": rep["event"],
-                "ministry_type": rep["ministry_type"],
-            },
-            "health_info": {
-                "alergies": rep["alergies"],
-                "further_alergy_information": rep["further_alergy_information"],
-            },
-        }
+#     def to_representation(self, instance):
+#         rep = super().to_representation(instance)
+#         return {
+#             "id": rep["id"],
+#             "personal_info": {
+#                 "first_name": rep["first_name"],
+#                 "last_name": rep["last_name"],
+#                 "middle_name": rep["middle_name"],
+#                 "preferred_name": rep["preferred_name"],
+#                 "gender": rep["gender"],
+#                 "date_of_birth": rep["date_of_birth"],
+#                 "profile_picture": rep["profile_picture"],
+#             },
+#             "contact_info": {
+#                 "email": rep["email"],
+#                 "phone_number": rep["phone_number"],
+#                 "emergency_contacts": rep["emergency_contacts"],
+#             },
+#             "location_info": {
+#                 "outside_of_country": rep["outside_of_country"],
+#                 "country_of_origin": rep["country_of_origin"],
+#                 "chapter": rep["chapter"],
+#             },
+#             "event_info": {
+#                 "event": rep["event"],
+#                 "ministry_type": rep["ministry_type"],
+#             },
+#             "health_info": {
+#                 "alergies": rep["alergies"],
+#                 "further_alergy_information": rep["further_alergy_information"],
+#             },
+#         }
 
 class PublicEventResourceSerializer(serializers.ModelSerializer):
     class Meta:

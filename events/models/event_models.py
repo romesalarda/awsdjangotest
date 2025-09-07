@@ -36,20 +36,25 @@ class Event(models.Model):
     # Event type and basic information
     event_type = models.CharField(_("event type"), max_length=20, choices=EventType.choices, default=EventType.YOUTH_CAMP)
     event_code = models.CharField(_("event code"), blank=True, null=True) # pretty name id for the event
-    event_description = models.TextField(verbose_name=_("event description"), blank=True, null=True)
+    event_description = models.TextField(verbose_name=_("event description"), blank=True, null=True) 
+    # TODO: add another field that is a short sentence that is show at the front of the card, different from the description
+    # TODO: add "is_public" field
+    # event_front_summary = models.TextField(verbose_name=_("event description"), blank=True, null=True) 
     name = models.CharField(_("event name"), max_length=200, blank=True, null=True)  
     
     start_date = models.DateField(_("event start date"), blank=True, null=True)
     end_date = models.DateField(_("event end date"), blank=True, null=True)
     
     # Location information
+    # ? Venue information should be split into different table? But maybe could keep this for main venue, but any extra venues/locations could asl 
+    # ? be provided in an extra location.
     venue_address = models.CharField(_("venue address"), max_length=300, blank=True, null=True)
     venue_name = models.CharField(_("venue name"), max_length=200, blank=True, null=True)
     specific_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, null=True, blank=True, related_name="events")  
     area_type = models.CharField(_("area type"), max_length=20, choices=EventAreaType.choices, default=EventAreaType.AREA)
     areas_involved = models.ManyToManyField(AreaLocation, blank=True, related_name="involved_in_events")  
     
-    # Event details
+    # Pastoral Event details
     number_of_pax = models.IntegerField(_("number of participants"), blank=True, null=True, default=0, validators=[
         validators.MinValueValidator(0)
     ])
@@ -185,7 +190,7 @@ class EventRole(models.Model):
     def __str__(self):
         return self.get_role_name_display()
     
-# EVENT PARTICIPANT MODELS
+# * EVENT PARTICIPANT MODELS
     
 class EventParticipant(models.Model):
     '''
@@ -214,7 +219,9 @@ class EventParticipant(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
                             related_name="event_participations", blank=True, null=True)
     guest_user = models.ForeignKey("GuestParticipant", on_delete=models.CASCADE, 
-                            related_name="event_participations", blank=True, null=True)
+                            related_name="event_participations", blank=True, null=True) # TODO: Remove guest user, user will be the only source of truth. All people that sign up to 
+    # ! events must have an auth account to prevent overwhelming the database, users must create a password.
+    
     # Participant meta information
     participant_type = models.CharField(_("participant type"), max_length=20, 
                                       choices=ParticipantType.choices, default=ParticipantType.PARTICIPANT)
@@ -274,7 +281,7 @@ class EventParticipant(models.Model):
     def __str__(self):
         return f"{self.user} - {self.event} ({self.get_status_display()})"
     
-class GuestParticipant (models.Model): # TODO
+class GuestParticipant (models.Model): # ! DEPRECATED # DEPRECATED # DEPRECATED # DEPRECATED # DEPRECATED # 
     '''
     Represents a person coming to the event who isn't registered within the community, data can be used later to register into the
     community.
@@ -299,7 +306,10 @@ class GuestParticipant (models.Model): # TODO
 
     id = models.UUIDField(verbose_name=_("guest id"), default=uuid.uuid4, editable=False, primary_key=True)
     
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="guest_events", null=True)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="guest_events", null=True) # TODO: change this to m2m,
+    # this would allow a user to use existing information instead of having to re-register everytime. Although, this could be abused
+    # and someone could use existing guest information. Maybe a user could be a guest in the auth model, but is marked as a guest.
+    # Therfore to register as a guest would also need to create a password. This would eliminate the need of a guest participant. 
     
     # location
     chapter = models.ManyToManyField(ChapterLocation, related_name="chapter_events", blank=True)

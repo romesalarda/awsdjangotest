@@ -136,14 +136,14 @@ class EventWorkshopViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
             
-
-class GuestParticipantViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint to create, update, delete, and list guest participants.
-    """
-    queryset = GuestParticipant.objects.all()
-    serializer_class = GuestParticipantSerializer
-    permission_classes = [permissions.IsAuthenticated]  # adjust as needed
+# ! deprecated
+# class GuestParticipantViewSet(viewsets.ModelViewSet):
+#     """
+#     API endpoint to create, update, delete, and list guest participants.
+#     """
+#     queryset = GuestParticipant.objects.all()
+#     serializer_class = GuestParticipantSerializer
+#     permission_classes = [permissions.IsAuthenticated]  # adjust as needed
 
 
 class PublicEventResourceViewSet(viewsets.ModelViewSet):
