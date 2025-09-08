@@ -150,6 +150,6 @@ class PublicEventResourceViewSet(viewsets.ModelViewSet):
     """
     API endpoint for managing public event resources (memos, files, links).
     """
-    queryset = PublicEventResource.objects.all()
+    queryset = EventResource.objects.all()
     serializer_class = PublicEventResourceSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]  # anyone can GET, only logged-in can modify

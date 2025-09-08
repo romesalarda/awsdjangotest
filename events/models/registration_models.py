@@ -62,6 +62,3 @@ class QuestionAnswer(models.Model):
 
     def __str__(self):
         return f"{self.participant} - {self.question.question_name}"
-    
-# TODO: Payment options (ways to pay) - maybe need to create a whole new file
-# TODO: Payment packages (i.e. with or without shirt)

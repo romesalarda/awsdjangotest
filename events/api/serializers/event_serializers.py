@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
-    EventTalk, EventWorkshop, GuestParticipant, PublicEventResource,
+    EventTalk, EventWorkshop, GuestParticipant, EventResource,
     AreaLocation
 )
 from django.utils.translation import gettext_lazy as _
@@ -108,7 +108,7 @@ class EventWorkshopSerializer(serializers.ModelSerializer):
 
 class PublicEventResourceSerializer(serializers.ModelSerializer):
     class Meta:
-        model = PublicEventResource
+        model = EventResource
         fields = "__all__"
         read_only_fields = ("id", "created_at")
 

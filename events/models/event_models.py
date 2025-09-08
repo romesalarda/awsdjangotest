@@ -3,10 +3,15 @@ from django.core import validators
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
-from .location_models import AreaLocation, ChapterLocation, CountryLocation
+from .location_models import (
+    AreaLocation, ChapterLocation, CountryLocation, 
+    EventVenue
+    )
 from users.models import Alergies, EmergencyContact
 
 import uuid
+
+MAX_LENGTH_EVENT_NAME_CODE = 5
 
 class Event(models.Model):
     '''
@@ -35,24 +40,33 @@ class Event(models.Model):
         
     # Event type and basic information
     event_type = models.CharField(_("event type"), max_length=20, choices=EventType.choices, default=EventType.YOUTH_CAMP)
-    event_code = models.CharField(_("event code"), blank=True, null=True) # pretty name id for the event
-    event_description = models.TextField(verbose_name=_("event description"), blank=True, null=True) 
-    # TODO: add another field that is a short sentence that is show at the front of the card, different from the description
-    # TODO: add "is_public" field
-    # event_front_summary = models.TextField(verbose_name=_("event description"), blank=True, null=True) 
-    name = models.CharField(_("event name"), max_length=200, blank=True, null=True)  
+    event_code = models.CharField(_("event code"), blank=True, null=True) # CNF26ANCRD
+    
+    description = models.TextField(verbose_name=_("event description"), blank=True, null=True) 
+    sentence_description = models.CharField(verbose_name=_("event description"), blank=True, null=True, max_length=300) 
+    landing_image = models.ImageField(        
+        upload_to="event-landing-images/", 
+        blank=True, 
+        null=True,
+        verbose_name=_("event landing image"))
+    is_public = models.BooleanField(verbose_name=_("is event public"), default=False, null=True)
+    
+    name = models.CharField(_("event name"), max_length=200, blank=True, null=True) # ANCHORED
+    name_code = models.CharField( # simplified version of the name of the event
+        _("event name code"), max_length=MAX_LENGTH_EVENT_NAME_CODE, 
+        blank=True, null=True,
+        validators=[
+            validators.MaxLengthValidator(MAX_LENGTH_EVENT_NAME_CODE)
+        ]
+        ) # ANCRD
     
     start_date = models.DateField(_("event start date"), blank=True, null=True)
     end_date = models.DateField(_("event end date"), blank=True, null=True)
     
     # Location information
-    # ? Venue information should be split into different table? But maybe could keep this for main venue, but any extra venues/locations could asl 
-    # ? be provided in an extra location.
-    venue_address = models.CharField(_("venue address"), max_length=300, blank=True, null=True)
-    venue_name = models.CharField(_("venue name"), max_length=200, blank=True, null=True)
-    specific_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, null=True, blank=True, related_name="events")  
-    area_type = models.CharField(_("area type"), max_length=20, choices=EventAreaType.choices, default=EventAreaType.AREA)
-    areas_involved = models.ManyToManyField(AreaLocation, blank=True, related_name="involved_in_events")  
+    area_type = models.CharField(verbose_name=_("area type"), max_length=20, choices=EventAreaType.choices, default=EventAreaType.AREA)
+    venues = models.ManyToManyField(EventVenue, blank=True, verbose_name=_("venues involved"))
+    areas_involved = models.ManyToManyField(AreaLocation, blank=True, related_name="involved_in_events") # community areas involved, either nationally or locally
     
     # Pastoral Event details
     number_of_pax = models.IntegerField(_("number of participants"), blank=True, null=True, default=0, validators=[
@@ -80,7 +94,8 @@ class Event(models.Model):
         blank=True
     )
     
-    resources = models.ManyToManyField("PublicEventResource", blank=True, related_name="event_resources")
+    # important information
+    resources = models.ManyToManyField("PublicEventResource", blank=True, related_name="event_resources") # extra memos, photos promoting the event, etcs
     memo = models.ForeignKey(
         "PublicEventResource",
         verbose_name=_("main event memo"),
@@ -89,15 +104,16 @@ class Event(models.Model):
         null=True,
         related_name="event_memos"
         )
+    notes = models.TextField(verbose_name=_("event notes"), blank=True, null=True)
     
     def save(self, *args, **kwargs):
         if not self.event_code:
-            self.event_code = f"{str(self.start_date.year)}-{self.get_event_type_display()}-{self.name.upper()[:10]}"
+            if not self.name_code:
+                self.name_code = self.name.upper()[:MAX_LENGTH_EVENT_NAME_CODE]
+            self.event_code = f"{self.get_event_type_display()}{str(self.start_date.year)}{self.name_code}"
         
         return super().save(*args, **kwargs)
     
-    
-    # ADDED: Useful methods
     def __str__(self):
         event_type = self.get_event_type_display()
         return f"{event_type}: {self.name or 'Unnamed Event'} ({self.start_date})" if self.start_date else f"{event_type}: {self.name or 'Unnamed Event'}"
@@ -213,6 +229,8 @@ class EventParticipant(models.Model):
     
     # essential info
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event_pax_id = models.CharField(verbose_name=_("Participant ID"), blank=True, null=True) # LUMOS
+    
     event = models.ForeignKey("Event", on_delete=models.CASCADE, related_name="participants")
     
     # if the user already exists in the database, then default to use this 
@@ -246,11 +264,10 @@ class EventParticipant(models.Model):
     
     # Payment information (if applicable)
     paid_amount = models.DecimalField(_("paid amount"), max_digits=10, decimal_places=2, default=0.00)
-    payment_date = models.DateTimeField(_("payment date"), blank=True, null=True)
-    payment_method = models.CharField(_("payment method"), max_length=50, blank=True, null=True)
+    payment_date = models.DateTimeField(_("most recent payment date"), blank=True, null=True)
     
     notes = models.TextField(_("notes"), blank=True, null=True)
-    # further resources and memo
+    verified = models.BooleanField(verbose_name=_("participant approved"), default=False) # set to true when payments paid and they are approved to attend
 
     class Meta:
         verbose_name = _("Event Participant")
@@ -280,138 +297,7 @@ class EventParticipant(models.Model):
     
     def __str__(self):
         return f"{self.user} - {self.event} ({self.get_status_display()})"
-    
-class GuestParticipant (models.Model): # ! DEPRECATED # DEPRECATED # DEPRECATED # DEPRECATED # DEPRECATED # 
-    '''
-    Represents a person coming to the event who isn't registered within the community, data can be used later to register into the
-    community.
-    '''
-    # choice fields
-    # TODO: general these should be guest roles as they should register via the system as an actual authentic user
-    class ParticipantMinistryType(models.TextChoices):
-        YFC = "YFC", _("Youth for Christ")
-        CFC = "CFC", _("Couples for Christ")
-        SFC = "SFC", _("Singles for Christ")
-        KFC = "KFC", _("Kids for Christ")
-        GUEST_YOUTH = "GTY", _("Guest Youth")
-        GUEST_ADULT = "GTA", _("Guest Adult") 
-        VOLUNTEER = "VLN", _("Volunteer")
-        VISITOR = "VST", _("Visitor")
-        OTHER = "OTH", _("Other")
         
-    class GenderType(models.TextChoices):
-        MALE = "MALE", _("Male")
-        FEMALE = "FEMALE", _("Female")
-        PREFER_NOT_TO_SAY = "PREFER_NOT_TO_SAY", _("Prefer not to say")
-
-    id = models.UUIDField(verbose_name=_("guest id"), default=uuid.uuid4, editable=False, primary_key=True)
-    
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="guest_events", null=True) # TODO: change this to m2m,
-    # this would allow a user to use existing information instead of having to re-register everytime. Although, this could be abused
-    # and someone could use existing guest information. Maybe a user could be a guest in the auth model, but is marked as a guest.
-    # Therfore to register as a guest would also need to create a password. This would eliminate the need of a guest participant. 
-    
-    # location
-    chapter = models.ManyToManyField(ChapterLocation, related_name="chapter_events", blank=True)
-    outside_of_country = models.BooleanField(default=False)
-    country_of_origin = models.ForeignKey(CountryLocation, on_delete=models.SET_NULL, blank=True, null=True)
-    ministry_type = models.CharField(
-        verbose_name=_("Family Ministry"), 
-        choices=ParticipantMinistryType, 
-        default=ParticipantMinistryType.GUEST_YOUTH,
-        blank=True,
-        null=True
-        )
-    
-    email = models.EmailField(
-        unique=True, 
-        blank=True, 
-        null=True,
-        verbose_name=_("participant email address")
-    )
-    
-    phone_number = models.CharField( 
-        max_length=20, 
-        blank=True, 
-        null=True,
-        verbose_name=_("participant phone number"),
-    )
-    
-    first_name = models.CharField(
-        max_length=50,
-        verbose_name=_("participant first name"),
-        blank=True,
-        null=True
-    )
-    
-    last_name = models.CharField(
-        max_length=50,
-        verbose_name=_("participant last name"),
-        blank=True,
-        null=True
-    )
-    
-    middle_name = models.CharField(
-        max_length=50, 
-        blank=True, 
-        null=True,
-        verbose_name=_("participant middle name")
-    )
-    
-    preferred_name = models.CharField(
-        max_length=50, 
-        blank=True, 
-        null=True,
-        verbose_name=_("participant preferred name")
-    )
-    
-    gender = models.CharField(
-        max_length=20, 
-        choices=GenderType.choices,
-        verbose_name=_("participant gender"),
-        blank=True,
-        null=True
-    )
-    
-    date_of_birth = models.DateField(
-        verbose_name=_("participant date of birth"), 
-        blank=True, 
-        null=True,  
-        help_text=_("Format: YYYY-MM-DD")
-    )
-    
-    profile_picture = models.ImageField(
-        upload_to="guest-event-profile-images/", 
-        blank=True, 
-        null=True,
-        verbose_name=_("participant event profile picture")
-    )
-    
-    alergies = models.ManyToManyField(
-        Alergies, 
-        verbose_name=_("Individual alergies"),
-        related_name="user_alergies", 
-        blank=True, 
-        )
-    
-    further_alergy_information = models.TextField(
-        verbose_name=_("other alergy information"), 
-        blank=True, 
-        null=True
-        )
-    
-    emergency_contacts = models.ManyToManyField(
-        EmergencyContact,
-        verbose_name=_("Emergency contacts"),
-        related_name="guest_user_emergency_contacts",
-        blank=True
-    )
-    
-    def __str__(self):
-        return f"GUEST: {self.first_name} {self.last_name}  {self.event.event_code or 'no-event'}"
-    
-    # TODO: Extra field questions
-    
 # EVENT PROPER MODELS
     
 class EventTalk(models.Model):
@@ -523,16 +409,32 @@ class EventWorkshop(models.Model):
         # This would typically be implemented with a through model for workshop participants
         return 0  # Placeholder - you'd implement actual counting logic
 
-class PublicEventResource(models.Model): #TODO
+class EventResource(models.Model):
     '''
-    represents a public resource e.g. a link to a further google form or a memo
+    represents a resource e.g. a link to a further google form or a memo
     '''
+    class ResourceType (models.TextChoices):
+        LINK = "LINK", _("Link")
+        PDF = "PDF", _("pdf")
+        FILE = "FILE", _("File")
+        PHOTO = "PHOTO", _("Photo")
+
     id = models.UUIDField(verbose_name=_("resource id"), default=uuid.uuid4, editable=False, primary_key=True)
     resource_name = models.CharField(verbose_name=_("public resource name"))
     resource_link = models.CharField(verbose_name=_("public resource link"), blank=True, null=True)
-    resource_file = models.FileField(verbose_name=("file resource"), upload_to="public-event-resources")
+    resource_file = models.FileField(verbose_name=("file resource"), upload_to="public-event-file-resources", blank=True, null=True)
+    image = models.FileField(verbose_name=("image resource"), upload_to="public-event-image-resources", blank=True, null=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     public_resource = models.BooleanField(default=False)
+    
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        verbose_name=_("resource added by"), null=True) # must be provided
+    chapter_ownership = models.ForeignKey(
+        ChapterLocation, on_delete=models.SET_NULL, 
+        verbose_name=_("chapter that owns resource"), null=True, blank=True
+        )
     
 
     

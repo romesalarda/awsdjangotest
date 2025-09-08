@@ -1,45 +1,15 @@
 from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
-from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.utils.translation import gettext_lazy as _
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 import datetime
 import uuid
 
-from .metadata_models import Alergies, EmergencyContact
-
-class CustomUserManager(BaseUserManager):
-    '''
-    Customer user manager for the community user model
-    '''
-    def create_user(self, username=None, password=None, **extra_fields):
-        if not extra_fields.get("first_name") or not extra_fields.get("last_name"):
-            raise ValueError("Users must have a first and last name")
-        
-        # Generate username if not provided
-        if not username:
-            ministry = extra_fields.get("ministry", "CFC")
-            first_name = extra_fields.get("first_name", "")
-            last_name = extra_fields.get("last_name", "")
-            username = slugify(f"{ministry}-{first_name}{last_name}").upper()
-            
-        email = extra_fields.get("email")
-        user = self.model(
-            username=username,
-            email=self.normalize_email(email) if email else None,
-            **extra_fields
-        )        
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
-
-    def create_superuser(self, username, password=None, **extra_fields):
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("is_encoder", True)
-        return self.create_user(username, password, **extra_fields)
+from .metadata_models import Alergies, EmergencyContact, MedicalConditions
+from .user_manager import CommunityUserManager
 
 MAX_MEMBER_ID_LENGTH = 20
 MAX_MEMBER_ID_FIRST_NAME = 5
@@ -47,139 +17,100 @@ MAX_MEMBER_ID_LAST_NAME = 5
 
 class CommunityUser(AbstractBaseUser, PermissionsMixin):
     '''
-    Main Auth Class for all users and is required for all events
+    Main AUTH class to authenticate users, all users signing in for events must have an account
     '''
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
-    member_id = models.CharField(
-        max_length=100, 
-        unique=True, 
-        editable=False,
-        verbose_name=_("member ID")
-    )
-
-    username = models.CharField(
-        max_length=100, 
-        unique=True,
-        verbose_name=_("username")
-    )
-
     class MinistryType(models.TextChoices):
+        #! these should only be assigned by encoders and not by those who register
         YFC = "YFC", _("Youth for Christ")
         CFC = "CFC", _("Couples for Christ")
         SFC = "SFC", _("Singles for Christ")
         KFC = "KFC", _("Kids for Christ")
-        GUEST = "GST", _("Guest") # guest is too general, but generally represents a person that is not yet officially part of the community
-        # I.e. those that haven't gone through a youth camp
+        
         VOLUNTEER = "VLN", _("Volunteer") # not looking to join the community but is attending an event e.g. a priest
-        #TODO: YOUTH_GUEST = "YGT", _ ("Youth Guest") <17
-        #TODO: ADULT_GUEST = "AGT", _ ("Adult Guest") 18 +
+        YOUTH_GUEST = "YGT", _ ("Youth Guest")
+        ADULT_GUEST = "AGT", _ ("Adult Guest") 
         
     class GenderType(models.TextChoices):
         MALE = "MALE", _("Male")
         FEMALE = "FEMALE", _("Female")
+        
+    class MaritalType(models.TextChoices):
+        SINGLE = "SINGLE", _("Single")
+        MARRIED = "MARRIED", _ ("Married")
+        WIDOWED = "WIDOWED", _ ("Widowed")
+        
+    class BloodType(models.TextChoices):
+        A_POS = "A+", _("A Positive")
+        A_NEG = "A-", _("A Negative")
+        B_POS = "B+", _("B Positive")
+        B_NEG = "B-", _("B Negative")
+        AB_POS = "AB+", _("AB Positive")
+        AB_NEG = "AB-", _("AB Negative")
+        O_POS = "O+", _("O Positive")
+        O_NEG = "O-", _("O Negative")
 
-    ministry = models.CharField(
-        max_length=3, 
-        choices=MinistryType.choices,  
-        default=MinistryType.CFC,
-        verbose_name=_("ministry")
-    )
+    # auth information
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False) # ! hidden do not show
+    member_id = models.CharField(max_length=100, unique=True, editable=False,verbose_name=_("member ID"))
+    username = models.CharField(max_length=100, unique=True, verbose_name=_("username"))
+    # contact information
+    primary_email = models.EmailField(unique=True, blank=True, null=True,verbose_name=_("primary email address"))
+    secondary_email = models.EmailField(unique=True, blank=True, null=True,verbose_name=_("secondary email address"))
+    phone_number = models.CharField(max_length=20,blank=True,null=True, verbose_name=_("phone number"))
     
-    email = models.EmailField(
-        unique=True, 
-        blank=True, 
-        null=True,
-        verbose_name=_("email address")
-    )
+    # identity information
+    first_name = models.CharField(max_length=50,verbose_name=_("first name"))
+    last_name = models.CharField(max_length=50,verbose_name=_("last name"))
+    middle_name = models.CharField(max_length=50,blank=True, null=True,verbose_name=_("middle name"))
+    preferred_name = models.CharField(max_length=50, blank=True, null=True,verbose_name=_("preferred name"))
+    gender = models.CharField(max_length=6, choices=GenderType.choices,  verbose_name=_("gender"))
+    age = models.IntegerField(blank=True, null=True, validators=[MinValueValidator(0), MaxValueValidator(150)],verbose_name=_("age"))
+    date_of_birth = models.DateField(verbose_name=_("date of birth"), blank=True, null=True,  help_text=_("Format: YYYY-MM-DD"))
     
-    phone_number = models.CharField( 
-        max_length=20, 
-        blank=True, 
-        null=True,
-        verbose_name=_("phone number")
-    )
-    
-    first_name = models.CharField(
-        max_length=50,
-        verbose_name=_("first name")
-    )
-    
-    last_name = models.CharField(
-        max_length=50,
-        verbose_name=_("last name")
-    )
-    
-    middle_name = models.CharField(
-        max_length=50, 
-        blank=True, 
-        null=True,
-        verbose_name=_("middle name")
-    )
-    
-    preferred_name = models.CharField(
-        max_length=50, 
-        blank=True, 
-        null=True,
-        verbose_name=_("preferred name")
-    )
-    
-    gender = models.CharField(
-        max_length=6, 
-        choices=GenderType.choices,  # FIXED: Added .choices
-        verbose_name=_("gender")
-    )
-    
-    age = models.IntegerField(
-        blank=True, 
-        null=True, 
-        validators=[MinValueValidator(0), MaxValueValidator(150)],
-        verbose_name=_("age")
-    )
-    
-    date_of_birth = models.DateField(
-        verbose_name=_("date of birth"), 
-        blank=True, 
-        null=True,  # CHANGED: Removed default value for DOB
-        help_text=_("Format: YYYY-MM-DD")
-    )
+    # location information
+    area_from = models.ForeignKey("AreaLocation", on_delete=models.SET_NULL, 
+                                  verbose_name=_("area of residence"), blank=True, null=True
+                                  )
+    address_line_1 = models.CharField(verbose_name=_("address line 1"), blank=True, null=True)
+    address_line_2 = models.CharField(verbose_name=_("address line 2"), blank=True, null=True)
+    postcode = models.CharField(verbose_name=_("postcode"), blank=True, null=True)
 
-    is_active = models.BooleanField(
-        default=True,
-        verbose_name=_("active")
-    )
+    # auth checks
+    is_active = models.BooleanField(default=True,verbose_name=_("active"))
+    is_staff = models.BooleanField(default=False,verbose_name=_("staff status"))
+    is_encoder = models.BooleanField(default=False,verbose_name=_("encoder status"))
     
-    is_staff = models.BooleanField(
-        default=False,
-        verbose_name=_("staff status")
-    )
-    
-    is_encoder = models.BooleanField(
-        default=False,
-        verbose_name=_("encoder status")
-    )
-    
-    # other information
-
+    # profile information
     profile_picture = models.ImageField(
-        upload_to="profile-images/", 
+        upload_to="user-profile-images/", 
         blank=True, 
         null=True,
-        verbose_name=_("profile picture")
+        verbose_name=_("user profile picture")
     )
-    
-    uploaded_at = models.DateTimeField(
+    profile_picture_uploaded_at = models.DateTimeField(
         auto_now_add=True,
-        verbose_name=_("uploaded at")
+        verbose_name=_("profile picture uploaded at")
     )
-    
+    marital_status = models.CharField(verbose_name=_("marital status"), 
+                                      choices=MaritalType, 
+                                      default=MaritalType.SINGLE, 
+                                      blank=True, null=True
+                                      )
+    # safeguarding information
     alergies = models.ManyToManyField(
         Alergies, 
         verbose_name=_("Individual alergies"),
-        related_name="users", 
+        related_name="allergy_users", 
         blank=True, 
         )
     
+    medical_conditions = models.ManyToManyField(
+        MedicalConditions, 
+        verbose_name=_("Medical conditions"),
+        related_name="medical_condition_users", 
+        blank=True, 
+        )
+        
     emergency_contacts = models.ManyToManyField(
         EmergencyContact,
         verbose_name=_("Emergency contacts"),
@@ -187,8 +118,15 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         blank=True
     )
     
+    blood_type = models.CharField(
+        max_length=3,
+        choices=BloodType.choices,
+        blank=True,
+        null=True,
+        verbose_name=_("blood type"),
+    )
+        
     # service information
-    
     community_roles = models.ManyToManyField(
         "CommunityRole",         
         through="UserCommunityRole",
@@ -197,13 +135,27 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         help_text=_("role/s in the community"), 
         blank=True
     )
+    ministry = models.CharField(
+        max_length=3, 
+        choices=MinistryType.choices,  
+        default=MinistryType.CFC,
+        verbose_name=_("ministry")
+    )
     
+    user_uploaded_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("user uploaded to database at")
+    )
     
-
-    objects = CustomUserManager()
+    # helper fields
+    notes = models.TextField(verbose_name=_("user notes (admin use)"), blank=True, null=True)
+    
+    # MODEL PROPER
+    
+    objects = CommunityUserManager()
 
     USERNAME_FIELD = "username"
-    REQUIRED_FIELDS = ["first_name", "last_name", "gender"]
+    REQUIRED_FIELDS = ["first_name", "last_name"]
     
     class Meta:
         verbose_name = _("community user")
@@ -221,7 +173,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
             # Use current year if uploaded_at is not set
             year = self.uploaded_at.year if self.uploaded_at else datetime.datetime.now().year
             
-            # Generate unique member ID
+            # Generate unique member ID E.g. 2025-ROME-SALARDAbDASDS3S
             self.member_id = f"{year}-{name_slug}{str(self.id)[:MAX_MEMBER_ID_LENGTH - len(name_slug) - 5]}"
             
         # Ensure username is unique
@@ -249,6 +201,16 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
 
     def get_short_name(self):
         return self.preferred_name or self.first_name
+    
+    def is_guest(self):
+        '''
+        is the user an adult/youth guest or a volunteer
+        '''
+        return (
+            self.ministry == CommunityUser.MinistryType.YOUTH_GUEST or 
+            self.ministry == CommunityUser.MinistryType.ADULT_GUEST or
+            self.ministry == CommunityUser.MinistryType.VOLUNTEER
+            )
 
     def __str__(self):
         return f"{self.member_id} - {self.get_full_name()}"

@@ -6,7 +6,7 @@ from .models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
     EventTalk, EventWorkshop, 
     CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation,
-    GuestParticipant, PublicEventResource,
+    GuestParticipant, EventResource,
     ExtraQuestion, QuestionChoice, QuestionAnswer
 )
 
@@ -269,7 +269,7 @@ class EventWorkshopAdmin(admin.ModelAdmin):
 #     def has_add_permission(self, request, obj=None):
 #         return False
 
-@admin.register(PublicEventResource)
+@admin.register(EventResource)
 class PublicEventResourceAdmin(admin.ModelAdmin):
     list_display = (
         'resource_name', 'resource_link_preview', 'has_file', 
