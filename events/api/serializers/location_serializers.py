@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from events.models import *
 from django_countries.serializers import CountryFieldMixin
-from django.contrib.auth import get_user_model
 
 class CountryLocationSerializer(CountryFieldMixin, serializers.ModelSerializer):
     class Meta:
@@ -80,3 +79,30 @@ class NestedCountryLocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = CountryLocation
         fields = ('id', 'country', 'general_sector', 'specific_sector', 'clusters')
+        
+class SearchAreaSupportLocationSerializer(serializers.ModelSerializer):
+    relative_area_name = serializers.CharField(source="relative_area.name", read_only=True)
+
+    class Meta:
+        model = SearchAreaSupportLocation
+        fields = ["id", "name", "relative_area", "relative_area_name"]
+
+
+class EventVenueSerializer(serializers.ModelSerializer):
+    general_area_name = serializers.CharField(source="general_area.name", read_only=True)
+
+    class Meta:
+        model = EventVenue
+        fields = [
+            "id",
+            "name",
+            "address_line_1",
+            "address_line_2",
+            "address_line_3",
+            "postcode",
+            "max_allowed_people",
+            "venue_type",
+            "general_area",
+            "general_area_name",
+            "primary_venue",
+        ]

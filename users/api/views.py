@@ -53,3 +53,20 @@ class UserCommunityRoleViewSet(viewsets.ModelViewSet):
     serializer_class = UserCommunityRoleSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['user', 'role', 'is_active']
+
+class AlergiesViewSet(viewsets.ModelViewSet):
+    queryset = Alergies.objects.all().order_by("name")
+    serializer_class = AlergiesSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+
+class MedicalConditionsViewSet(viewsets.ModelViewSet):
+    queryset = MedicalConditions.objects.all().order_by("name")
+    serializer_class = MedicalConditionsSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+
+class EmergencyContactViewSet(viewsets.ModelViewSet):
+    queryset = EmergencyContact.objects.all().select_related("user")
+    serializer_class = EmergencyContactSerializer
+    permission_classes = [permissions.IsAuthenticated]

@@ -236,8 +236,6 @@ class EventParticipant(models.Model):
     # if the user already exists in the database, then default to use this 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
                             related_name="event_participations", blank=True, null=True)
-    guest_user = models.ForeignKey("GuestParticipant", on_delete=models.CASCADE, 
-                            related_name="event_participations", blank=True, null=True) # TODO: Remove guest user, user will be the only source of truth. All people that sign up to 
     # ! events must have an auth account to prevent overwhelming the database, users must create a password.
     
     # Participant meta information
@@ -326,7 +324,6 @@ class EventTalk(models.Model):
     duration_minutes = models.IntegerField(_("duration in minutes"), validators=[validators.MinValueValidator(1)])
     
     # Speaker information
-    # TODO: Speakers must be registered within the community or guest speaker table too
     speaker = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, 
                                null=True, blank=True, related_name="event_talks")
     speaker_bio = models.TextField(_("speaker bio"), blank=True, null=True)

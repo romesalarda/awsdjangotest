@@ -12,8 +12,6 @@ from django.contrib.auth import get_user_model
 
 from events.api.filters import EventFilter
 
-# TODO: Add guest viewset
-
 class EventViewSet(viewsets.ModelViewSet):
     '''
     Viewset for CRUD operations with all types of events in the community
@@ -135,16 +133,6 @@ class EventWorkshopViewSet(viewsets.ModelViewSet):
                 {'error': _('User not found')},
                 status=status.HTTP_404_NOT_FOUND
             )
-            
-# ! deprecated
-# class GuestParticipantViewSet(viewsets.ModelViewSet):
-#     """
-#     API endpoint to create, update, delete, and list guest participants.
-#     """
-#     queryset = GuestParticipant.objects.all()
-#     serializer_class = GuestParticipantSerializer
-#     permission_classes = [permissions.IsAuthenticated]  # adjust as needed
-
 
 class PublicEventResourceViewSet(viewsets.ModelViewSet):
     """
@@ -153,3 +141,4 @@ class PublicEventResourceViewSet(viewsets.ModelViewSet):
     queryset = EventResource.objects.all()
     serializer_class = PublicEventResourceSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]  # anyone can GET, only logged-in can modify
+

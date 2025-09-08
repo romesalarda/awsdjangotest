@@ -1,14 +1,16 @@
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
-import datetime
 from .models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
     EventTalk, EventWorkshop, 
     CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation,
-    GuestParticipant, EventResource,
-    ExtraQuestion, QuestionChoice, QuestionAnswer
+    EventResource, EventVenue, SearchAreaSupportLocation,
+    ExtraQuestion, QuestionChoice, QuestionAnswer,
+    EventPaymentMethod, EventPaymentPackage, EventPayment
 )
+
+# ! Location related admin
 
 @admin.register(CountryLocation)
 class CountryLocationAdmin(admin.ModelAdmin):
@@ -62,6 +64,8 @@ class AreaLocationAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related(
             'unit__chapter__cluster__world_location'
         )
+        
+# ! Event related admin
 
 @admin.register(EventRole)
 class EventRoleAdmin(admin.ModelAdmin):
@@ -186,89 +190,6 @@ class EventWorkshopAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('event', 'primary_facilitator')
     
-#! deprecated
-# @admin.register(GuestParticipant)
-# class GuestParticipantAdmin(admin.ModelAdmin):
-#     list_display = (
-#         'get_full_name', 'ministry_type_display', 'gender_display', 
-#         'email', 'phone_number', 'outside_of_country'
-#     )
-#     list_filter = (
-#         'ministry_type', 'gender', 'outside_of_country', 'date_of_birth',
-#     )
-#     search_fields = (
-#         'first_name', 'last_name', 'email', 'phone_number', 
-#         'preferred_name', 'country_of_origin__name'
-#     )
-#     filter_horizontal = ('chapter', 'alergies', 'emergency_contacts')
-#     autocomplete_fields = ('country_of_origin',)
-#     readonly_fields = ('age',)
-#     date_hierarchy = 'date_of_birth'
-    
-#     fieldsets = (
-#         (_('Personal Information'), {
-#             'fields': (
-#                 'first_name', 'last_name', 'middle_name', 'preferred_name',
-#                 'gender', 'date_of_birth', 'age', 'profile_picture'
-#             )
-#         }),
-#         (_('Contact Information'), {
-#             'fields': ('email', 'phone_number')
-#         }),
-#         (_('Ministry Information'), {
-#             'fields': ('ministry_type',)
-#         }),
-#         (_('Location Information'), {
-#             'fields': ('chapter', 'outside_of_country', 'country_of_origin')
-#         }),
-#         (_('Health & Safety'), {
-#             'fields': ('alergies', 'further_alergy_information', 'emergency_contacts'),
-#             'classes': ('collapse',)
-#         }),
-#     )
-    
-#     def get_full_name(self, obj):
-#         names = []
-#         if obj.first_name:
-#             names.append(obj.first_name)
-#         if obj.last_name:
-#             names.append(obj.last_name)
-#         return " ".join(names) or "Unknown"
-#     get_full_name.short_description = _('Full Name')
-    
-#     def ministry_type_display(self, obj):
-#         return obj.get_ministry_type_display()
-#     ministry_type_display.short_description = _('Ministry Type')
-    
-#     def gender_display(self, obj):
-#         return obj.get_gender_display() if obj.gender else "Not specified"
-#     gender_display.short_description = _('Gender')
-    
-#     def age(self, obj):
-#         if obj.date_of_birth:
-#             today = datetime.date.today()
-#             return today.year - obj.date_of_birth.year - (
-#                 (today.month, today.day) < (obj.date_of_birth.month, obj.date_of_birth.day)
-#             )
-#         return None
-#     age.short_description = _('Age')
-    
-#     def get_queryset(self, request):
-#         return super().get_queryset(request).select_related('country_of_origin').prefetch_related(
-#             'chapter', 'alergies', 'emergency_contacts'
-#         )
-
-# class GuestParticipantInline(admin.TabularInline):
-#     model = GuestParticipant
-#     extra = 0
-#     max_num = 10
-#     fields = ('first_name', 'last_name', 'email', 'phone_number', 'ministry_type')
-#     readonly_fields = ('first_name', 'last_name', 'email', 'phone_number', 'ministry_type')
-#     can_delete = False
-    
-#     def has_add_permission(self, request, obj=None):
-#         return False
-
 @admin.register(EventResource)
 class PublicEventResourceAdmin(admin.ModelAdmin):
     list_display = (
@@ -343,3 +264,58 @@ class EventParticipantAdmin(admin.ModelAdmin):
     autocomplete_fields = ('user', 'event')
     date_hierarchy = 'registration_date'
     inlines = [QuestionAnswerInline]
+    
+@admin.register(SearchAreaSupportLocation)
+class SearchAreaSupportLocationAdmin(admin.ModelAdmin):
+    list_display = ("name", "relative_area")
+    search_fields = ("name", "relative_area__name")
+    list_filter = ("relative_area",)
+
+
+@admin.register(EventVenue)
+class EventVenueAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "venue_type",
+        "general_area",
+        "max_allowed_people",
+        "primary_venue",
+    )
+    search_fields = ("name", "postcode", "general_area__name")
+    list_filter = ("venue_type", "primary_venue", "general_area")
+    readonly_fields = ("id",)
+    
+# ! Payment 
+
+@admin.register(EventPaymentMethod)
+class EventPaymentMethodAdmin(admin.ModelAdmin):
+    list_display = ("event", "method", "is_active", "created_at")
+    list_filter = ("method", "is_active", "created_at")
+    search_fields = ("event__name", "account_name", "account_number")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(EventPaymentPackage)
+class EventPaymentPackageAdmin(admin.ModelAdmin):
+    list_display = ("name", "event", "price_display", "currency", "capacity", "is_active")
+    list_filter = ("currency", "is_active", "available_from", "available_until")
+    search_fields = ("name", "event__name")
+    readonly_fields = ("created_at", "updated_at")
+
+    def price_display(self, obj):
+        return f"{obj.price / 100:.2f} {obj.currency.upper()}"
+
+    price_display.short_description = "Price"
+
+
+@admin.register(EventPayment)
+class EventPaymentAdmin(admin.ModelAdmin):
+    list_display = ("user", "event", "package", "method", "amount_display", "status", "created_at")
+    list_filter = ("status", "currency", "created_at")
+    search_fields = ("user__id", "event__name", "stripe_payment_intent")
+    readonly_fields = ("created_at", "updated_at")
+
+    def amount_display(self, obj):
+        return f"{obj.amount / 100:.2f} {obj.currency.upper()}"
+
+    amount_display.short_description = "Amount"

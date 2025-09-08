@@ -1,13 +1,14 @@
 from rest_framework import serializers
 from events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
-    EventTalk, EventWorkshop, GuestParticipant, EventResource,
-    AreaLocation
+    EventTalk, EventWorkshop, EventResource,
+    AreaLocation, EventVenue, SearchAreaSupportLocation
 )
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 
-from users.api.serializers import SimplifiedCommunityUserSerializer  
+from users.api.serializers import SimplifiedCommunityUserSerializer 
+from .location_serializers import EventVenueSerializer
 
 # TODO: create resources serializer, then to add a field onto the event serializer, for memo and extra resources attached to the event
 
@@ -38,8 +39,6 @@ class EventServiceTeamMemberSerializer(serializers.ModelSerializer):
         model = EventServiceTeamMember
         fields = '__all__'
         
-
-
 class EventTalkSerializer(serializers.ModelSerializer):
     speaker_details = SimplifiedCommunityUserSerializer(source='speaker', read_only=True)
     talk_type_display = serializers.CharField(
@@ -65,46 +64,6 @@ class EventWorkshopSerializer(serializers.ModelSerializer):
     class Meta:
         model = EventWorkshop
         fields = '__all__'
-
-# ! deprecated: remove model
-# class GuestParticipantSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = GuestParticipant
-#         fields = "__all__"
-#         read_only_fields = ("id",)
-        
-#     def to_representation(self, instance):
-#         rep = super().to_representation(instance)
-#         return {
-#             "id": rep["id"],
-#             "personal_info": {
-#                 "first_name": rep["first_name"],
-#                 "last_name": rep["last_name"],
-#                 "middle_name": rep["middle_name"],
-#                 "preferred_name": rep["preferred_name"],
-#                 "gender": rep["gender"],
-#                 "date_of_birth": rep["date_of_birth"],
-#                 "profile_picture": rep["profile_picture"],
-#             },
-#             "contact_info": {
-#                 "email": rep["email"],
-#                 "phone_number": rep["phone_number"],
-#                 "emergency_contacts": rep["emergency_contacts"],
-#             },
-#             "location_info": {
-#                 "outside_of_country": rep["outside_of_country"],
-#                 "country_of_origin": rep["country_of_origin"],
-#                 "chapter": rep["chapter"],
-#             },
-#             "event_info": {
-#                 "event": rep["event"],
-#                 "ministry_type": rep["ministry_type"],
-#             },
-#             "health_info": {
-#                 "alergies": rep["alergies"],
-#                 "further_alergy_information": rep["further_alergy_information"],
-#             },
-#         }
 
 class PublicEventResourceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -136,79 +95,144 @@ class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
             "cluster_name",
         ]
         
- # MAIN
 class EventSerializer(serializers.ModelSerializer):
-    '''
+    """
     Main event serializer
-    '''
+    """
+
     # Simplified service team info (just IDs for writes, details for reads)
     service_team_members = SimplifiedEventServiceTeamMemberSerializer(
-        many=True, read_only=True
-    )
-    
-    # Supervisor details (read-only)
-    youth_head = SimplifiedCommunityUserSerializer(
-        source='supervising_chapter_youth_head', read_only=True
-    )
-    cfc_coordinator = SimplifiedCommunityUserSerializer(
-        source='supervising_chapter_CFC_coordinator', read_only=True
-    )
-    
-    # Statistics and display fields
-    participants_count = serializers.IntegerField(
-        source='participants.count', read_only=True
+        many=True, read_only=True, source="service_team"
     )
 
-    duration_days = serializers.IntegerField(read_only=True)
-    
-    # For write operations, keep the original field names
+    # Supervisor details (read-only)
+    youth_head = SimplifiedCommunityUserSerializer(
+        source="supervising_chapter_youth_head", read_only=True
+    )
+    cfc_coordinator = SimplifiedCommunityUserSerializer(
+        source="supervising_chapter_CFC_coordinator", read_only=True
+    )
+
+    # Statistics and display fields
+    participants_count = serializers.IntegerField(
+        source="participants.count", read_only=True
+    )
+    duration_days = serializers.SerializerMethodField(read_only=True)
+
+    # Supervisors (write-only)
     supervising_chapter_youth_head = serializers.PrimaryKeyRelatedField(
-        queryset=get_user_model().objects.all(), write_only=True, required=False, allow_null=True
+        queryset=get_user_model().objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
     )
     supervising_chapter_CFC_coordinator = serializers.PrimaryKeyRelatedField(
-        queryset=get_user_model().objects.all(), write_only=True, required=False, allow_null=True
+        queryset=get_user_model().objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
     )
-    specific_area = SimplifiedAreaLocationSerializer()
+
+    # Location
+    specific_area = SimplifiedAreaLocationSerializer(read_only=True)
     specific_area_id = serializers.PrimaryKeyRelatedField(
         source="specific_area",
         queryset=AreaLocation.objects.all(),
         write_only=True,
         required=False,
-        allow_null=True
+        allow_null=True,
     )
-    
+    areas_involved = SimplifiedAreaLocationSerializer(many=True, read_only=True)
+
+    # Venues
+    venues = EventVenueSerializer(many=True, read_only=True)
+    venue_ids = serializers.PrimaryKeyRelatedField(
+        source="venues",
+        queryset=EventVenue.objects.all(),
+        many=True,
+        write_only=True,
+        required=False,
+    )
+
+    # Resources
     resources = PublicEventResourceSerializer(many=True, read_only=True)
-    
+    memo = PublicEventResourceSerializer(read_only=True)
+    memo_id = serializers.PrimaryKeyRelatedField(
+        source="memo",
+        queryset=EventResource.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = Event
         fields = [
-            'id', 'event_type','event_code', 'name', 'start_date', 'end_date', 'duration_days',
-            'venue_address', 'venue_name', 'area_type', 'number_of_pax', 'theme',
-            'anchor_verse', 'specific_area_id','specific_area', 'areas_involved',  # TODO add memo and resources
-            
-            # Read-only display fields
-            'service_team_members', 'participants_count',
-            'youth_head', 'cfc_coordinator', 'resources',
-            
-            # Write-only fields (keep original names for API consistency)
-            'supervising_chapter_youth_head', 'supervising_chapter_CFC_coordinator'
+            "id",
+            "event_type",
+            "event_code",
+            "name",
+            "name_code",
+            "description",
+            "sentence_description",
+            "landing_image",
+            "is_public",
+            "start_date",
+            "end_date",
+            "duration_days",
+            "area_type",
+            "number_of_pax",
+            "theme",
+            "anchor_verse",
+            "specific_area",
+            "specific_area_id",
+            "areas_involved",
+            "venues",
+            "venue_ids",
+            "resources",
+            "memo",
+            "memo_id",
+            "notes",
+            # Participants / service team
+            "participants_count",
+            "service_team_members",
+            "youth_head",
+            "cfc_coordinator",
+            # Write-only supervisor fields
+            "supervising_chapter_youth_head",
+            "supervising_chapter_CFC_coordinator",
         ]
         read_only_fields = [
-            'service_team_members', 'participants_count',
-            'duration_days', 'youth_head', 'cfc_coordinator'
+            "id",
+            "duration_days",
+            "participants_count",
+            "service_team_members",
+            "youth_head",
+            "cfc_coordinator",
+            "resources",
+            "memo",
         ]
 
-    
+    def get_duration_days(self, obj):
+        if obj.start_date and obj.end_date:
+            return (obj.end_date - obj.start_date).days + 1
+        return None
+
     def to_representation(self, instance):
         rep = super().to_representation(instance)
         return {
             "id": rep["id"],
             "basic_info": {
                 "name": rep["name"],
+                "name_code": rep["name_code"],
                 "event_type": rep["event_type"],
                 "event_code": rep["event_code"],
+                "description": rep["description"],
+                "sentence_description": rep["sentence_description"],
                 "theme": rep["theme"],
                 "anchor_verse": rep["anchor_verse"],
+                "is_public": rep["is_public"],
+                "landing_image": rep["landing_image"],
             },
             "dates": {
                 "start_date": rep["start_date"],
@@ -216,8 +240,7 @@ class EventSerializer(serializers.ModelSerializer):
                 "duration_days": rep["duration_days"],
             },
             "venue": {
-                "venue_name": rep["venue_name"],
-                "venue_address": rep["venue_address"],
+                "venues": rep["venues"],
                 "specific_area": rep["specific_area"],
                 "areas_involved": rep["areas_involved"],
             },
@@ -227,13 +250,19 @@ class EventSerializer(serializers.ModelSerializer):
                 "youth_head": rep["youth_head"],
                 "cfc_coordinator": rep["cfc_coordinator"],
             },
-            "public-resources": rep["resources"],
+            "resources": {
+                "memo": rep["memo"],
+                "extra_resources": rep["resources"],
+            },
+            "notes": rep["notes"],
         }
+
     
-    # def get_specific_area(self, obj):
-    #     return getattr(obj.specific_area, "area_id", None)
 
 class EventParticipantSerializer(serializers.ModelSerializer):
+    '''
+    
+    '''
     user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     participant_type_display = serializers.CharField(
@@ -244,3 +273,4 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         model = EventParticipant
         fields = '__all__'
         read_only_fields = ['registration_date', 'confirmation_date', 'attended_date']
+        

@@ -2,7 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
-from .event_models import EventResource
+from .event_models import EventResource, EventParticipant
 
 class EventPaymentMethod(models.Model):
     """
@@ -111,7 +111,7 @@ class EventPayment(models.Model):
         SUCCEEDED = "SUCCEEDED", _("Succeeded")
         FAILED = "FAILED", _("Failed")
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    user = models.ForeignKey(EventParticipant, on_delete=models.CASCADE)
     event = models.ForeignKey("Event", on_delete=models.SET_NULL, null=True, blank=True)
 
     package = models.ForeignKey(

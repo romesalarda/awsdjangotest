@@ -1,4 +1,4 @@
-from rest_framework import viewsets, filters, status
+from rest_framework import viewsets, filters, status, permissions
 from django_filters.rest_framework import DjangoFilterBackend
 from events.models import CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation
 from events.api.serializers import *
@@ -77,3 +77,19 @@ class AreaLocationViewSet(viewsets.ModelViewSet):
     search_fields = ['area_name', 'area_code', 'area_id', 'general_address']
     ordering_fields = ['area_name', 'area_code', 'unit__unit_name']
     ordering = ['unit__unit_name', 'area_name']
+    
+class SearchAreaSupportLocationViewSet(viewsets.ModelViewSet):
+    """
+    API .
+    """
+    queryset = SearchAreaSupportLocation.objects.all().order_by("name")
+    serializer_class = SearchAreaSupportLocationSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+class EventVenueViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing events.
+    """
+    queryset = EventVenue.objects.all().order_by("name")
+    serializer_class = EventVenueSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]

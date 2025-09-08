@@ -1,7 +1,8 @@
 # serializers.py
 from rest_framework import serializers
 from users.models import (
-    CommunityUser, CommunityRole, UserCommunityRole
+    CommunityUser, CommunityRole, UserCommunityRole,
+    Alergies, MedicalConditions, EmergencyContact
 )
 from django.utils.translation import gettext_lazy as _
 
@@ -19,6 +20,9 @@ class UserCommunityRoleSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class CommunityUserSerializer(serializers.ModelSerializer):
+    '''
+    Main serializer for CommunityUser model
+    '''
     roles = UserCommunityRoleSerializer(source='role_links', many=True, read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     short_name = serializers.CharField(source='get_short_name', read_only=True)
@@ -53,3 +57,41 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunityUser
         fields = ('id', 'member_id', 'first_name', 'last_name', 'ministry')
+
+
+class AlergiesSerializer(serializers.ModelSerializer):
+    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+
+    class Meta:
+        model = Alergies
+        fields = [
+            "id", "name", "description", "instructions", "triggers",
+            "severity", "severity_display", "created_at", "updated_at"
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class MedicalConditionsSerializer(serializers.ModelSerializer):
+    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+
+    class Meta:
+        model = MedicalConditions
+        fields = [
+            "id", "name", "description", "instructions", "triggers",
+            "severity", "severity_display", "created_at", "updated_at"
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class EmergencyContactSerializer(serializers.ModelSerializer):
+    contact_relationship_display = serializers.CharField(source="get_contact_relationship_display", read_only=True)
+
+    class Meta:
+        model = EmergencyContact
+        fields = [
+            "id", "user", "first_name", "last_name", "middle_name",
+            "preferred_name", "email", "phone_number", "secondary_phone",
+            "contact_relationship", "contact_relationship_display",
+            "address", "is_primary", "notes"
+        ]
+        read_only_fields = ["id"]

@@ -197,7 +197,10 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         super().save(*args, **kwargs)
         
     def get_full_name(self):
-        return f"{self.first_name} {self.last_name}"
+        """Return first + last name, or preferred name if available"""
+        if self.preferred_name:
+            return self.preferred_name
+        return f"{self.first_name} {self.last_name}".strip()
 
     def get_short_name(self):
         return self.preferred_name or self.first_name
