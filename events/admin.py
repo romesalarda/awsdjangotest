@@ -107,9 +107,9 @@ class QuestionChoiceInline(admin.TabularInline):
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ('name', 'event_type', 'start_date', 'end_date', 'venue_name', 'number_of_pax')
+    list_display = ('name', 'event_type', 'start_date', 'end_date', 'number_of_pax')
     list_filter = ('event_type', 'area_type', 'start_date')
-    search_fields = ('name', 'theme', 'venue_name', 'venue_address')
+    search_fields = ('name', 'theme')
     date_hierarchy = 'start_date'
     ordering = ('-start_date',)
     readonly_fields = ('duration_days',)
@@ -119,7 +119,7 @@ class EventAdmin(admin.ModelAdmin):
             'name', 'event_type', 'start_date', 'end_date', 'duration_days'
         )}),
         (_('Location Information'), {'fields': (
-            'venue_name', 'venue_address', 'specific_area', 'area_type', 'areas_involved'
+            'area_type', 'areas_involved'
         )}),
         (_('Event Details'), {'fields': (
             'number_of_pax', 'theme', 'anchor_verse'
@@ -131,7 +131,7 @@ class EventAdmin(admin.ModelAdmin):
     
     filter_horizontal = ('areas_involved',)
     autocomplete_fields = (
-        'specific_area', 'supervising_chapter_youth_head', 
+        'supervising_chapter_youth_head', 
         'supervising_chapter_CFC_coordinator'
     )
     

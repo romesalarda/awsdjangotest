@@ -193,5 +193,5 @@ class EventVenue (models.Model):
     postcode = models.CharField(verbose_name=_("venue address"), blank=True, null=True)
     max_allowed_people = models.IntegerField(verbose_name=_("max allowed people"), default=0)
     venue_type = models.CharField(verbose_name=_("type of venue"), choices=VenueType, default=VenueType.MAIN_VENUE)
-    general_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, verbose_name=_("community general area"))
+    general_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, verbose_name=_("community general area"), related_name="event_venues", null=True, blank=True)
     primary_venue = models.BooleanField(verbose_name=_("is primary venue"), default=True, blank=True, null=True)

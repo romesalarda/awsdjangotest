@@ -50,8 +50,8 @@ class QuestionAnswer(models.Model):
     Response to a question that is asked when a participant registers for an event
     '''
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    participant = models.ForeignKey("EventParticipant", on_delete=models.CASCADE, related_name="answers")
-    question = models.ForeignKey("ExtraQuestion", on_delete=models.CASCADE, related_name="answers")
+    participant = models.ForeignKey("EventParticipant", on_delete=models.CASCADE, related_name="event_question_answers")
+    question = models.ForeignKey("ExtraQuestion", on_delete=models.CASCADE, related_name="question_answers")
     
     # store response in a flexible way
     answer_text = models.TextField(blank=True, null=True)  

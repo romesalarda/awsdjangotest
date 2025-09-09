@@ -112,7 +112,7 @@ class EventPayment(models.Model):
         FAILED = "FAILED", _("Failed")
 
     user = models.ForeignKey(EventParticipant, on_delete=models.CASCADE)
-    event = models.ForeignKey("Event", on_delete=models.SET_NULL, null=True, blank=True)
+    event = models.ForeignKey("Event", on_delete=models.SET_NULL, null=True, blank=True, related_name="event_payments")
 
     package = models.ForeignKey(
         "EventPaymentPackage",

@@ -27,8 +27,8 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         KFC = "KFC", _("Kids for Christ")
         
         VOLUNTEER = "VLN", _("Volunteer") # not looking to join the community but is attending an event e.g. a priest
-        YOUTH_GUEST = "YGT", _ ("Youth Guest")
-        ADULT_GUEST = "AGT", _ ("Adult Guest") 
+        YOUTH_GUEST = "YGT", _("Youth Guest")
+        ADULT_GUEST = "AGT", _("Adult Guest") 
         
     class GenderType(models.TextChoices):
         MALE = "MALE", _("Male")
@@ -36,8 +36,8 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         
     class MaritalType(models.TextChoices):
         SINGLE = "SINGLE", _("Single")
-        MARRIED = "MARRIED", _ ("Married")
-        WIDOWED = "WIDOWED", _ ("Widowed")
+        MARRIED = "MARRIED", _("Married")
+        WIDOWED = "WIDOWED", _("Widowed")
         
     class BloodType(models.TextChoices):
         A_POS = "A+", _("A Positive")
@@ -68,7 +68,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     date_of_birth = models.DateField(verbose_name=_("date of birth"), blank=True, null=True,  help_text=_("Format: YYYY-MM-DD"))
     
     # location information
-    area_from = models.ForeignKey("AreaLocation", on_delete=models.SET_NULL, 
+    area_from = models.ForeignKey("events.AreaLocation", on_delete=models.SET_NULL, 
                                   verbose_name=_("area of residence"), blank=True, null=True
                                   )
     address_line_1 = models.CharField(verbose_name=_("address line 1"), blank=True, null=True)
@@ -92,7 +92,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         verbose_name=_("profile picture uploaded at")
     )
     marital_status = models.CharField(verbose_name=_("marital status"), 
-                                      choices=MaritalType, 
+                                      choices=MaritalType.choices, 
                                       default=MaritalType.SINGLE, 
                                       blank=True, null=True
                                       )
@@ -131,7 +131,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         "CommunityRole",         
         through="UserCommunityRole",
         through_fields=("user", "role"),
-        related_name="users", 
+        related_name="user_community_roles", 
         help_text=_("role/s in the community"), 
         blank=True
     )
@@ -171,7 +171,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
             ).upper()
             
             # Use current year if uploaded_at is not set
-            year = self.uploaded_at.year if self.uploaded_at else datetime.datetime.now().year
+            year = self.user_uploaded_at.year if self.user_uploaded_at else datetime.datetime.now().year
             
             # Generate unique member ID E.g. 2025-ROME-SALARDAbDASDS3S
             self.member_id = f"{year}-{name_slug}{str(self.id)[:MAX_MEMBER_ID_LENGTH - len(name_slug) - 5]}"

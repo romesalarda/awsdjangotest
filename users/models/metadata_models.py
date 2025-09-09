@@ -72,7 +72,7 @@ class EmergencyContact (models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
         verbose_name=_("linked user in the community"), null=True, blank=True,
-        related_name="emergency_contacts"
+        related_name="community_user_emergency_contacts"
         ) # better if we can use an existing member in the community, if not fill the details below
 
     class ContactRelationshipType(models.TextChoices):

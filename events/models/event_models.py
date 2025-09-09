@@ -4,14 +4,38 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
 from .location_models import (
-    AreaLocation, ChapterLocation, CountryLocation, 
-    EventVenue
-    )
-from users.models import Alergies, EmergencyContact
-
+    AreaLocation, ChapterLocation, EventVenue)
 import uuid
 
 MAX_LENGTH_EVENT_NAME_CODE = 5
+
+class EventResource(models.Model):
+    '''
+    represents a resource e.g. a link to a further google form or a memo
+    '''
+    class ResourceType (models.TextChoices):
+        LINK = "LINK", _("Link")
+        PDF = "PDF", _("pdf")
+        FILE = "FILE", _("File")
+        PHOTO = "PHOTO", _("Photo")
+
+    id = models.UUIDField(verbose_name=_("resource id"), default=uuid.uuid4, editable=False, primary_key=True)
+    resource_name = models.CharField(verbose_name=_("public resource name"))
+    resource_link = models.CharField(verbose_name=_("public resource link"), blank=True, null=True)
+    resource_file = models.FileField(verbose_name=("file resource"), upload_to="public-event-file-resources", blank=True, null=True)
+    image = models.FileField(verbose_name=("image resource"), upload_to="public-event-image-resources", blank=True, null=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    public_resource = models.BooleanField(default=False)
+    
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        verbose_name=_("resource added by"), null=True) # must be provided
+    chapter_ownership = models.ForeignKey(
+        ChapterLocation, on_delete=models.SET_NULL, 
+        verbose_name=_("chapter that owns resource"), null=True, blank=True
+        )
+    
 
 class Event(models.Model):
     '''
@@ -95,9 +119,9 @@ class Event(models.Model):
     )
     
     # important information
-    resources = models.ManyToManyField("PublicEventResource", blank=True, related_name="event_resources") # extra memos, photos promoting the event, etcs
+    resources = models.ManyToManyField(EventResource, blank=True, related_name="event_resources") # extra memos, photos promoting the event, etcs
     memo = models.ForeignKey(
-        "PublicEventResource",
+        EventResource,
         verbose_name=_("main event memo"),
         on_delete=models.SET_NULL, 
         blank=True, 
@@ -278,19 +302,6 @@ class EventParticipant(models.Model):
                 fields=["event", "user"],
                 name="unique_event_user_participation"
             ),
-            # Guests: can't register twice for the same event
-            models.UniqueConstraint(
-                fields=["event", "guest_user"],
-                name="unique_event_guest_participation"
-            ),
-            # Prevent both a user and a guest record for the same participant slot
-            models.CheckConstraint(
-                check=(
-                    models.Q(user__isnull=False, guest_user__isnull=True) |
-                    models.Q(user__isnull=True, guest_user__isnull=False)
-                ),
-                name="either_user_or_guest_only"
-            ),
         ]
     
     def __str__(self):
@@ -406,32 +417,6 @@ class EventWorkshop(models.Model):
         # This would typically be implemented with a through model for workshop participants
         return 0  # Placeholder - you'd implement actual counting logic
 
-class EventResource(models.Model):
-    '''
-    represents a resource e.g. a link to a further google form or a memo
-    '''
-    class ResourceType (models.TextChoices):
-        LINK = "LINK", _("Link")
-        PDF = "PDF", _("pdf")
-        FILE = "FILE", _("File")
-        PHOTO = "PHOTO", _("Photo")
 
-    id = models.UUIDField(verbose_name=_("resource id"), default=uuid.uuid4, editable=False, primary_key=True)
-    resource_name = models.CharField(verbose_name=_("public resource name"))
-    resource_link = models.CharField(verbose_name=_("public resource link"), blank=True, null=True)
-    resource_file = models.FileField(verbose_name=("file resource"), upload_to="public-event-file-resources", blank=True, null=True)
-    image = models.FileField(verbose_name=("image resource"), upload_to="public-event-image-resources", blank=True, null=True)
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    public_resource = models.BooleanField(default=False)
-    
-    added_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        verbose_name=_("resource added by"), null=True) # must be provided
-    chapter_ownership = models.ForeignKey(
-        ChapterLocation, on_delete=models.SET_NULL, 
-        verbose_name=_("chapter that owns resource"), null=True, blank=True
-        )
-    
 
     
