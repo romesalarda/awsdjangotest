@@ -134,14 +134,6 @@ class EventSerializer(serializers.ModelSerializer):
     )
 
     # Location
-    specific_area = SimplifiedAreaLocationSerializer(read_only=True)
-    specific_area_id = serializers.PrimaryKeyRelatedField(
-        source="specific_area",
-        queryset=AreaLocation.objects.all(),
-        write_only=True,
-        required=False,
-        allow_null=True,
-    )
     areas_involved = SimplifiedAreaLocationSerializer(many=True, read_only=True)
 
     # Venues
@@ -184,8 +176,6 @@ class EventSerializer(serializers.ModelSerializer):
             "number_of_pax",
             "theme",
             "anchor_verse",
-            "specific_area",
-            "specific_area_id",
             "areas_involved",
             "venues",
             "venue_ids",
@@ -220,6 +210,7 @@ class EventSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
+        print(rep)
         return {
             "id": rep["id"],
             "basic_info": {
@@ -241,7 +232,6 @@ class EventSerializer(serializers.ModelSerializer):
             },
             "venue": {
                 "venues": rep["venues"],
-                "specific_area": rep["specific_area"],
                 "areas_involved": rep["areas_involved"],
             },
             "participants": {
@@ -261,16 +251,63 @@ class EventSerializer(serializers.ModelSerializer):
 
 class EventParticipantSerializer(serializers.ModelSerializer):
     '''
-    
+    Full detail Event participant serializer - for event organizers/admins
     '''
-    user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
     participant_type_display = serializers.CharField(
-        source='get_participant_type_display', read_only=True
+        source="get_participant_type_display", read_only=True
     )
-    
+
+    # Dates (output as datetime, but not writable by user)
+    registered_on = serializers.DateTimeField(
+        source="registration_date", read_only=True
+    )
+    confirmed_on = serializers.DateTimeField(
+        source="confirmation_date", read_only=True
+    )
+    attended_on = serializers.DateTimeField(
+        source="attended_date", read_only=True
+    )
     class Meta:
         model = EventParticipant
-        fields = '__all__'
-        read_only_fields = ['registration_date', 'confirmation_date', 'attended_date']
-        
+        fields = [
+            "user",
+            "event",
+
+            # Computed / display
+            "user_details",
+            "status",
+            "status_display",
+            "participant_type",
+            "participant_type_display",
+
+            # Dates
+            "registered_on",
+            "confirmed_on",
+            "attended_on",
+
+            # Writable user input
+            "media_consent",
+            "data_consent",
+            "understood_registration",
+            "dietary_restrictions",
+            "special_needs",
+            "emergency_contact",
+            "emergency_phone",
+            "notes",
+
+            # Payment info
+            "paid_amount",
+            "payment_date",
+            "verified",
+        ]
+        read_only_fields = [
+            "id",
+            "user_details",
+            "status_display",
+            "participant_type_display",
+            "registered_on",
+            "confirmed_on",
+            "attended_on",
+        ]

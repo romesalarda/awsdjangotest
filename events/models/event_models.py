@@ -64,10 +64,15 @@ class Event(models.Model):
         
     # Event type and basic information
     event_type = models.CharField(_("event type"), max_length=20, choices=EventType.choices, default=EventType.YOUTH_CAMP)
-    event_code = models.CharField(_("event code"), blank=True, null=True) # CNF26ANCRD
+    event_code = models.CharField(_("event code"), blank=True, null=True, 
+                                  help_text=_("Event code that is shared around and for participant convenience. E.g. CNF26ANCRD - tells you it's a conference in 2026 with the name ANCHORED")
+                                  ) # CNF26ANCRD
     
     description = models.TextField(verbose_name=_("event description"), blank=True, null=True) 
-    sentence_description = models.CharField(verbose_name=_("event description"), blank=True, null=True, max_length=300) 
+    sentence_description = models.CharField(
+        verbose_name=_("sentence description"), blank=True, null=True, max_length=300,
+        help_text=_("A brief one-sentence description of the event, for promotional purposes. E.g. A youth camp to anchor our faith in Christ.")
+        ) 
     landing_image = models.ImageField(        
         upload_to="event-landing-images/", 
         blank=True, 
@@ -75,13 +80,14 @@ class Event(models.Model):
         verbose_name=_("event landing image"))
     is_public = models.BooleanField(verbose_name=_("is event public"), default=False, null=True)
     
-    name = models.CharField(_("event name"), max_length=200, blank=True, null=True) # ANCHORED
+    name = models.CharField(_("event name"), max_length=200, null=True) # ANCHORED
     name_code = models.CharField( # simplified version of the name of the event
         _("event name code"), max_length=MAX_LENGTH_EVENT_NAME_CODE, 
         blank=True, null=True,
         validators=[
             validators.MaxLengthValidator(MAX_LENGTH_EVENT_NAME_CODE)
-        ]
+        ],
+        help_text=_("Short code for the event name, used in generating the event code E.g. for ANCHORED event, use ANCRD")
         ) # ANCRD
     
     start_date = models.DateField(_("event start date"), blank=True, null=True)

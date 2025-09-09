@@ -77,7 +77,7 @@ class EventServiceTeamMemberInline(admin.TabularInline):
     model = EventServiceTeamMember
     extra = 1
     autocomplete_fields = ('user', 'assigned_by')
-    filter_horizontal = ('roles',)
+    # filter_horizontal = ('roles',)
 
 class EventParticipantInline(admin.TabularInline):
     model = EventParticipant
@@ -107,7 +107,7 @@ class QuestionChoiceInline(admin.TabularInline):
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ('name', 'event_type', 'start_date', 'end_date', 'number_of_pax')
+    list_display = ('name', 'name_code', 'event_code', 'event_type', 'start_date', 'end_date', 'number_of_pax')
     list_filter = ('event_type', 'area_type', 'start_date')
     search_fields = ('name', 'theme')
     date_hierarchy = 'start_date'
@@ -116,16 +116,22 @@ class EventAdmin(admin.ModelAdmin):
     
     fieldsets = (
         (_('Basic Information'), {'fields': (
-            'name', 'event_type', 'start_date', 'end_date', 'duration_days'
+            'name', 'name_code', 'event_code', 'event_type', 'start_date', 'end_date', 'duration_days'
         )}),
         (_('Location Information'), {'fields': (
-            'area_type', 'areas_involved'
+            'area_type', 'areas_involved', 'venues'
         )}),
         (_('Event Details'), {'fields': (
-            'number_of_pax', 'theme', 'anchor_verse'
+            'description', 'sentence_description', 'theme', 'anchor_verse', 'number_of_pax'
         )}),
         (_('Supervision'), {'fields': (
             'supervising_chapter_youth_head', 'supervising_chapter_CFC_coordinator'
+        )}),
+        (_('Resources'), {'fields': (
+            'resources', 'memo', 'landing_image'
+        )}),
+        (_('Admin'), {'fields': (
+            'notes', 'is_public'
         )}),
     )
     

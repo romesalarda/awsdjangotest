@@ -16,7 +16,7 @@ location_router.register(r"search-areas", SearchAreaSupportLocationViewSet, base
 
 event_router = DefaultRouter()
 
-event_router.register(r'events', EventViewSet)
+event_router.register(r'manage', EventViewSet)
 event_router.register(r'event-service-team', EventServiceTeamMemberViewSet)
 event_router.register(r'event-roles', EventRoleViewSet)
 event_router.register(r'event-participants', EventParticipantViewSet)
