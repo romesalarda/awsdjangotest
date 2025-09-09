@@ -16,7 +16,6 @@ import os
 
 # AWS Boto
 import boto3
-import botocore.session
 from botocore.session import Session
 from botocore.exceptions import NoCredentialsError
 from botocore.config import Config
@@ -84,6 +83,7 @@ AUTH_USER_MODEL = "users.CommunityUser"
 # Application definition
 
 DJANGO_APPS = [
+    "jet",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",

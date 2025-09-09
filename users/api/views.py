@@ -17,6 +17,13 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     search_fields = ['first_name', 'last_name', 'email', 'member_id', 'username']
     ordering_fields = ['last_name', 'first_name', 'date_of_birth', 'uploaded_at']
     ordering = ['last_name', 'first_name']
+    permission_classes = [permissions.AllowAny]
+    
+    def get_serializer_class(self):
+        if not self.request.user.is_superuser:
+            if self.action in ['list', 'retrieve', 'create', 'update', 'partial_update']:
+                return SimplifiedCommunityUserSerializer
+        return CommunityUserSerializer
     
     @action(detail=True, methods=['get'])
     def roles(self, request, pk=None):

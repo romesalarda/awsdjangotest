@@ -52,11 +52,71 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+    
+    
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip()
+
+    def get_short_name(self, obj):
+        return obj.preferred_name or obj.first_name
+    
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+
+        return {
+            "identity": {
+                "member_id": rep["member_id"],
+                "username": rep["username"],
+                "name": {
+                    "full": self.get_full_name(instance),
+                    "short": self.get_short_name(instance),
+                    "first": rep["first_name"],
+                    "last": rep["last_name"],
+                    "middle": rep.get("middle_name"),
+                    "preferred": rep.get("preferred_name"),
+                },
+                "gender": rep.get("gender"),
+                "age": rep.get("age"),
+                "date_of_birth": rep.get("date_of_birth"),
+                "marital_status": rep.get("marital_status"),
+                "blood_type": rep.get("blood_type"),
+            },
+            "contact": {
+                "primary_email": rep.get("primary_email"),
+                "secondary_email": rep.get("secondary_email"),
+                "phone_number": rep.get("phone_number"),
+                "address": {
+                    "line1": rep.get("address_line_1"),
+                    "line2": rep.get("address_line_2"),
+                    "postcode": rep.get("postcode"),
+                    "area_from": rep.get("area_from"),
+                },
+            },
+            "community": {
+                "ministry": rep.get("ministry"),
+                "roles": rep.get("community_roles", []),
+                "encoder": rep.get("is_encoder"),
+                "active": rep.get("is_active"),
+            },
+            "profile": {
+                "picture": rep.get("profile_picture"),
+                "picture_uploaded_at": rep.get("profile_picture_uploaded_at"),
+            },
+            "safeguarding": {
+                "alergies": rep.get("alergies", []),
+                "medical_conditions": rep.get("medical_conditions", []),
+                "emergency_contacts": rep.get("emergency_contacts", []),
+            },
+            "metadata": {
+                "last_login": rep.get("last_login"),
+                "uploaded_at": rep.get("user_uploaded_at"),
+            },
+        }
 
 class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunityUser
-        fields = ('id', 'member_id', 'first_name', 'last_name', 'ministry')
+        fields = ('member_id', 'first_name', 'last_name', 'ministry')
 
 
 class AlergiesSerializer(serializers.ModelSerializer):

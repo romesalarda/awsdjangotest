@@ -17,10 +17,10 @@ class CommunityUserManager(BaseUserManager):
             last_name = extra_fields.get("last_name", "")
             username = slugify(f"{ministry}-{first_name}{last_name}").upper()
             
-        email = extra_fields.get("email")
+        email = extra_fields.get("primary_email")
         user = self.model(
             username=username,
-            email=self.normalize_email(email) if email else None,
+            primary_email=self.normalize_email(email) if email else None,
             **extra_fields
         )        
         user.set_password(password)
