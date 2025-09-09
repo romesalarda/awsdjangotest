@@ -90,7 +90,6 @@ MAIN URL PATTERNS
 '''
 
 urlpatterns = [
-    path('jet/', include('jet.urls', 'jet')),
     path("admin/", admin.site.urls),
 
     # path("location-admin/", LocationSite(name="location-admin").urls),
