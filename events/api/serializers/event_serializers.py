@@ -73,13 +73,45 @@ class PublicEventResourceSerializer(serializers.ModelSerializer):
 
 
 class SimplifiedEventSerializer(serializers.ModelSerializer):
-    event_type_display = serializers.CharField(
-        source='get_event_type_display', read_only=True
-    )
-    
     class Meta:
         model = Event
-        fields = ('id', 'name', 'event_type', 'event_type_display', 'start_date', 'end_date')
+        fields = (
+            "event_type",
+            "event_code",
+            "name",
+            "sentence_description",
+            "landing_image",
+            "start_date",
+            "end_date",
+            "duration_days",
+            "area_type",
+            "theme",
+            "anchor_verse",
+        )
+        
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        return {
+            "identity": {
+                "event_type": rep["event_type"],
+                "event_code": rep["event_code"],
+                "name": rep["name"],
+                "description": rep["sentence_description"],
+                "theme": rep.get("theme"),
+                "anchor_verse": rep.get("anchor_verse")
+            },
+            "media": {
+                "landing_image": rep.get("landing_image")
+            },
+            "timing": {
+                "start_date": rep.get("start_date"),
+                "end_date": rep.get("end_date"),
+                "duration_days": rep.get("duration_days")
+            },
+            "location": {
+                "area_type": rep.get("area_type")
+            }
+        }
         
 class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
     # if you want to show unit + cluster names directly

@@ -73,7 +73,7 @@ class EventRoleAdmin(admin.ModelAdmin):
     search_fields = ('role_name', 'description')
     ordering = ('role_name',)
 
-class EventServiceTeamMemberInline(admin.TabularInline):
+class EventServiceTeamMemberInline(admin.StackedInline):
     model = EventServiceTeamMember
     extra = 1
     autocomplete_fields = ('user', 'assigned_by')
@@ -255,7 +255,7 @@ class QuestionAnswerAdmin(admin.ModelAdmin):
         return obj.answer_text
     get_answer.short_description = "Answer"
     
-class QuestionAnswerInline(admin.TabularInline):
+class QuestionAnswerInline(admin.StackedInline):
     model = QuestionAnswer
     extra = 0
     show_change_link = True

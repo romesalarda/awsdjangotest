@@ -19,6 +19,102 @@ class UserCommunityRoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserCommunityRole
         fields = '__all__'
+        
+class EmergencyContactSerializer(serializers.ModelSerializer):
+    contact_relationship_display = serializers.CharField(source="get_contact_relationship_display", read_only=True)
+
+    class Meta:
+        model = EmergencyContact
+        fields = [
+            "id", "user", "first_name", "last_name", "middle_name",
+            "preferred_name", "email", "phone_number", "secondary_phone",
+            "contact_relationship", "contact_relationship_display",
+            "address", "is_primary", "notes"
+        ]
+        read_only_fields = ["id"]
+
+
+class AllergySerializer(serializers.ModelSerializer):
+    """Base allergy definition (master data)."""
+
+    class Meta:
+        model = Allergy
+        fields = ["id", "name", "description", "triggers", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class MedicalConditionSerializer(serializers.ModelSerializer):
+    """Base medical condition definition (master data)."""
+
+    class Meta:
+        model = MedicalCondition
+        fields = ["id", "name", "description", "triggers", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+class UserAllergySerializer(serializers.ModelSerializer):
+    allergy = AllergySerializer(read_only=True)
+    allergy_id = serializers.PrimaryKeyRelatedField(
+        queryset=Allergy.objects.all(), source="allergy", write_only=True
+    )
+    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+
+    class Meta:
+        model = UserAllergy
+        fields = [
+            "id", "user", "allergy", "allergy_id",
+            "severity", "severity_display", "instructions", "notes",
+            "created_at", "updated_at"
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class UserMedicalConditionSerializer(serializers.ModelSerializer):
+    condition = MedicalConditionSerializer(read_only=True)
+    condition_id = serializers.PrimaryKeyRelatedField(
+        queryset=MedicalCondition.objects.all(), source="condition", write_only=True
+    )
+    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+
+    class Meta:
+        model = UserMedicalCondition
+        fields = [
+            "id", "user", "condition", "condition_id",
+            "severity", "severity_display", "instructions", "date_diagnosed"
+        ]
+        read_only_fields = ["id"]
+        
+class SimpleAllergySerializer(serializers.ModelSerializer):
+    # flatten instead of nesting user + full allergy model
+    name = serializers.CharField(source="allergy.name", read_only=True)
+    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+
+    class Meta:
+        model = UserAllergy
+        fields = ["id", "name", "severity", "severity_display", "instructions", "notes"]
+
+
+class SimpleMedicalConditionSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="condition.name", read_only=True)
+    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+
+    class Meta:
+        model = UserMedicalCondition
+        fields = ["id", "name", "severity", "severity_display", "instructions", "date_diagnosed"]
+
+
+class SimpleEmergencyContactSerializer(serializers.ModelSerializer):
+    contact_relationship_display = serializers.CharField(
+        source="get_contact_relationship_display", read_only=True
+    )
+
+    class Meta:
+        model = EmergencyContact
+        fields = [
+            "id", "first_name", "last_name", "phone_number",
+            "contact_relationship", "contact_relationship_display", "is_primary"
+        ]
+        
+# main serialiser
 
 class CommunityUserSerializer(serializers.ModelSerializer):
     '''
@@ -28,9 +124,24 @@ class CommunityUserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     short_name = serializers.CharField(source='get_short_name', read_only=True)
     password = serializers.CharField(write_only=True, required=False, style={"input_type": "password"})
+    emergency_contacts = SimpleEmergencyContactSerializer(
+        source="community_user_emergency_contacts", many=True, read_only=True
+    )
+    first_name = serializers.CharField(required=False)
+    last_name = serializers.CharField(required=False)
+    
+    alergies = SimpleAllergySerializer(
+        source="user_allergies", many=True, read_only=True
+    )
+    medical_conditions = SimpleMedicalConditionSerializer(
+        source="user_medical_conditions", many=True, read_only=True
+    )  
+    
     class Meta:
         model = CommunityUser
-        fields = '__all__'
+        fields = ('member_id','roles', 'username', 'full_name', 'short_name','password', 'first_name', 'last_name', 'middle_name', 'preferred_name',
+                  'primary_email', 'secondary_email', 'phone_number', 'address_line_1', 'address_line_2', 'postcode', 'area_from',
+                  'emergency_contacts', 'alergies', 'medical_conditions',)
         extra_kwargs = {
             'password': {'write_only': True},
             'member_id': {'read_only': True},
@@ -38,11 +149,20 @@ class CommunityUserSerializer(serializers.ModelSerializer):
         }
             
     def create(self, validated_data):
+        '''
+        Ensure first name, last name, and password are provided
+        '''
         password = validated_data.pop('password', None)
+        first_name = validated_data.get('first_name', None)
+        last_name = validated_data.get('last_name', None)
+        if not first_name or not last_name:
+            raise serializers.ValidationError({"error": "First name and last name are required."})
         user = CommunityUser.objects.create(**validated_data)
         if password:
             user.set_password(password)
             user.save()
+        else:
+            raise serializers.ValidationError({"password": "Password is required for creating a user."})
         return user
     
     def update(self, instance, validated_data):
@@ -66,7 +186,6 @@ class CommunityUserSerializer(serializers.ModelSerializer):
 
         return {
             "identity": {
-                "db_id": rep["id"],
                 "member_id": rep["member_id"],
                 "username": rep["username"],
                 "name": {
@@ -134,66 +253,5 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
         fields = ('member_id', 'first_name', 'last_name', 'ministry', 'password', 'gender', 'data_of_birth')
 
 
-class AllergySerializer(serializers.ModelSerializer):
-    """Base allergy definition (master data)."""
-
-    class Meta:
-        model = Allergy
-        fields = ["id", "name", "description", "triggers", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class MedicalConditionSerializer(serializers.ModelSerializer):
-    """Base medical condition definition (master data)."""
-
-    class Meta:
-        model = MedicalCondition
-        fields = ["id", "name", "description", "triggers", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-
-class EmergencyContactSerializer(serializers.ModelSerializer):
-    contact_relationship_display = serializers.CharField(source="get_contact_relationship_display", read_only=True)
-
-    class Meta:
-        model = EmergencyContact
-        fields = [
-            "id", "user", "first_name", "last_name", "middle_name",
-            "preferred_name", "email", "phone_number", "secondary_phone",
-            "contact_relationship", "contact_relationship_display",
-            "address", "is_primary", "notes"
-        ]
-        read_only_fields = ["id"]
-
-
-class UserAllergySerializer(serializers.ModelSerializer):
-    allergy = AllergySerializer(read_only=True)
-    allergy_id = serializers.PrimaryKeyRelatedField(
-        queryset=Allergy.objects.all(), source="allergy", write_only=True
-    )
-    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
-
-    class Meta:
-        model = UserAllergy
-        fields = [
-            "id", "user", "allergy", "allergy_id",
-            "severity", "severity_display", "instructions", "notes",
-            "created_at", "updated_at"
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-
-class UserMedicalConditionSerializer(serializers.ModelSerializer):
-    condition = MedicalConditionSerializer(read_only=True)
-    condition_id = serializers.PrimaryKeyRelatedField(
-        queryset=MedicalCondition.objects.all(), source="condition", write_only=True
-    )
-    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
-
-    class Meta:
-        model = UserMedicalCondition
-        fields = [
-            "id", "user", "condition", "condition_id",
-            "severity", "severity_display", "instructions", "date_diagnosed"
-        ]
-        read_only_fields = ["id"]

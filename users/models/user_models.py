@@ -109,13 +109,6 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         related_name="condition_users",
         blank=True
     )
-            
-    # emergency_contacts = models.ManyToManyField(
-    #     EmergencyContact,
-    #     verbose_name=_("Emergency contacts"),
-    #     related_name="user_emergency_contacts",
-    #     blank=True
-    # )
     
     blood_type = models.CharField(
         max_length=3,
@@ -154,7 +147,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     objects = CommunityUserManager()
 
     USERNAME_FIELD = "username"
-    REQUIRED_FIELDS = ["first_name", "last_name"]
+    REQUIRED_FIELDS = ["first_name", "last_name", "password"]
     
     class Meta:
         verbose_name = _("community user")

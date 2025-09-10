@@ -90,8 +90,8 @@ class Event(models.Model):
         help_text=_("Short code for the event name, used in generating the event code E.g. for ANCHORED event, use ANCRD")
         ) # ANCRD
     
-    start_date = models.DateField(_("event start date"), blank=True, null=True)
-    end_date = models.DateField(_("event end date"), blank=True, null=True)
+    start_date = models.DateField(_("event start date"), blank=True, null=True)  # TODO: migrate to DateTimeField
+    end_date = models.DateField(_("event end date"), blank=True, null=True) # TODO: migrate to DateTimeField
     
     # Location information
     area_type = models.CharField(verbose_name=_("area type"), max_length=20, choices=EventAreaType.choices, default=EventAreaType.AREA)

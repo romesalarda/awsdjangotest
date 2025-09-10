@@ -8,8 +8,11 @@ from django.contrib.auth import get_user_model
 from .serializers import *
 from events.api.serializers import SimplifiedEventSerializer
 from events.models import Event
-
+from django.utils import timezone
 class CommunityUserViewSet(viewsets.ModelViewSet):
+    '''
+    Views related to user management
+    '''
     queryset = get_user_model().objects.all()
     serializer_class = CommunityUserSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -23,7 +26,7 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         user = self.request.user
         if not user.is_authenticated:
-            # anonymous users only see simplified
+            # anonymous users only see simplified, #! remember that if they are not a superuser/encoder then cannot view ANY user data
             return SimplifiedCommunityUserSerializer
 
         # if it's a detail view (retrieve/update) check if it's "me"
@@ -50,19 +53,26 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def events(self, request, member_id=None):
         user = self.get_object()
-        # Events where user is in service team
-        service_events = Event.objects.filter(service_team_members__user=user)
-        # Events where user is a participant
-        participant_events = Event.objects.filter(participants__user=user)
-        
-        service_serializer = SimplifiedEventSerializer(service_events, many=True)
-        participant_serializer = SimplifiedEventSerializer(participant_events, many=True)
-        
-        return response.Response({
-            'service_team_events': service_serializer.data,
-            'participant_events': participant_serializer.data
-        })
+        now = timezone.now()
 
+        # All events where the user is involved (service team OR participant)
+        events = Event.objects.filter(
+            models.Q(service_team_members__user=user) |
+            models.Q(participants__user=user)
+        ).distinct()
+
+        # Split into upcoming and past
+        upcoming_events = events.filter(start_date__gte=now).order_by('start_date')
+        past_events = events.filter(start_date__lt=now).order_by('-start_date')
+
+        serializer_upcoming = SimplifiedEventSerializer(upcoming_events, many=True)
+        serializer_past = SimplifiedEventSerializer(past_events, many=True)
+
+        return response.Response({
+            "upcoming_events": serializer_upcoming.data,
+            "past_events": serializer_past.data
+        })
+        
 class CommunityRoleViewSet(viewsets.ModelViewSet):
     queryset = CommunityRole.objects.all()
     serializer_class = CommunityRoleSerializer

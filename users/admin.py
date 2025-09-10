@@ -68,7 +68,6 @@ class CommunityUserAdmin(UserAdmin):
             "groups", "user_permissions"
         )}),
         (_("Profile"), {"fields": ("profile_picture", "profile_picture_uploaded_at")}),
-        (_("Safeguarding"), {"fields": ("emergency_contacts",)}),
         (_("Important dates"), {"fields": ("user_uploaded_at", "last_login")}),
     )
 
