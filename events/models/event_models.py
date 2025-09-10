@@ -105,7 +105,7 @@ class Event(models.Model):
     theme = models.CharField(_("event theme"), max_length=200, blank=True, null=True)
     anchor_verse = models.CharField(_("anchor verse"), max_length=200, blank=True, null=True)
     
-    # Supervision
+    # Supervision # TODO: need to rename these to be more generic, may also be worth to make this a M2M field to allow multiple supervisors
     supervising_chapter_youth_head = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,  
         verbose_name="youth chapter head supervisor", related_name="supervised_events"  
@@ -135,6 +135,8 @@ class Event(models.Model):
         related_name="event_memos"
         )
     notes = models.TextField(verbose_name=_("event notes"), blank=True, null=True)
+    # TODO: add a aproved field to indicate if the event has been approved by the chapter head or national head
+    # TODO: add a field to indicate if the event is active - being planned, completed, cancelled, etc. - choices field
     
     def save(self, *args, **kwargs):
         if not self.event_code:

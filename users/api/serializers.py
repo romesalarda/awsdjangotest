@@ -2,9 +2,10 @@
 from rest_framework import serializers
 from users.models import (
     CommunityUser, CommunityRole, UserCommunityRole,
-    Alergies, MedicalConditions, EmergencyContact
+    Allergy, MedicalCondition, EmergencyContact, UserAllergy, UserMedicalCondition
 )
 from django.utils.translation import gettext_lazy as _
+from django.db import models
 
 class CommunityRoleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -26,7 +27,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
     roles = UserCommunityRoleSerializer(source='role_links', many=True, read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     short_name = serializers.CharField(source='get_short_name', read_only=True)
-    
+    password = serializers.CharField(write_only=True, required=False, style={"input_type": "password"})
     class Meta:
         model = CommunityUser
         fields = '__all__'
@@ -35,7 +36,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             'member_id': {'read_only': True},
             'username': {'read_only': True},
         }
-    
+            
     def create(self, validated_data):
         password = validated_data.pop('password', None)
         user = CommunityUser.objects.create(**validated_data)
@@ -65,6 +66,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
 
         return {
             "identity": {
+                "db_id": rep["id"],
                 "member_id": rep["member_id"],
                 "username": rep["username"],
                 "name": {
@@ -113,33 +115,40 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             },
         }
 
+
+class ReducedMinistryType(models.TextChoices):
+    
+    VOLUNTEER = "VLN", _("Volunteer") # not looking to join the community but is attending an event e.g. a priest
+    YOUTH_GUEST = "YGT", _("Youth Guest")
+    ADULT_GUEST = "AGT", _("Adult Guest") 
+
 class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, style={"input_type": "password"})
+    # age = serializers.IntegerField(source='get_age', write_only=True)
+    data_of_birth = serializers.DateTimeField(source='date_of_birth', write_only=True)
+    gender = serializers.ChoiceField(choices=CommunityUser.GenderType.choices, write_only=True)
+    ministry = serializers.ChoiceField(choices=ReducedMinistryType.choices, write_only=True)
+    
     class Meta:
         model = CommunityUser
-        fields = ('member_id', 'first_name', 'last_name', 'ministry')
+        fields = ('member_id', 'first_name', 'last_name', 'ministry', 'password', 'gender', 'data_of_birth')
 
 
-class AlergiesSerializer(serializers.ModelSerializer):
-    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+class AllergySerializer(serializers.ModelSerializer):
+    """Base allergy definition (master data)."""
 
     class Meta:
-        model = Alergies
-        fields = [
-            "id", "name", "description", "instructions", "triggers",
-            "severity", "severity_display", "created_at", "updated_at"
-        ]
+        model = Allergy
+        fields = ["id", "name", "description", "triggers", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class MedicalConditionsSerializer(serializers.ModelSerializer):
-    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+class MedicalConditionSerializer(serializers.ModelSerializer):
+    """Base medical condition definition (master data)."""
 
     class Meta:
-        model = MedicalConditions
-        fields = [
-            "id", "name", "description", "instructions", "triggers",
-            "severity", "severity_display", "created_at", "updated_at"
-        ]
+        model = MedicalCondition
+        fields = ["id", "name", "description", "triggers", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -153,5 +162,38 @@ class EmergencyContactSerializer(serializers.ModelSerializer):
             "preferred_name", "email", "phone_number", "secondary_phone",
             "contact_relationship", "contact_relationship_display",
             "address", "is_primary", "notes"
+        ]
+        read_only_fields = ["id"]
+
+
+class UserAllergySerializer(serializers.ModelSerializer):
+    allergy = AllergySerializer(read_only=True)
+    allergy_id = serializers.PrimaryKeyRelatedField(
+        queryset=Allergy.objects.all(), source="allergy", write_only=True
+    )
+    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+
+    class Meta:
+        model = UserAllergy
+        fields = [
+            "id", "user", "allergy", "allergy_id",
+            "severity", "severity_display", "instructions", "notes",
+            "created_at", "updated_at"
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class UserMedicalConditionSerializer(serializers.ModelSerializer):
+    condition = MedicalConditionSerializer(read_only=True)
+    condition_id = serializers.PrimaryKeyRelatedField(
+        queryset=MedicalCondition.objects.all(), source="condition", write_only=True
+    )
+    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+
+    class Meta:
+        model = UserMedicalCondition
+        fields = [
+            "id", "user", "condition", "condition_id",
+            "severity", "severity_display", "instructions", "date_diagnosed"
         ]
         read_only_fields = ["id"]

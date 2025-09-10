@@ -158,7 +158,7 @@ class AreaLocation (models.Model):
                 self.area_code = self.area_name.upper()[:3]
             area_id = slugify(self.area_code + "-" + self.unit.chapter.chapter_name).upper() # E.G. FRM-SOUTHEAST-D20FAG2FSDS
             self.area_id = area_id + str(self.id)[:MAX_LENGTH_LOCATION_ID - len(area_id)]
-          
+        self.area_name = slugify(self.area_name.lower().strip())
         super().save(*args, **kwargs)
     
     def __str__(self):
@@ -174,6 +174,10 @@ class SearchAreaSupportLocation (models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)    
     name = models.CharField(verbose_name=_("name of relative location"), max_length=100) 
     relative_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, null=True, related_name="relative_search_areas")
+    
+    def save(self, *args, **kwargs):
+        self.name = self.name.lower().strip()
+        return super().save(*args, **kwargs)
 
 class EventVenue (models.Model):
     '''

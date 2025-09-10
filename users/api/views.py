@@ -17,23 +17,38 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     search_fields = ['first_name', 'last_name', 'email', 'member_id', 'username']
     ordering_fields = ['last_name', 'first_name', 'date_of_birth', 'uploaded_at']
     ordering = ['last_name', 'first_name']
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.AllowAny] # TODO: must change to authenticated only + add object permissions
+    lookup_field = "member_id"
     
     def get_serializer_class(self):
-        if not self.request.user.is_superuser:
-            if self.action in ['list', 'retrieve', 'create', 'update', 'partial_update']:
-                return SimplifiedCommunityUserSerializer
+        user = self.request.user
+        if not user.is_authenticated:
+            # anonymous users only see simplified
+            return SimplifiedCommunityUserSerializer
+
+        # if it's a detail view (retrieve/update) check if it's "me"
+        if self.action in ['retrieve', 'update', 'partial_update']:
+            obj = self.get_object()
+            if obj == user or user.is_superuser:
+                return CommunityUserSerializer  # full serializer for self
+            return SimplifiedCommunityUserSerializer
+
+        # for listing others
+        if self.action == "list":
+            return SimplifiedCommunityUserSerializer
+
+        # fallback
         return CommunityUserSerializer
     
     @action(detail=True, methods=['get'])
-    def roles(self, request, pk=None):
+    def roles(self, request, member_id=None):
         user = self.get_object()
         roles = user.role_links.all()
         serializer = UserCommunityRoleSerializer(roles, many=True)
         return response.Response(serializer.data)
     
     @action(detail=True, methods=['get'])
-    def events(self, request, pk=None):
+    def events(self, request, member_id=None):
         user = self.get_object()
         # Events where user is in service team
         service_events = Event.objects.filter(service_team_members__user=user)
@@ -62,14 +77,14 @@ class UserCommunityRoleViewSet(viewsets.ModelViewSet):
     filterset_fields = ['user', 'role', 'is_active']
 
 class AlergiesViewSet(viewsets.ModelViewSet):
-    queryset = Alergies.objects.all().order_by("name")
-    serializer_class = AlergiesSerializer
+    queryset = Allergy.objects.all().order_by("name")
+    serializer_class = AllergySerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
 
 class MedicalConditionsViewSet(viewsets.ModelViewSet):
-    queryset = MedicalConditions.objects.all().order_by("name")
-    serializer_class = MedicalConditionsSerializer
+    queryset = MedicalCondition.objects.all().order_by("name")
+    serializer_class = MedicalConditionSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
 

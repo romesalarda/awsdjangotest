@@ -1,16 +1,18 @@
 from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+
 from django_filters.rest_framework import DjangoFilterBackend
+from django.utils.translation import gettext_lazy as _
+from django.contrib.auth import get_user_model
+
 from events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
     EventTalk, EventWorkshop
 )
 from events.api.serializers import *
-from django.utils.translation import gettext_lazy as _
-from django.contrib.auth import get_user_model
-
 from events.api.filters import EventFilter
+from core.permissions import IsEncoderPermission
 
 class EventViewSet(viewsets.ModelViewSet):
     '''
@@ -24,6 +26,7 @@ class EventViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'theme', 'venue_name', 'venue_address']
     ordering_fields = ['start_date', 'end_date', 'name', 'number_of_pax']
     ordering = ['-start_date']
+    permission_classes = [permissions.IsAuthenticated, IsEncoderPermission]
     
     @action(detail=True, methods=['get'])
     def participants(self, request, pk=None):

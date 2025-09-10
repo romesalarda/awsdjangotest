@@ -4,65 +4,110 @@ from django.utils.translation import gettext_lazy as _
 
 import uuid
 
-class Alergies (models.Model):
-    '''
-    represents allergies
-    '''
+class Allergy(models.Model):
+    """Represents allergy definitions (master data)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, verbose_name=_("name"))
     description = models.TextField(blank=True, null=True, verbose_name=_("description"))
-    instructions = models.TextField(blank=True, null=True, verbose_name=_("instructions"))
     triggers = models.TextField(blank=True, null=True, verbose_name=_("triggers (e.g., peanuts, pollen)"))
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("created at"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("last updated"))
-    
-    class Severity(models.TextChoices):
-        MILD = "MILD", _("Mild")
-        MODERATE = "MOD", _("Moderate")
-        SEVERE = "SEV", _("Severe")
-        CRITICAL = "CRT", _("Critical")
 
-    severity = models.CharField(
-        max_length=5,
-        choices=Severity.choices,
-        default=Severity.MILD,
-        verbose_name=_("severity level")
-    )
-    
     class Meta:
-        verbose_name_plural = _("Alergies")
-    
+        verbose_name_plural = _("Allergies")
+
     def __str__(self):
         return self.name
-    
-class MedicalConditions (models.Model):
-    '''
-    represents medical
-    '''
+
+
+class MedicalCondition(models.Model):
+    """Represents medical condition definitions (master data)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, verbose_name=_("name"))
     description = models.TextField(blank=True, null=True, verbose_name=_("description"))
-    instructions = models.TextField(blank=True, null=True, verbose_name=_("instructions"))
-    triggers = models.TextField(blank=True, null=True, verbose_name=_("triggers (e.g., peanuts, pollen)"))
+    triggers = models.TextField(blank=True, null=True, verbose_name=_("triggers (e.g., pollen, dust)"))
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("created at"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("last updated"))
-    
-    class Severity(models.TextChoices):
-        MILD = "MILD", _("Mild")
-        MODERATE = "MOD", _("Moderate")
-        SEVERE = "SEV", _("Severe")
-        CRITICAL = "CRT", _("Critical")
 
-    severity = models.CharField(
-        max_length=5,
-        choices=Severity.choices,
-        default=Severity.MILD,
-        verbose_name=_("severity level")
-    )
-    
     class Meta:
         verbose_name_plural = _("Medical Conditions")
-    
+
     def __str__(self):
         return self.name
+
+
+class UserAllergy(models.Model):
+    """Join model with user-specific allergy info."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="user_allergies"
+    )
+    allergy = models.ForeignKey(
+        "Allergy",
+        on_delete=models.CASCADE,
+        related_name="user_links"
+    )
+
+    class Severity(models.TextChoices):
+        MILD = "MILD", _("Mild")
+        MODERATE = "MOD", _("Moderate")
+        SEVERE = "SEV", _("Severe")
+        CRITICAL = "CRT", _("Critical")
+
+    severity = models.CharField(
+        max_length=5,
+        choices=Severity.choices,
+        default=Severity.MILD
+    )
+    instructions = models.TextField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "allergy")
+
+    def __str__(self):
+        return f"{self.user} - {self.allergy} ({self.severity})"
+
+
+class UserMedicalCondition(models.Model):
+    """Join model with user-specific medical condition info."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="user_medical_conditions"
+    )
+    condition = models.ForeignKey(
+        "MedicalCondition",
+        on_delete=models.CASCADE,
+        related_name="user_links"
+    )
+
+    class Severity(models.TextChoices):
+        MILD = "MILD", _("Mild")
+        MODERATE = "MOD", _("Moderate")
+        SEVERE = "SEV", _("Severe")
+        CRITICAL = "CRT", _("Critical")
+
+    severity = models.CharField(
+        max_length=5,
+        choices=Severity.choices,
+        default=Severity.MILD
+    )
+    instructions = models.TextField(blank=True, null=True)
+    date_diagnosed = models.DateField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ("user", "condition")
+
+    def __str__(self):
+        return f"{self.user} - {self.condition} ({self.severity})"
+
     
 class EmergencyContact (models.Model):
     '''

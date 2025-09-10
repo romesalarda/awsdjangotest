@@ -1,5 +1,6 @@
-from rest_framework import viewsets, filters, status, permissions
+from rest_framework import viewsets, filters, permissions
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models.query import Q
 from events.models import CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation
 from events.api.serializers import *
 
@@ -72,9 +73,9 @@ class AreaLocationViewSet(viewsets.ModelViewSet):
     filterset_fields = [
         'unit__chapter__cluster__world_location__country',
         'unit__chapter__chapter_name',
-        'unit__unit_name'
+        'unit__unit_name',
     ]
-    search_fields = ['area_name', 'area_code', 'area_id', 'general_address']
+    search_fields = ['area_name', 'area_code', 'area_id', 'general_address', 'relative_search_areas__name']
     ordering_fields = ['area_name', 'area_code', 'unit__unit_name']
     ordering = ['unit__unit_name', 'area_name']
     

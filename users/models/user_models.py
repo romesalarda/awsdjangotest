@@ -8,7 +8,6 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 import datetime
 import uuid
 
-from .metadata_models import Alergies, EmergencyContact, MedicalConditions
 from .user_manager import CommunityUserManager
 
 MAX_MEMBER_ID_LENGTH = 20
@@ -97,26 +96,26 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
                                       blank=True, null=True
                                       )
     # safeguarding information
-    alergies = models.ManyToManyField(
-        Alergies, 
-        verbose_name=_("Individual alergies"),
-        related_name="allergy_users", 
-        blank=True, 
-        )
-    
-    medical_conditions = models.ManyToManyField(
-        MedicalConditions, 
-        verbose_name=_("Medical conditions"),
-        related_name="medical_condition_users", 
-        blank=True, 
-        )
-        
-    emergency_contacts = models.ManyToManyField(
-        EmergencyContact,
-        verbose_name=_("Emergency contacts"),
-        related_name="user_emergency_contacts",
+    allergies = models.ManyToManyField(
+        "Allergy",
+        through="UserAllergy",
+        related_name="allergy_users",
         blank=True
     )
+
+    medical_conditions = models.ManyToManyField(
+        "MedicalCondition",
+        through="UserMedicalCondition",
+        related_name="condition_users",
+        blank=True
+    )
+            
+    # emergency_contacts = models.ManyToManyField(
+    #     EmergencyContact,
+    #     verbose_name=_("Emergency contacts"),
+    #     related_name="user_emergency_contacts",
+    #     blank=True
+    # )
     
     blood_type = models.CharField(
         max_length=3,
