@@ -55,7 +55,7 @@ class EventProduct(models.Model):
         verbose_name_plural = _("Products")
 
     def __str__(self) -> str:
-        return f"{self.title} ({self.seller.email})"
+        return f"{self.title} ({self.seller.member_id})"
 
 
 class EventCart(models.Model):
@@ -99,7 +99,7 @@ class EventCart(models.Model):
         verbose_name_plural = _("Event Carts")
 
     def __str__(self) -> str:
-        return f"{self.user.email} ({self.created:%Y-%m-%d %H:%M})"
+        return f"{self.user.primary_email} ({self.created:%Y-%m-%d %H:%M})"
     
 class EventProductOrder(models.Model):
     '''

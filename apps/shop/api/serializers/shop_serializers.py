@@ -1,21 +1,27 @@
 from rest_framework import serializers
+from apps.shop.api.serializers.shop_metadata_serializers import ProductImageSerializer, ProductCategorySerializer, ProductMaterialSerializer
 from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
 
 class EventProductSerializer(serializers.ModelSerializer):
+    '''
+    Serializer for EventProduct model
+    '''
     seller_email = serializers.EmailField(source="seller.email", read_only=True)
     event_name = serializers.CharField(source="event.name", read_only=True)
-    categories = serializers.StringRelatedField(many=True)
-    materials = serializers.StringRelatedField(many=True)
+    categories = ProductCategorySerializer(many=True, read_only=True)  
+    materials = ProductMaterialSerializer(many=True, read_only=True) 
+
+    images = ProductImageSerializer(many=True, read_only=True)  # uses related_name="images"
 
     class Meta:
         model = EventProduct
         fields = [
             "uuid", "title", "description", "extra_info", "event", "event_name",
-            "size", "price", "discount", "seller", "seller_email", "categories", "materials"
+            "size", "price", "discount", "seller", "seller_email", "categories", "materials", "images"
         ]
 
 class EventCartSerializer(serializers.ModelSerializer):
-    user_email = serializers.EmailField(source="user.email", read_only=True)
+    user_email = serializers.EmailField(source="user.primary_email", read_only=True)
     event_name = serializers.CharField(source="event.name", read_only=True)
     products = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     orders = serializers.PrimaryKeyRelatedField(many=True, read_only=True)

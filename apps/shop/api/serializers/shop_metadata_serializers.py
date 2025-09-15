@@ -2,6 +2,9 @@ from rest_framework import serializers
 from apps.shop.models.metadata_models import ProductCategory, ProductMaterial, ProductImage
 
 class ProductCategorySerializer(serializers.ModelSerializer):
+    '''
+    Serializer for ProductCategory model
+    '''
     product_count = serializers.IntegerField(source="eventproduct_set.count", read_only=True)
 
     class Meta:
@@ -9,6 +12,7 @@ class ProductCategorySerializer(serializers.ModelSerializer):
         fields = ["id", "title", "description", "product_count"]
 
 class ProductMaterialSerializer(serializers.ModelSerializer):
+
     product_count = serializers.IntegerField(source="eventproduct_set.count", read_only=True)
 
     class Meta:
