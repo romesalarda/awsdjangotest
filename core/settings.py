@@ -102,9 +102,9 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "core",
-    "users",
-    "events",
-    "shop"
+    "apps.users.apps.UsersConfig",
+    "apps.events.apps.EventsConfig",
+    "apps.shop.apps.ShopConfig",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

@@ -11,9 +11,9 @@ from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 
-from users.api.urls import *
-from events.api.urls import *
-from shop.api.urls import *
+from apps.users.api.urls import *
+from apps.events.api.urls import *
+from apps.shop.api.urls import *
 
 '''
 SCHEMA
