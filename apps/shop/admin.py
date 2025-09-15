@@ -47,8 +47,8 @@ class ProductImageAdmin(admin.ModelAdmin):
     
 @admin.register(EventProduct)
 class EventProductAdmin(admin.ModelAdmin):
-    list_display = ("title", "event", "seller", "price", "size", "discount")
-    list_filter = ("event", "size", "seller", "categories", "materials")
+    list_display = ("title", "event", "seller", "price", "discount")
+    list_filter = ("event", "seller", "categories", "materials")
     search_fields = ("title", "description", "seller__email")
     filter_horizontal = ("categories", "materials")
     ordering = ("title",)
@@ -66,3 +66,10 @@ class EventProductOrderAdmin(admin.ModelAdmin):
     list_filter = ("status", "product", "cart")
     search_fields = ("product__title", "cart__user__email")
     ordering = ("-added",)
+    
+@admin.register(ProductSize)
+class ProductSizeAdmin(admin.ModelAdmin):
+    list_display = ("product", "size", "price_modifier")
+    list_filter = ("size", "product")
+    search_fields = ("product__title",)
+    ordering = ("product", "size")

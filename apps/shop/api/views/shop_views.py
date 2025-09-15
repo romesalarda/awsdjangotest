@@ -1,5 +1,9 @@
 from rest_framework import viewsets, permissions, filters
+from rest_framework.response import Response
+from rest_framework.decorators import action
+
 from django_filters.rest_framework import DjangoFilterBackend
+from django.shortcuts import get_object_or_404
 from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
 from apps.shop.api.serializers.shop_serializers import (
     EventProductSerializer,
@@ -32,6 +36,38 @@ class EventCartViewSet(viewsets.ModelViewSet):
     search_fields = ["user__email", "event__name", "notes", "shipping_address"]
     ordering_fields = ["created", "total", "shipping_cost"]
     ordering = ["-created"]
+    
+    @action(detail=True, methods=['post'], url_name='add', url_path='add')
+    def add_to_cart(self, request, *args, **kwargs):
+        # Logic to add a product to the cart
+        cart: EventCart = self.get_object()
+        
+        products = request.data.get("products", [])
+        for prod_id in products:
+            product = get_object_or_404(EventProduct, uuid=prod_id)
+            cart.products.add(product)
+
+        cart.save()
+        
+        serialized = self.get_serializer(cart)
+        return Response({"status": "product added" if len(products) > 0 else "no changes", "product": serialized.data}, status=200)
+
+    @action(detail=True, methods=['post'], url_name='remove', url_path='remove')
+    def remove_from_cart(self, request, *args, **kwargs):
+        # Logic to remove a product from the cart
+        cart: EventCart = self.get_object()
+        
+        products = request.data.get("products", [])
+        for prod_id in products:
+            product = get_object_or_404(EventProduct, uuid=prod_id)
+            cart.products.remove(product)
+            orders = EventProductOrder.objects.filter(cart=cart, product=product)
+            orders.delete()  # remove any associated orders as well
+
+        cart.save()
+        
+        serialized = self.get_serializer(cart)
+        return Response({"status": "product removed" if len(products) > 0 else "no changes", "product": serialized.data}, status=200)
 
 class EventProductOrderViewSet(viewsets.ModelViewSet):
     '''
@@ -45,3 +81,4 @@ class EventProductOrderViewSet(viewsets.ModelViewSet):
     search_fields = ["product__title", "cart__user__email"]
     ordering_fields = ["added", "quantity", "price_at_purchase", "discount_applied", "status"]
     ordering = ["-added"]
+    

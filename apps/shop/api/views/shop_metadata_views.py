@@ -1,10 +1,11 @@
 from rest_framework import viewsets, permissions, filters
 from django_filters.rest_framework import DjangoFilterBackend
-from apps.shop.models.metadata_models import ProductCategory, ProductMaterial, ProductImage
+from apps.shop.models.metadata_models import ProductCategory, ProductMaterial, ProductImage, ProductSize
 from apps.shop.api.serializers.shop_metadata_serializers import (
     ProductCategorySerializer,
     ProductMaterialSerializer,
     ProductImageSerializer,
+    ProductSizeSerializer,
 )
 
 class ProductCategoryViewSet(viewsets.ModelViewSet):
@@ -39,3 +40,16 @@ class ProductImageViewSet(viewsets.ModelViewSet):
     search_fields = ["product__title", "image"]
     ordering_fields = ["product__title", "uuid"]
     ordering = ["-uuid"]
+    
+class ProductSizeViewSet(viewsets.ModelViewSet):
+    '''
+    Endpoint for managing product sizes.
+    '''
+    queryset = ProductSize.objects.select_related("product").all()
+    serializer_class = ProductSizeSerializer
+    permission_classes = [permissions.IsAdminUser]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["product", "size"]
+    search_fields = ["product__title", "size"]
+    ordering_fields = ["product__title", "size", "price_modifier"]
+    ordering = ["product__title", "size"]

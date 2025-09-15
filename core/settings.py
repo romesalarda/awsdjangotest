@@ -282,8 +282,8 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
         "rest_framework.authentication.TokenAuthentication",
     ),
-    # WARNING - THIS PERMISSION MUST BE SET TO 'ISUATHENTICATED' DURING PRODUCTION TO PROTECT ENDPOINTS
-    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.AllowAny",),
+    # WARNING - THIS PERMISSION MUST BE SET TO 'IS_AUTHENTICATED' DURING PRODUCTION TO PROTECT ENDPOINTS
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema'
 }
 
@@ -307,7 +307,7 @@ SIMPLE_JWT = {
 
     'AUTH_HEADER_TYPES': ('Bearer','JWT'),
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
-    'USER_ID_FIELD': 'uuid',
+    'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
     'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
 

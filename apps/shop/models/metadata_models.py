@@ -39,3 +39,30 @@ class ProductImage(models.Model):
 
     def __str__(self) -> str:
         return self.image.name
+    
+class ProductSize (models.Model):
+    '''
+    Model representing a size option for products.
+    Not all products will have all the sizes available. So you can link sizes to products as needed.
+    '''
+    product = models.ForeignKey("shop.EventProduct", on_delete=models.CASCADE, verbose_name=_("product linked to"), related_name="product_sizes")
+    
+    class Sizes(models.TextChoices):
+        EXTRA_SMALL = "XS", _("Extra Small")
+        SMALL = "SM", _("Small")
+        MEDIUM = "MD", _("Medium")
+        LARGE = "LG", _("Large")
+        EXTRA_LARGE = "XL", _("Extra Large")
+
+    size = models.CharField(
+        _("Size"),
+        max_length=5,
+        choices=Sizes.choices,
+        default=Sizes.MEDIUM
+    )
+    price_modifier = models.FloatField(_("Price Modifier (£)"), default=0 , help_text="Additional cost for this size, e.g. larger sizes may cost more.")
+    class Meta:
+        verbose_name_plural = "Product sizes"
+
+    def __str__(self) -> str:
+        return self.product.title + " - " + self.size

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.shop.models.metadata_models import ProductCategory, ProductMaterial, ProductImage
+from apps.shop.models.metadata_models import ProductCategory, ProductMaterial, ProductImage, ProductSize
 
 class ProductCategorySerializer(serializers.ModelSerializer):
     '''
@@ -27,3 +27,14 @@ class ProductImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductImage
         fields = ["uuid", "product", "product_title", "product_uuid", "image", "image_url"]
+        
+class ProductSizeSerializer(serializers.ModelSerializer):
+    '''
+    Serializer for ProductSize model
+    '''
+    product_title = serializers.CharField(source="product.title", read_only=True)
+    product_uuid = serializers.UUIDField(source="product.uuid", read_only=True)
+
+    class Meta:
+        model = ProductSize
+        fields = ["id", "product", "product_title", "product_uuid", "size", "price_modifier"]

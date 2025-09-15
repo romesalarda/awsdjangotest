@@ -8,6 +8,7 @@ from apps.shop.api.views.shop_metadata_views import (
     ProductCategoryViewSet, 
     ProductMaterialViewSet,
     ProductImageViewSet,
+    ProductSizeViewSet,
 )
 
 from apps.shop.api.views.shop_views import ( 
@@ -25,6 +26,7 @@ metadata = DefaultRouter()
 metadata.register(r'categories', ProductCategoryViewSet, basename='productcategory')
 metadata.register(r'materials', ProductMaterialViewSet, basename='productmaterial')
 metadata.register(r'images', ProductImageViewSet, basename='productimage')
+metadata.register(r'sizes', ProductSizeViewSet, basename='productsize')
 
 shop = DefaultRouter()
 shop.register(r'products', EventProductViewSet, basename='eventproduct')

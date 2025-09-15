@@ -21,21 +21,22 @@ class EventProduct(models.Model):
         related_name="products"
     )
 
-    class Sizes(models.TextChoices):
-        EXTRA_SMALL = "XS", _("Extra Small")
-        SMALL = "SM", _("Small")
-        MEDIUM = "MD", _("Medium")
-        LARGE = "LG", _("Large")
-        EXTRA_LARGE = "XL", _("Extra Large")
+    # class Sizes(models.TextChoices): #TODO: Remove this and use ProductSize model instead
+    #     EXTRA_SMALL = "XS", _("Extra Small")
+    #     SMALL = "SM", _("Small")
+    #     MEDIUM = "MD", _("Medium")
+    #     LARGE = "LG", _("Large")
+    #     EXTRA_LARGE = "XL", _("Extra Large")
 
-    size = models.CharField(
-        _("Size"),
-        max_length=5,
-        choices=Sizes.choices,
-        blank=True,
-        null=True,
-        default=Sizes.MEDIUM
-    )
+    # size = models.CharField(
+    #     _("Size"),
+    #     max_length=5,
+    #     choices=Sizes.choices,
+    #     blank=True,
+    #     null=True,
+    #     default=Sizes.MEDIUM
+    # )
+    
     price = models.FloatField(_("Product Cost (£)"))
     discount = models.FloatField(_("Product Discount (£)"), null=True, blank=True)
 
@@ -55,7 +56,7 @@ class EventProduct(models.Model):
         verbose_name_plural = _("Products")
 
     def __str__(self) -> str:
-        return f"{self.title} ({self.seller.member_id})"
+        return f"{self.title} {self.event.event_code}"
 
 
 class EventCart(models.Model):
@@ -99,7 +100,7 @@ class EventCart(models.Model):
         verbose_name_plural = _("Event Carts")
 
     def __str__(self) -> str:
-        return f"{self.user.primary_email} ({self.created:%Y-%m-%d %H:%M})"
+        return f"CART{self.user.member_id} ({self.created:%Y-%m-%d %H:%M})"
     
 class EventProductOrder(models.Model):
     '''
@@ -111,6 +112,15 @@ class EventProductOrder(models.Model):
     added = models.DateTimeField(_("Date Added to Cart"), default=timezone.now)
     price_at_purchase = models.FloatField(_("Price at Purchase (£)"), null=True, blank=True)
     discount_applied = models.FloatField(_("Discount Applied (£)"), null=True, blank=True)
+    size = models.ForeignKey(
+        'shop.ProductSize',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name=_("Product Size")
+    )
+    uses_size = models.BooleanField(default=False, help_text=_("Flags if a size is used for this product order"))
+    time_added = models.DateTimeField(auto_now_add=True, blank=True, null=True)
 
     class Status(models.TextChoices):
         PENDING = "pending", _("Pending")
@@ -130,4 +140,5 @@ class EventProductOrder(models.Model):
         verbose_name_plural = _("Event Product Orders")
 
     def __str__(self) -> str:
-        return f"{self.product.title} ({self.cart.user.email})"
+        return f"{self.product.title} ({self.cart.user.member_id})"
+    
