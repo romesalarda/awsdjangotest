@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
@@ -34,10 +35,10 @@ class EventViewSet(viewsets.ModelViewSet):
         participants = event.participants.all()
         page = self.paginate_queryset(participants)
         if page is not None:
-            serializer = EventParticipantSerializer(page, many=True)
+            serializer = SimplifiedEventParticipantSerializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         
-        serializer = EventParticipantSerializer(participants, many=True)
+        serializer = SimplifiedEventParticipantSerializer(participants, many=True)
         return Response(serializer.data)
     
     @action(detail=True, methods=['get'], url_path="service-team")
@@ -94,9 +95,10 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['event', 'user', 'status', 'participant_type']
     search_fields = ['user__first_name', 'user__last_name', 'team_assignment']
+    lookup_field = "event_pax_id"
     
-    @action(detail=True, methods=['post'])
-    def mark_attended(self, request, pk=None):
+    @action(detail=True, methods=['post'], url_name="mark-attended", url_path="mark-attended")
+    def mark_attended(self, request, event_pax_id=None):
         participant = self.get_object()
         participant.status = EventParticipant.ParticipantStatus.ATTENDED
         participant.attended_date = timezone.now()

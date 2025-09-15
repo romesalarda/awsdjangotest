@@ -3,7 +3,7 @@ from users.api.views import *
 
 
 user_router = DefaultRouter()
-user_router.register(r'', CommunityUserViewSet)
+user_router.register(r'manage', CommunityUserViewSet)
 user_router.register(r"alergies", AlergiesViewSet)
 user_router.register(r"medical-conditions", MedicalConditionsViewSet)
 user_router.register(r"emergency-contacts", EmergencyContactViewSet)

@@ -125,7 +125,7 @@ class EventAdmin(admin.ModelAdmin):
             'description', 'sentence_description', 'theme', 'anchor_verse', 'number_of_pax'
         )}),
         (_('Supervision'), {'fields': (
-            'supervising_chapter_youth_head', 'supervising_chapter_CFC_coordinator'
+            'supervising_youth_heads', 'supervising_CFC_coordinators'
         )}),
         (_('Resources'), {'fields': (
             'resources', 'memo', 'landing_image'
@@ -136,10 +136,10 @@ class EventAdmin(admin.ModelAdmin):
     )
     
     filter_horizontal = ('areas_involved',)
-    autocomplete_fields = (
-        'supervising_chapter_youth_head', 
-        'supervising_chapter_CFC_coordinator'
-    )
+    # autocomplete_fields = (
+    #     'supervising_youth_heads', 
+    #     'supervising_CFC_coordinators'
+    # )
     
     inlines = [
         EventServiceTeamMemberInline,
@@ -263,10 +263,10 @@ class QuestionAnswerInline(admin.StackedInline):
     
 @admin.register(EventParticipant)
 class EventParticipantAdmin(admin.ModelAdmin):
-    list_display = ('user', 'event', 'participant_type', 'status', 'registration_date')
+    list_display = ('id', 'user', 'event', 'participant_type', 'status', 'registration_date')
     list_filter = ('participant_type', 'status', 'registration_date', 'event__event_type')
     search_fields = ('user__first_name', 'user__last_name', 'event__name')
-    readonly_fields = ('registration_date', 'confirmation_date', 'attended_date')
+    readonly_fields = ('id','registration_date', 'confirmation_date', 'attended_date')
     autocomplete_fields = ('user', 'event')
     date_hierarchy = 'registration_date'
     inlines = [QuestionAnswerInline]

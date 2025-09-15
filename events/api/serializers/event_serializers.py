@@ -7,7 +7,7 @@ from events.models import (
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 
-from users.api.serializers import SimplifiedCommunityUserSerializer 
+from users.api.serializers import SimpleEmergencyContactSerializer, SimplifiedCommunityUserSerializer, SimpleAllergySerializer, SimpleMedicalConditionSerializer
 from .location_serializers import EventVenueSerializer
 
 # TODO: create resources serializer, then to add a field onto the event serializer, for memo and extra resources attached to the event
@@ -22,14 +22,14 @@ class EventRoleSerializer(serializers.ModelSerializer):
 
 class SimplifiedEventServiceTeamMemberSerializer(serializers.ModelSerializer):
     user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
-    role_names = serializers.SerializerMethodField()
+    # role_names = serializers.SerializerMethodField()
     
     class Meta:
         model = EventServiceTeamMember
-        fields = ['id', 'user_details', 'role_names', 'head_of_role', 'assigned_at']
+        fields = ['id', 'user_details', 'head_of_role', 'assigned_at']
     
-    def get_role_names(self, obj):
-        return [role.get_role_name_display() for role in obj.roles.all()]
+    # def get_role_names(self, obj):
+    #     return [role.get_role_name_display() for role in obj.roles.all()]
 
 class EventServiceTeamMemberSerializer(serializers.ModelSerializer):
     user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
@@ -138,11 +138,11 @@ class EventSerializer(serializers.ModelSerializer):
     )
 
     # Supervisor details (read-only)
-    youth_head = SimplifiedCommunityUserSerializer(
-        source="supervising_chapter_youth_head", read_only=True
+    supervising_youth_heads = SimplifiedCommunityUserSerializer(
+        read_only=True, many=True
     )
-    cfc_coordinator = SimplifiedCommunityUserSerializer(
-        source="supervising_chapter_CFC_coordinator", read_only=True
+    supervising_CFC_coordinators = SimplifiedCommunityUserSerializer(
+        read_only=True, many=True
     )
 
     # Statistics and display fields
@@ -150,21 +150,6 @@ class EventSerializer(serializers.ModelSerializer):
         source="participants.count", read_only=True
     )
     duration_days = serializers.SerializerMethodField(read_only=True)
-
-    # Supervisors (write-only)
-    supervising_chapter_youth_head = serializers.PrimaryKeyRelatedField(
-        queryset=get_user_model().objects.all(),
-        write_only=True,
-        required=False,
-        allow_null=True,
-    )
-    supervising_chapter_CFC_coordinator = serializers.PrimaryKeyRelatedField(
-        queryset=get_user_model().objects.all(),
-        write_only=True,
-        required=False,
-        allow_null=True,
-    )
-
     # Location
     areas_involved = SimplifiedAreaLocationSerializer(many=True, read_only=True)
 
@@ -218,11 +203,9 @@ class EventSerializer(serializers.ModelSerializer):
             # Participants / service team
             "participants_count",
             "service_team_members",
-            "youth_head",
-            "cfc_coordinator",
             # Write-only supervisor fields
-            "supervising_chapter_youth_head",
-            "supervising_chapter_CFC_coordinator",
+            "supervising_youth_heads",
+            "supervising_CFC_coordinators",
         ]
         read_only_fields = [
             "id",
@@ -242,7 +225,6 @@ class EventSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        print(rep)
         return {
             "id": rep["id"],
             "basic_info": {
@@ -266,11 +248,11 @@ class EventSerializer(serializers.ModelSerializer):
                 "venues": rep["venues"],
                 "areas_involved": rep["areas_involved"],
             },
-            "participants": {
+            "people": {
                 "participants_count": rep["participants_count"],
                 "service_team_members": rep["service_team_members"],
-                "youth_head": rep["youth_head"],
-                "cfc_coordinator": rep["cfc_coordinator"],
+                "event_heads": rep["supervising_youth_heads"],
+                "cfc_coordinators": rep["supervising_CFC_coordinators"],
             },
             "resources": {
                 "memo": rep["memo"],
@@ -285,6 +267,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
     '''
     Full detail Event participant serializer - for event organizers/admins
     '''
+    event = serializers.CharField(source="event.event_code", read_only=True)
     user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     participant_type_display = serializers.CharField(
@@ -301,35 +284,36 @@ class EventParticipantSerializer(serializers.ModelSerializer):
     attended_on = serializers.DateTimeField(
         source="attended_date", read_only=True
     )
+    dietary_restrictions = SimpleAllergySerializer(
+        source="user.user_allergies", many=True, read_only=True
+    )
+    emergency_contacts = SimpleEmergencyContactSerializer(
+        source="user.community_user_emergency_contacts", many=True, read_only=True
+    )
+    medical_conditions = SimpleMedicalConditionSerializer(
+        source="user.user_medical_conditions", many=True, read_only=True
+    )
+
     class Meta:
         model = EventParticipant
         fields = [
-            "user",
             "event",
-
-            # Computed / display
             "user_details",
             "status",
             "status_display",
             "participant_type",
             "participant_type_display",
-
-            # Dates
             "registered_on",
             "confirmed_on",
             "attended_on",
-
-            # Writable user input
             "media_consent",
             "data_consent",
             "understood_registration",
             "dietary_restrictions",
             "special_needs",
-            "emergency_contact",
-            "emergency_phone",
+            "emergency_contacts",
+            "medical_conditions",
             "notes",
-
-            # Payment info
             "paid_amount",
             "payment_date",
             "verified",
@@ -343,3 +327,61 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "confirmed_on",
             "attended_on",
         ]
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        return {
+            "event": rep["event"],
+            "user": rep["user_details"],
+            "status": {
+                "code": rep["status"],
+                "participant_type": rep["participant_type"],
+            },
+            "dates": {
+                "registered_on": rep["registered_on"],
+                "confirmed_on": rep["confirmed_on"],
+                "attended_on": rep["attended_on"],
+                "payment_date": rep["payment_date"],
+            },
+            "consents": {
+                "media_consent": rep["media_consent"],
+                "data_consent": rep["data_consent"],
+                "understood_registration": rep["understood_registration"],
+            },
+            "health": {
+                "dietary_restrictions": rep["dietary_restrictions"],
+                "medical_conditions": rep["medical_conditions"],
+                "special_needs": rep["special_needs"],
+            },
+            "emergency_contacts": rep["emergency_contacts"],
+            "notes": rep["notes"],
+            "payment": {
+                "paid_amount": rep["paid_amount"],
+                "verified": rep["verified"],
+            },
+        }
+        
+class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
+    """
+    Flat, minimal participant info for table/list views.
+    """
+    event = serializers.CharField(source="event.event_code", read_only=True)
+    first_name = serializers.CharField(source="user.first_name", read_only=True)
+    last_name = serializers.CharField(source="user.last_name", read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    registration_date = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = EventParticipant
+        fields = [
+            "event_pax_id",
+            "event",  # UUID of event
+            "user",   # UUID of user
+            "first_name",
+            "last_name",
+            "email",
+            "participant_type",
+            "status",
+            "registration_date",
+        ]
+        read_only_fields = fields

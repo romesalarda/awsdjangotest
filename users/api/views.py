@@ -22,8 +22,12 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     ordering = ['last_name', 'first_name']
     permission_classes = [permissions.AllowAny] # TODO: must change to authenticated only + add object permissions
     lookup_field = "member_id"
+    # TODO: get object to only allow user to view/edit their own data unless superuser/encoder
     
     def get_serializer_class(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return SimplifiedCommunityUserSerializer
+        
         user = self.request.user
         if not user.is_authenticated:
             # anonymous users only see simplified, #! remember that if they are not a superuser/encoder then cannot view ANY user data
@@ -42,7 +46,7 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
 
         # fallback
         return CommunityUserSerializer
-    
+
     @action(detail=True, methods=['get'])
     def roles(self, request, member_id=None):
         user = self.get_object()
@@ -68,8 +72,21 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
         serializer_upcoming = SimplifiedEventSerializer(upcoming_events, many=True)
         serializer_past = SimplifiedEventSerializer(past_events, many=True)
 
+        # Add 'time_left' field to each upcoming event
+        upcoming_events_data = serializer_upcoming.data
+        for idx, event in enumerate(upcoming_events):
+            start_date = event.start_date
+            delta = start_date - now
+            days = delta.days
+            seconds = delta.seconds
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            # Format as 'X days, Y hours, Z minutes'
+            time_left = f"{days} days, {hours} hours, {minutes} minutes" if days >= 0 else "Started"
+            upcoming_events_data[idx]["time_left"] = time_left
+
         return response.Response({
-            "upcoming_events": serializer_upcoming.data,
+            "upcoming_events": upcoming_events_data,
             "past_events": serializer_past.data
         })
         
@@ -102,3 +119,4 @@ class EmergencyContactViewSet(viewsets.ModelViewSet):
     queryset = EmergencyContact.objects.all().select_related("user")
     serializer_class = EmergencyContactSerializer
     permission_classes = [permissions.IsAuthenticated]
+

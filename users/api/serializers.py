@@ -20,6 +20,13 @@ class UserCommunityRoleSerializer(serializers.ModelSerializer):
         model = UserCommunityRole
         fields = '__all__'
         
+class SimplifiedUserCommunityRoleSerializer(serializers.ModelSerializer):
+    role_name = serializers.CharField(source='role.get_role_name_display', read_only=True)
+    
+    class Meta:
+        model = UserCommunityRole
+        fields = ('role_name', 'start_date')
+        
 class EmergencyContactSerializer(serializers.ModelSerializer):
     contact_relationship_display = serializers.CharField(source="get_contact_relationship_display", read_only=True)
 
@@ -120,7 +127,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
     '''
     Main serializer for CommunityUser model
     '''
-    roles = UserCommunityRoleSerializer(source='role_links', many=True, read_only=True)
+    roles = SimplifiedUserCommunityRoleSerializer(source='role_links', many=True, read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     short_name = serializers.CharField(source='get_short_name', read_only=True)
     password = serializers.CharField(write_only=True, required=False, style={"input_type": "password"})
@@ -215,7 +222,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             },
             "community": {
                 "ministry": rep.get("ministry"),
-                "roles": rep.get("community_roles", []),
+                "roles": rep.get("roles", []),
                 "encoder": rep.get("is_encoder"),
                 "active": rep.get("is_active"),
             },

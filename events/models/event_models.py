@@ -90,8 +90,8 @@ class Event(models.Model):
         help_text=_("Short code for the event name, used in generating the event code E.g. for ANCHORED event, use ANCRD")
         ) # ANCRD
     
-    start_date = models.DateField(_("event start date"), blank=True, null=True)  # TODO: migrate to DateTimeField
-    end_date = models.DateField(_("event end date"), blank=True, null=True) # TODO: migrate to DateTimeField
+    start_date = models.DateTimeField(_("event start date"), blank=True, null=True)  
+    end_date = models.DateTimeField(_("event end date"), blank=True, null=True) 
     
     # Location information
     area_type = models.CharField(verbose_name=_("area type"), max_length=20, choices=EventAreaType.choices, default=EventAreaType.AREA)
@@ -105,15 +105,22 @@ class Event(models.Model):
     theme = models.CharField(_("event theme"), max_length=200, blank=True, null=True)
     anchor_verse = models.CharField(_("anchor verse"), max_length=200, blank=True, null=True)
     
-    # Supervision # TODO: need to rename these to be more generic, may also be worth to make this a M2M field to allow multiple supervisors
-    supervising_chapter_youth_head = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,  
-        verbose_name="youth chapter head supervisor", related_name="supervised_events"  
+    # supervising_chapter_youth_head = models.ForeignKey(
+    #     settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,  
+    #     verbose_name="youth chapter head supervisor", related_name="supervised_events"  
+    # )
+    # supervising_chapter_CFC_coordinator = models.ForeignKey(
+    #     settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,  
+    #     verbose_name="youth CFC coordinator supervisor", related_name="cfc_supervised_events" 
+    # )
+    supervising_youth_heads = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True,  
+        verbose_name=_("youth chapter head supervisors"), related_name="supervised_events"
     )
-    supervising_chapter_CFC_coordinator = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,  
-        verbose_name="youth CFC coordinator supervisor", related_name="cfc_supervised_events" 
-    )
+    supervising_CFC_coordinators = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True,
+        verbose_name=_("youth CFC coordinator supervisors"), related_name="cfc_supervised_events"
+    )   
 
     # Service team
     service_team = models.ManyToManyField(
@@ -314,7 +321,18 @@ class EventParticipant(models.Model):
     
     def __str__(self):
         return f"{self.user} - {self.event} ({self.get_status_display()})"
-        
+
+    def save(self, *args, **kwargs):
+        if not self.event_pax_id:
+            self.event_pax_id = f"{self.event.event_code}-{self.id}".upper()
+            while EventParticipant.objects.filter(event_pax_id=self.event_pax_id).exists():
+                self.id = uuid.uuid4()
+                self.event_pax_id = f"{self.event.event_code}-{self.id}".upper()
+            if len(self.event_pax_id) > 20:
+                self.event_pax_id = self.event_pax_id[:20]  
+        super().save(*args, **kwargs)
+
+
 # EVENT PROPER MODELS
     
 class EventTalk(models.Model):
