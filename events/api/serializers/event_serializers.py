@@ -2,11 +2,12 @@ from rest_framework import serializers
 from events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
     EventTalk, EventWorkshop, EventResource,
-    AreaLocation, EventVenue, SearchAreaSupportLocation
+    AreaLocation, EventVenue
 )
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 
+from events.models import EventDayAttendance
 from users.api.serializers import SimpleEmergencyContactSerializer, SimplifiedCommunityUserSerializer, SimpleAllergySerializer, SimpleMedicalConditionSerializer
 from .location_serializers import EventVenueSerializer
 
@@ -385,3 +386,24 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
             "registration_date",
         ]
         read_only_fields = fields
+        
+class EventDayAttendanceSerializer(serializers.ModelSerializer):
+    user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
+    event_code = serializers.CharField(source="event.event_code", read_only=True)
+    duration = serializers.DurationField(read_only=True)
+
+    class Meta:
+        model = EventDayAttendance
+        fields = [
+            "id",
+            "event",
+            "event_code",
+            "user",
+            "user_details",
+            "day_date",
+            "day_id",
+            "check_in_time",
+            "check_out_time",
+            "duration",
+        ]
+        read_only_fields = ["id", "duration", "event_code", "user_details"]

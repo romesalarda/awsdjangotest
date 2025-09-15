@@ -7,7 +7,7 @@ from .models import (
     CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation,
     EventResource, EventVenue, SearchAreaSupportLocation,
     ExtraQuestion, QuestionChoice, QuestionAnswer,
-    EventPaymentMethod, EventPaymentPackage, EventPayment
+    EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance
 )
 
 # ! Location related admin
@@ -107,7 +107,7 @@ class QuestionChoiceInline(admin.TabularInline):
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ('name', 'name_code', 'event_code', 'event_type', 'start_date', 'end_date', 'number_of_pax')
+    list_display = ('name', 'event_code', 'event_type', 'end_date', 'number_of_pax', 'created_by')
     list_filter = ('event_type', 'area_type', 'start_date')
     search_fields = ('name', 'theme')
     date_hierarchy = 'start_date'
@@ -116,7 +116,7 @@ class EventAdmin(admin.ModelAdmin):
     
     fieldsets = (
         (_('Basic Information'), {'fields': (
-            'name', 'name_code', 'event_code', 'event_type', 'start_date', 'end_date', 'duration_days'
+            'name', 'name_code', 'event_code', 'event_type', 'start_date', 'end_date', 'duration_days', 'created_by', 'status', 'approved'
         )}),
         (_('Location Information'), {'fields': (
             'area_type', 'areas_involved', 'venues'
@@ -134,12 +134,6 @@ class EventAdmin(admin.ModelAdmin):
             'notes', 'is_public'
         )}),
     )
-    
-    filter_horizontal = ('areas_involved',)
-    # autocomplete_fields = (
-    #     'supervising_youth_heads', 
-    #     'supervising_CFC_coordinators'
-    # )
     
     inlines = [
         EventServiceTeamMemberInline,
@@ -325,3 +319,19 @@ class EventPaymentAdmin(admin.ModelAdmin):
         return f"{obj.amount / 100:.2f} {obj.currency.upper()}"
 
     amount_display.short_description = "Amount"
+
+class EventDayAttendanceInline(admin.TabularInline):
+    model = EventDayAttendance
+    extra = 1
+    autocomplete_fields = ('user', 'event')
+    readonly_fields = ('duration',)
+    fields = ('user', 'event', 'day_date', 'day_id', 'check_in_time', 'check_out_time', 'duration')
+
+@admin.register(EventDayAttendance)
+class EventDayAttendanceAdmin(admin.ModelAdmin):
+    list_display = ('user', 'event', 'day_date', 'day_id', 'check_in_time', 'check_out_time', 'duration')
+    list_filter = ('event', 'day_date')
+    search_fields = ('user__first_name', 'user__last_name', 'event__name')
+    autocomplete_fields = ('user', 'event')
+    readonly_fields = ('duration',)
+    ordering = ('-check_in_time',)

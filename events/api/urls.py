@@ -21,6 +21,7 @@ event_router.register(r'service-team', EventServiceTeamMemberViewSet)
 event_router.register(r'event-roles', EventRoleViewSet)
 event_router.register(r'participants', EventParticipantViewSet)
 event_router.register(r"resources", PublicEventResourceViewSet)
+event_router.register(r"attendances", EventDayAttendanceViewSet)
 location_router.register(r"venues", EventVenueViewSet, basename="eventvenue")
 
 payment_routers = DefaultRouter()

@@ -29,8 +29,23 @@ class EventViewSet(viewsets.ModelViewSet):
     ordering = ['-start_date']
     permission_classes = [permissions.IsAuthenticated, IsEncoderPermission]
     
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            return Event.objects.all()       
+        # returns events that are specific to the user, created_by, supervisor, participant, service team member
+        if user.is_authenticated and user.is_encoder:
+            return Event.objects.filter(
+                models.Q(created_by=user)
+            ).distinct()
+        # for normal authenticated users, only show public events
+        return Event.objects.filter(is_public=True)
+    
     @action(detail=True, methods=['get'])
     def participants(self, request, pk=None):
+        '''
+        Retrieve a list of participants for a specific event.
+        '''
         event = self.get_object()
         participants = event.participants.all()
         page = self.paginate_queryset(participants)
@@ -41,8 +56,26 @@ class EventViewSet(viewsets.ModelViewSet):
         serializer = SimplifiedEventParticipantSerializer(participants, many=True)
         return Response(serializer.data)
     
+    @action(detail=True, methods=['get'], url_name="attendance", url_path="attendance")
+    def attendance(self, request, pk=None):
+        '''
+        Retrieve a list of attendance records for a specific event.
+        '''
+        event = self.get_object()
+        attendance_records = event.attendance_records.all()
+        page = self.paginate_queryset(attendance_records)
+        if page is not None:
+            serializer = EventDayAttendanceSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = EventDayAttendanceSerializer(attendance_records, many=True)
+        return Response(serializer.data)
+    
     @action(detail=True, methods=['get'], url_path="service-team")
     def service_team(self, request, pk=None):
+        '''
+        Retrieve a list of service team members for a specific event.
+        '''
         event = self.get_object()
         service_team = event.service_team_members.all()
         page = self.paginate_queryset(service_team)
@@ -55,6 +88,9 @@ class EventViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def talks(self, request, pk=None):
+        '''
+        Retrieve a list of talks for a specific event.
+        '''
         event = self.get_object()
         talks = event.talks.all()
         page = self.paginate_queryset(talks)
@@ -67,6 +103,9 @@ class EventViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def workshops(self, request, pk=None):
+        '''
+        Retrieve a list of workshops for a specific event.
+        '''
         event = self.get_object()
         workshops = event.workshops.all()
         page = self.paginate_queryset(workshops)
@@ -78,18 +117,28 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 class EventServiceTeamMemberViewSet(viewsets.ModelViewSet):
+    '''
+    API endpoint for managing event service team members.
+    '''
     queryset = EventServiceTeamMember.objects.all()
     serializer_class = EventServiceTeamMemberSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['youth_camp', 'user', 'head_of_role']
 
 class EventRoleViewSet(viewsets.ModelViewSet):
+    '''
+    API endpoint for managing event roles.
+    '''
     queryset = EventRole.objects.all()
     serializer_class = EventRoleSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['role_name', 'description']
 
 class EventParticipantViewSet(viewsets.ModelViewSet):
+    '''
+    API endpoint for managing event participants.
+    Different from users/api/views.py -> CommunityUserViewSet -> events action
+    '''
     queryset = EventParticipant.objects.all()
     serializer_class = EventParticipantSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -107,6 +156,9 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 class EventTalkViewSet(viewsets.ModelViewSet):
+    '''
+    API endpoint for managing event talks.
+    '''
     queryset = EventTalk.objects.all()
     serializer_class = EventTalkSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
@@ -115,6 +167,9 @@ class EventTalkViewSet(viewsets.ModelViewSet):
     ordering = ['start_time']
 
 class EventWorkshopViewSet(viewsets.ModelViewSet):
+    '''
+    API endpoint for managing event workshops.
+    '''
     queryset = EventWorkshop.objects.all()
     serializer_class = EventWorkshopSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
@@ -147,3 +202,15 @@ class PublicEventResourceViewSet(viewsets.ModelViewSet):
     serializer_class = PublicEventResourceSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]  # anyone can GET, only logged-in can modify
 
+class EventDayAttendanceViewSet(viewsets.ModelViewSet):
+    '''
+    API endpoint for managing event day attendance.
+    '''
+    queryset = EventDayAttendance.objects.select_related("event", "user")
+    serializer_class = EventDayAttendanceSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["event", "user", "day_date", "day_id"]
+    search_fields = ["user__first_name", "user__last_name", "event__name"]
+    ordering_fields = ["day_date", "check_in_time", "check_out_time"]
+    ordering = ["-check_in_time"]
+    permission_classes = [permissions.IsAuthenticated]

@@ -1,3 +1,4 @@
+from datetime import timedelta
 from django.db import models
 from django.core import validators
 from django.conf import settings
@@ -105,14 +106,7 @@ class Event(models.Model):
     theme = models.CharField(_("event theme"), max_length=200, blank=True, null=True)
     anchor_verse = models.CharField(_("anchor verse"), max_length=200, blank=True, null=True)
     
-    # supervising_chapter_youth_head = models.ForeignKey(
-    #     settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,  
-    #     verbose_name="youth chapter head supervisor", related_name="supervised_events"  
-    # )
-    # supervising_chapter_CFC_coordinator = models.ForeignKey(
-    #     settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,  
-    #     verbose_name="youth CFC coordinator supervisor", related_name="cfc_supervised_events" 
-    # )
+    # marks users that are able to view this event
     supervising_youth_heads = models.ManyToManyField(
         settings.AUTH_USER_MODEL, blank=True,  
         verbose_name=_("youth chapter head supervisors"), related_name="supervised_events"
@@ -121,6 +115,10 @@ class Event(models.Model):
         settings.AUTH_USER_MODEL, blank=True,
         verbose_name=_("youth CFC coordinator supervisors"), related_name="cfc_supervised_events"
     )   
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_events",
+        )
 
     # Service team
     service_team = models.ManyToManyField(
@@ -142,8 +140,14 @@ class Event(models.Model):
         related_name="event_memos"
         )
     notes = models.TextField(verbose_name=_("event notes"), blank=True, null=True)
-    # TODO: add a aproved field to indicate if the event has been approved by the chapter head or national head
-    # TODO: add a field to indicate if the event is active - being planned, completed, cancelled, etc. - choices field
+    approved = models.BooleanField(verbose_name=_("event approved"), default=False)
+    class EventStatus(models.TextChoices):
+        PLANNING = "PLANNING", _("Planning")
+        ONGOING = "ONGOING", _("Ongoing")
+        COMPLETED = "COMPLETED", _("Completed")
+        CANCELLED = "CANCELLED", _("Cancelled")
+        POSTPONED = "POSTPONED", _("Postponed") 
+    status = models.CharField(_("event status"), max_length=20, choices=EventStatus.choices, default=EventStatus.PLANNING)    
     
     def save(self, *args, **kwargs):
         if not self.event_code:
@@ -188,12 +192,12 @@ class EventServiceTeamMember(models.Model):
         verbose_name_plural = _("Event Service Team Members")
 
     def __str__(self):
-        role_names = ", ".join([str(role) for role in self.roles.all()])
-        return f"ST: {self.user} → {role_names or 'No roles'} (by {self.assigned_by or 'system'})"
+        # role_names = ", ".join([str(role) for role in self.roles.all()])
+        return f"ST: {self.user}"
     
 class EventRole(models.Model):
     '''
-    Roles in Events
+    Event roles that can be assigned to service team members
     '''
     id = models.UUIDField(verbose_name=_("event role id"), default=uuid.uuid4, editable=False, primary_key=True)
 
@@ -274,9 +278,7 @@ class EventParticipant(models.Model):
     
     # if the user already exists in the database, then default to use this 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
-                            related_name="event_participations", blank=True, null=True)
-    # ! events must have an auth account to prevent overwhelming the database, users must create a password.
-    
+                            related_name="event_participations", blank=True, null=True)    
     # Participant meta information
     participant_type = models.CharField(_("participant type"), max_length=20, 
                                       choices=ParticipantType.choices, default=ParticipantType.PARTICIPANT)
@@ -331,7 +333,6 @@ class EventParticipant(models.Model):
             if len(self.event_pax_id) > 20:
                 self.event_pax_id = self.event_pax_id[:20]  
         super().save(*args, **kwargs)
-
 
 # EVENT PROPER MODELS
     
@@ -443,6 +444,41 @@ class EventWorkshop(models.Model):
         # This would typically be implemented with a through model for workshop participants
         return 0  # Placeholder - you'd implement actual counting logic
 
-
-
+class EventDayAttendance (models.Model):
+    '''
+    Represents attendance records for events
+    '''
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey("Event", on_delete=models.CASCADE, related_name="attendance_records")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="event_attendance")
     
+    day_date = models.DateField(_("attendance day"), blank=True, null=True)
+    day_id = models.IntegerField(_("day id"), validators=[validators.MinValueValidator(1)])
+    
+    check_in_time = models.TimeField(_("check-in time"), blank=True, null=True)
+    check_out_time = models.TimeField(_("check-out time"), blank=True, null=True)
+    
+    class Meta:
+        verbose_name = _("Event Day Attendance")
+        verbose_name_plural = _("Event Day Attendances")
+        unique_together = ("event", "user", "check_in_time", "day_id")
+        ordering = ['-check_in_time']
+    
+    def __str__(self):
+        return f"Attendance: {self.user} - {self.event.name}"
+
+    @property
+    def duration(self):
+        if self.check_in_time and self.check_out_time:
+            return self.check_out_time - self.check_in_time
+        return None
+    
+    def save(self, *args, **kwargs):
+        if self.day_date is None and self.check_in_time:
+            # pull start date from event + the day id and set that to date
+            event_start_date = self.event.start_date.date() if self.event.start_date else None
+            if event_start_date:
+                self.day_date = event_start_date + timedelta(days=self.day_id - 1)
+                
+                
+        return super().save(*args, **kwargs)
