@@ -13,6 +13,7 @@ from drf_yasg import openapi
 
 from users.api.urls import *
 from events.api.urls import *
+from shop.api.urls import *
 
 '''
 SCHEMA
@@ -49,6 +50,10 @@ urlpatterns = [
     path('api/users/', include(user_router.urls)),
     path('api/users/registration/', include(registration_router.urls)),
     path('api/events/', include(event_router.urls)),
+    
+    path('api/shop/', include(shop.urls)),
+    path('api/shop/metadata/', include(metadata.urls)),
+    path('api/shop/payments/', include(production_payment_router.urls)),
     # Swagger and ReDoc documentation
     path('', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]
