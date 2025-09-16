@@ -33,7 +33,7 @@ class EventProduct(models.Model):
 
     categories = models.ManyToManyField(ProductCategory, blank=True, verbose_name=_("Categories"))
     materials = models.ManyToManyField(ProductMaterial, blank=True, verbose_name=_("Materials"))
-    # maximum_order_quantity = models.IntegerField(_("Maximum Order Quantity"), default=10) TODO: implement this
+    maximum_order_quantity = models.IntegerField(_("Maximum Order Quantity"), default=10)
 
     class Meta:
         ordering = ['title']
@@ -86,6 +86,10 @@ class EventCart(models.Model):
 
     def __str__(self) -> str:
         return f"CART{self.user.member_id} ({self.created:%Y-%m-%d %H:%M})"
+    
+    def save(self, *args, **kwargs):
+        self.updated = timezone.now()
+        return super().save(f*args, **kwargs)
     
 class EventProductOrder(models.Model):
     '''

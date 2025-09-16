@@ -255,6 +255,9 @@ class CommunityRole(models.Model):
         return self.get_role_name_display()
 
 class UserCommunityRole(models.Model):
+    '''
+    Through model linking users to community roles with additional context
+    '''
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 

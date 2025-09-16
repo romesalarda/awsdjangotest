@@ -20,7 +20,7 @@ class EventProductSerializer(serializers.ModelSerializer):
         model = EventProduct
         fields = [
             "uuid", "title", "description", "extra_info", "event", "event_name",
-            "price", "discount", "seller", "seller_email", "categories", "materials", "images", "sizes"
+            "price", "discount", "seller", "seller_email", "categories", "materials", "images", "sizes", "maximum_order_quantity"
         ]
 
 class EventProductOrderSerializer(serializers.ModelSerializer):
@@ -43,9 +43,9 @@ class EventCartSerializer(serializers.ModelSerializer):
     '''
     Serializer for EventCart model
     '''
+    user = serializers.CharField(source="user.member_id", read_only=True)
     user_email = serializers.EmailField(source="user.primary_email", read_only=True)
     event_name = serializers.CharField(source="event.name", read_only=True)
-    # products = EventProductSerializer(many=True, read_only=True)
     orders = EventProductOrderSerializer(many=True, read_only=True)
 
     class Meta:

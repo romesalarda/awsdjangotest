@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, filters, serializers
+from rest_framework import viewsets, permissions, filters, serializers, exceptions
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
@@ -47,12 +47,18 @@ class EventCartViewSet(viewsets.ModelViewSet):
     '''
     queryset = EventCart.objects.select_related("user", "event").prefetch_related("products", "orders")
     serializer_class = EventCartSerializer
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated] # only admins can see all carts
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["user", "event", "approved", "submitted", "active"]
     search_fields = ["user__email", "event__name", "notes", "shipping_address"]
     ordering_fields = ["created", "total", "shipping_cost"]
     ordering = ["-created"]
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or getattr(user, 'is_encoder', False):
+            return self.queryset  # admins and encoders can see all carts
+        return self.queryset.filter(user=user)  # regular users can only see their own carts
     
     @action(detail=True, methods=['post'], url_name='add', url_path='add')
     def add_to_cart(self, request, *args, **kwargs):
@@ -122,13 +128,23 @@ class EventCartViewSet(viewsets.ModelViewSet):
         
         serialized = self.get_serializer(cart)
         return Response({"status": "product removed" if len(products) > 0 else "no changes", "product": serialized.data}, status=200)
-    
-    # TODO: add view to checkout cart (mark as submitted, not active, etc.))
-    # TODO: add view to update cart but based on exisiting orders (change quantity, size, etc.)        
-    
-# ...existing code...
+        
+    @action(detail=True, methods=['post'], url_name='checkout', url_path='checkout')
+    def checkout_cart(self, request, *args, **kwargs):
+        '''
+        Retrieve a summary of the cart for checkout.
+        '''
+        cart: EventCart = self.get_object()
+        
+        self.check_object_permissions(request, cart)
+        if cart.approved or cart.submitted:
+            raise serializers.ValidationError("Cannot checkout an approved or submitted cart.")
 
-# ...existing code...
+        cart.submitted = True
+        cart.active = False
+        cart.save()
+        serialized = self.get_serializer(cart)
+        return Response({"status": "cart checkout", "cart": serialized.data}, status=200)
 
     @action(detail=True, methods=['patch'], url_name='update', url_path='update-order')
     def update_cart(self, request, *args, **kwargs):
@@ -139,6 +155,10 @@ class EventCartViewSet(viewsets.ModelViewSet):
         '''
         cart: EventCart = self.get_object()
         products = request.data.get("products", [])
+        
+        self.check_object_permissions(request, cart)
+        if cart.approved or cart.submitted:
+            raise serializers.ValidationError("Cannot modify an approved or submitted cart.")
 
         # Detect duplicates in incoming products
         seen = set()
@@ -156,7 +176,6 @@ class EventCartViewSet(viewsets.ModelViewSet):
         new_product_keys = set(
             (p["id"], p.get("size", None)) for p in products
         )
-        # TODO ensure maximum quantity per product is not exceeded
 
         removed_products = []
         updated_orders = []
@@ -198,6 +217,12 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 cart=cart,
                 size=size_object
             ).first()
+            
+            if quantity > product_object.maximum_order_quantity:
+                raise serializers.ValidationError(
+                    f"Quantity {quantity} exceeds maximum order quantity of {product_object.maximum_order_quantity} for product {product_object.title}"
+                )
+            
             if order:
                 # Update quantity if changed
                 if order.quantity != quantity:
@@ -240,12 +265,24 @@ class EventCartViewSet(viewsets.ModelViewSet):
 
         return Response({"status": "cart updated", "changes": summary}, status=200)
 
-# ...existing code...
+    @action(detail=True, methods=['post'], url_name='clear', url_path='clear')
+    def clear_cart(self, request, *args, **kwargs):
+        '''
+        Clear all products and orders from the cart.
+        '''
+        cart: EventCart = self.get_object()
+        self.check_object_permissions(request, cart)
+        if cart.approved or cart.submitted:
+            raise serializers.ValidationError("Cannot modify an approved or submitted cart.")
+        
+        cart.products.clear()
+        cart.orders.all().delete()
+        cart.total = 0
+        cart.save()
+        serialized = self.get_serializer(cart)
+        return Response({"status": "cart cleared", "cart": serialized.data}, status=200)
+    
 
-# ...existing code...
-        
-        
-    # TODO: add view to clear cart (remove all products and orders)
 
 class EventProductOrderViewSet(viewsets.ModelViewSet):
     '''
@@ -253,10 +290,15 @@ class EventProductOrderViewSet(viewsets.ModelViewSet):
     '''
     queryset = EventProductOrder.objects.select_related("product", "cart")
     serializer_class = EventProductOrderSerializer
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["product", "cart", "status"]
     search_fields = ["product__title", "cart__user__email"]
     ordering_fields = ["added", "quantity", "price_at_purchase", "discount_applied", "status"]
     ordering = ["-added"]
     
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or getattr(user, 'is_encoder', False):
+            return self.queryset  # admins and encoders can see all orders
+        return self.queryset.filter(cart__user=user)  # regular users can only see their own orders

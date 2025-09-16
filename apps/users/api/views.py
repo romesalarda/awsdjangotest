@@ -13,7 +13,7 @@ from apps.users.models import CommunityRole
 
 class CommunityUserViewSet(viewsets.ModelViewSet):
     '''
-    Views related to user management
+    Viewset related to user management
     '''
     queryset = get_user_model().objects.all()
     serializer_class = CommunityUserSerializer
@@ -22,16 +22,16 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     search_fields = ['first_name', 'last_name', 'email', 'member_id', 'username']
     ordering_fields = ['last_name', 'first_name', 'date_of_birth', 'uploaded_at']
     ordering = ['last_name', 'first_name']
-    permission_classes = [permissions.AllowAny] # TODO: must change to authenticated only + add object permissions
+    permission_classes = [] # TODO: must change to authenticated only + add object permissions
     lookup_field = "member_id"
-    # TODO: get object to only allow user to view/edit their own data unless superuser/encoder
+    
     
     def get_serializer_class(self):
         if getattr(self, 'swagger_fake_view', False):
             return SimplifiedCommunityUserSerializer
         
         user = self.request.user
-        if not user.is_authenticated:
+        if not user.is_authenticated or not user.is_superuser:
             # anonymous users only see simplified, #! remember that if they are not a superuser/encoder then cannot view ANY user data
             return SimplifiedCommunityUserSerializer
 
@@ -42,9 +42,10 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
                 return CommunityUserSerializer  # full serializer for self
             return SimplifiedCommunityUserSerializer
 
+        # TODO: ensure members cannot see ANY user data except their own
         # for listing others
-        if self.action == "list":
-            return SimplifiedCommunityUserSerializer
+        # if self.action == "list":
+        #     return SimplifiedCommunityUserSerializer
 
         # fallback
         return CommunityUserSerializer
@@ -93,6 +94,9 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
         })
         
 class CommunityRoleViewSet(viewsets.ModelViewSet):
+    '''
+    Viewset for managing community roles
+    '''
     queryset = CommunityRole.objects.all()
     serializer_class = CommunityRoleSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -100,24 +104,36 @@ class CommunityRoleViewSet(viewsets.ModelViewSet):
     search_fields = ['role_name', 'role_description']
 
 class UserCommunityRoleViewSet(viewsets.ModelViewSet):
+    '''
+    Viewset for managing user-community roles
+    '''
     queryset = UserCommunityRole.objects.all()
     serializer_class = UserCommunityRoleSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['user', 'role', 'is_active']
 
 class AlergiesViewSet(viewsets.ModelViewSet):
+    '''
+    Viewset for managing allergies
+    '''
     queryset = Allergy.objects.all().order_by("name")
     serializer_class = AllergySerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
 
 class MedicalConditionsViewSet(viewsets.ModelViewSet):
+    '''
+    Viewset for managing medical conditions
+    '''
     queryset = MedicalCondition.objects.all().order_by("name")
     serializer_class = MedicalConditionSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
 
 class EmergencyContactViewSet(viewsets.ModelViewSet):
+    '''
+    Viewset for managing emergency contacts
+    '''
     queryset = EmergencyContact.objects.all().select_related("user")
     serializer_class = EmergencyContactSerializer
     permission_classes = [permissions.IsAuthenticated]

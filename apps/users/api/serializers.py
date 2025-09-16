@@ -135,8 +135,8 @@ class CommunityUserSerializer(serializers.ModelSerializer):
     emergency_contacts = SimpleEmergencyContactSerializer(
         source="community_user_emergency_contacts", many=True, read_only=True
     )
-    first_name = serializers.CharField(required=False)
-    last_name = serializers.CharField(required=False)
+    first_name = serializers.CharField(required=True)
+    last_name = serializers.CharField(required=True)
     
     alergies = SimpleAllergySerializer(
         source="user_allergies", many=True, read_only=True
@@ -156,21 +156,31 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             'username': {'read_only': True},
         }
             
-    def create(self, validated_data):
-        '''
-        Ensure first name, last name, and password are provided
-        '''
-        password = validated_data.pop('password', None)
-        first_name = validated_data.get('first_name', None)
-        last_name = validated_data.get('last_name', None)
+    def validate(self, attrs):
+        first_name = attrs.get('first_name')
+        last_name = attrs.get('last_name')
+        password = attrs.get('password')
+        errors = {}
         if not first_name or not last_name:
-            raise serializers.ValidationError({"error": "First name and last name are required."})
+            errors["error"] = "First name and last name are required."
+        if not password:
+            errors["password"] = "Password is required for creating a user."
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        
+        if CommunityUser.objects.filter(
+            first_name=validated_data.get('first_name'),
+            last_name=validated_data.get('last_name'),
+        ).exists():
+            raise serializers.ValidationError("A user with the same first name and last name already exists.")
+
         user = CommunityUser.objects.create(**validated_data)
-        if password:
-            user.set_password(password)
-            user.save()
-        else:
-            raise serializers.ValidationError({"password": "Password is required for creating a user."})
+        user.set_password(password)
+        user.save()
         return user
     
     def update(self, instance, validated_data):
@@ -250,6 +260,10 @@ class ReducedMinistryType(models.TextChoices):
     ADULT_GUEST = "AGT", _("Adult Guest") 
 
 class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
+    
+    first_name = serializers.CharField(required=True)
+    last_name = serializers.CharField(required=True)
+    
     password = serializers.CharField(write_only=True, required=False, style={"input_type": "password"})
     # age = serializers.IntegerField(source='get_age', write_only=True)
     data_of_birth = serializers.DateTimeField(source='date_of_birth', write_only=True)
@@ -260,6 +274,32 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
         model = CommunityUser
         fields = ('member_id', 'first_name', 'last_name', 'ministry', 'password', 'gender', 'data_of_birth')
 
+    def validate(self, attrs):
+        first_name = attrs.get('first_name')
+        last_name = attrs.get('last_name')
+        password = attrs.get('password')
+        errors = {}
+        if not first_name or not last_name:
+            errors["error"] = "First name and last name are required."
+        if not password:
+            errors["password"] = "Password is required for creating a user."
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
-
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        user = CommunityUser.objects.create(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+    
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
 

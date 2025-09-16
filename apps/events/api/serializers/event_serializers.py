@@ -74,6 +74,9 @@ class PublicEventResourceSerializer(serializers.ModelSerializer):
 
 
 class SimplifiedEventSerializer(serializers.ModelSerializer):
+    
+    name = serializers.CharField(required=True)
+    
     class Meta:
         model = Event
         fields = (
@@ -132,6 +135,8 @@ class EventSerializer(serializers.ModelSerializer):
     """
     Main event serializer
     """
+    
+    name = serializers.CharField(required=True)
 
     # Simplified service team info (just IDs for writes, details for reads)
     service_team_members = SimplifiedEventServiceTeamMemberSerializer(
