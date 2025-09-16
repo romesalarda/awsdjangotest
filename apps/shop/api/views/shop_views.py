@@ -1,14 +1,16 @@
-from rest_framework import viewsets, permissions, filters
+from rest_framework import viewsets, permissions, filters, serializers
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
+from apps.shop.models.metadata_models import ProductSize
 from apps.shop.api.serializers.shop_serializers import (
     EventProductSerializer,
     EventCartSerializer,
     EventProductOrderSerializer,
+    ProductSizeSerializer,
 )
 
 class EventProductViewSet(viewsets.ModelViewSet):
@@ -19,10 +21,25 @@ class EventProductViewSet(viewsets.ModelViewSet):
     serializer_class = EventProductSerializer
     permission_classes = [permissions.IsAdminUser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["event", "size", "seller", "categories", "materials"]
+    filterset_fields = ["event", "seller", "categories", "materials"]
     search_fields = ["title", "description", "seller__email"]
-    ordering_fields = ["title", "price", "size", "discount"]
+    ordering_fields = ["title", "price", "discount"]
     ordering = ["title"]
+    
+    @action(detail=True, methods=['get'], url_name='sizes', url_path='sizes')
+    def available_sizes(self, request, pk=None):
+        '''
+        Retrieve available sizes for a specific event product.
+        '''
+        product = self.get_object()
+        sizes = product.product_sizes_set.all()
+        page = self.paginate_queryset(sizes)
+        if page is not None:
+            serializer = ProductSizeSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = ProductSizeSerializer(sizes, many=True)
+        return Response(serializer.data)
 
 class EventCartViewSet(viewsets.ModelViewSet):
     '''
@@ -39,22 +56,59 @@ class EventCartViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], url_name='add', url_path='add')
     def add_to_cart(self, request, *args, **kwargs):
-        # Logic to add a product to the cart
+        '''
+        Bulk add products to the cart.
+        E.g. {"products": [{"product_id": "uuid1", "quantity": 2, "size": "M"}, {"product_id": "uuid2", "quantity": 1}]}
+        '''
         cart: EventCart = self.get_object()
         
         products = request.data.get("products", [])
-        for prod_id in products:
-            product = get_object_or_404(EventProduct, uuid=prod_id)
-            cart.products.add(product)
-
-        cart.save()
+        # {product_id: ..., quantity: ..., size: ...}
         
+        for product in products:
+
+            product_id = product.get("uuid")
+            quantity = product.get("quantity", 1)
+            size = product.get("size", None)
+            
+            product_object = get_object_or_404(EventProduct, uuid=product_id)
+            # ensure product belongs to the same event as the cart
+            if product_object.event != cart.event:
+                raise serializers.ValidationError(f"Product {product_object.title} does not belong to the same event as the cart.")
+            # check size is valid for product
+            if size:
+                size_object = ProductSize.objects.filter(size=size, product=product_object).first()
+                if not size_object:
+                    raise serializers.ValidationError(f"Size {size} not available for product {product_object.title}")
+            # create an order but ensure it does not already exist for this product in the cart
+            order, created = EventProductOrder.objects.get_or_create(
+                product=product_object,
+                cart=cart,
+                quantity=quantity,
+                size=size_object
+            )    
+            if not created:
+                raise serializers.ValidationError(f"Order for product {product_object.title} already exists in cart.")
+            order.save()
+            cart.products.add(product_object)
+            cart.orders.add(order)
+            
+        # update cart information
+        total = 0
+        for order in cart.orders.all():
+            total += (order.price_at_purchase or order.product.price) * order.quantity
+            
+        cart.total = total
+        cart.save()     
         serialized = self.get_serializer(cart)
-        return Response({"status": "product added" if len(products) > 0 else "no changes", "product": serialized.data}, status=200)
+        return Response({"status": "cart added" if len(products) > 0 else "no changes", "product": serialized.data}, status=200)
 
     @action(detail=True, methods=['post'], url_name='remove', url_path='remove')
     def remove_from_cart(self, request, *args, **kwargs):
-        # Logic to remove a product from the cart
+        '''
+        Bulk remove products from the cart.
+        E.g. {"products": ["product_uuid1", "product_uuid2"]}
+        '''
         cart: EventCart = self.get_object()
         
         products = request.data.get("products", [])
@@ -62,12 +116,136 @@ class EventCartViewSet(viewsets.ModelViewSet):
             product = get_object_or_404(EventProduct, uuid=prod_id)
             cart.products.remove(product)
             orders = EventProductOrder.objects.filter(cart=cart, product=product)
-            orders.delete()  # remove any associated orders as well
+            orders.delete()  # check if it was removed
 
         cart.save()
         
         serialized = self.get_serializer(cart)
         return Response({"status": "product removed" if len(products) > 0 else "no changes", "product": serialized.data}, status=200)
+    
+    # TODO: add view to checkout cart (mark as submitted, not active, etc.))
+    # TODO: add view to update cart but based on exisiting orders (change quantity, size, etc.)        
+    
+# ...existing code...
+
+# ...existing code...
+
+    @action(detail=True, methods=['patch'], url_name='update', url_path='update-order')
+    def update_cart(self, request, *args, **kwargs):
+        '''
+        Replace cart products/orders with provided list.
+        Returns a summary of changes.
+        E.g. {"products": [{"id": "uuid1", "quantity": 2, "size": "M"}, {"id": "uuid2", "quantity": 1}]}
+        '''
+        cart: EventCart = self.get_object()
+        products = request.data.get("products", [])
+
+        # Detect duplicates in incoming products
+        seen = set()
+        duplicates = []
+        for prod in products:
+            key = (prod.get("id"), prod.get("size", None))
+            if key in seen:
+                duplicates.append(key)
+            seen.add(key)
+        if duplicates:
+            raise serializers.ValidationError(
+                f"Duplicate product and size combinations detected: {', '.join([f'{pid} (size: {size})' for pid, size in duplicates])}"
+            )
+
+        new_product_keys = set(
+            (p["id"], p.get("size", None)) for p in products
+        )
+        # TODO ensure maximum quantity per product is not exceeded
+
+        removed_products = []
+        updated_orders = []
+        added_orders = []
+
+        # Remove orders not in new list (compare product and size)
+        for order in list(cart.orders.all()):
+            key = (str(order.product.uuid), order.size.size if order.size else None)
+            if key not in new_product_keys:
+                removed_products.append(
+                    f"Removed {order.product.title} (size: {order.size.size if order.size else 'N/A'})"
+                )
+                # cart.products.remove(order.product)
+                order.delete()
+
+        # Add/update products/orders from new list
+        for prod in products:
+            product_id = prod.get("id")
+            quantity = prod.get("quantity", 1)
+            size = prod.get("size", None)
+
+            product_object = get_object_or_404(EventProduct, uuid=product_id)
+            if product_object.event != cart.event:
+                raise serializers.ValidationError(
+                    f"Product {product_object.title} does not belong to the same event as the cart."
+                )
+
+            size_object = None
+            if size:
+                size_object = ProductSize.objects.filter(size=size, product=product_object).first()
+                if not size_object:
+                    raise serializers.ValidationError(
+                        f"Size {size} not available for product {product_object.title}"
+                    )
+
+            # Only look for existing order by product, cart, size
+            order = EventProductOrder.objects.filter(
+                product=product_object,
+                cart=cart,
+                size=size_object
+            ).first()
+            if order:
+                # Update quantity if changed
+                if order.quantity != quantity:
+                    order.quantity = quantity
+                    order.save()
+                    updated_orders.append(
+                        f"Updated {product_object.title} (size: {size_object.size if size_object else 'N/A'}, quantity: {quantity})"
+                    )
+            else:
+                # Create new order only if not found
+                order, created = EventProductOrder.objects.get_or_create(
+                    product=product_object,
+                    cart=cart,
+                    quantity=quantity,
+                    size=size_object
+                )
+                if created:
+                    added_orders.append(
+                        f"Added {product_object.title} (size: {size_object.size if size_object else 'N/A'}, quantity: {quantity})"
+                    )
+            # cart.products.add(product_object) # add if not already present
+            cart.orders.add(order)
+
+        # Recalculate total
+        total = 0
+        for order in cart.orders.all():
+            total += (order.price_at_purchase or order.product.price) * order.quantity
+        cart.total = total
+        cart.save()
+
+        summary = []
+        if removed_products:
+            summary.extend(removed_products)
+        if updated_orders:
+            summary.extend(updated_orders)
+        if added_orders:
+            summary.extend(added_orders)
+        if not summary:
+            summary.append("No changes to cart.")
+
+        return Response({"status": "cart updated", "changes": summary}, status=200)
+
+# ...existing code...
+
+# ...existing code...
+        
+        
+    # TODO: add view to clear cart (remove all products and orders)
 
 class EventProductOrderViewSet(viewsets.ModelViewSet):
     '''

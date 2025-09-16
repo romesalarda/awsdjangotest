@@ -45,6 +45,10 @@ class ProductImageAdmin(admin.ModelAdmin):
     search_fields = ("product__title", "image")
     ordering = ("-uuid",)
     
+class ProductSizeInline(admin.StackedInline):
+    model = ProductSize
+    extra = 0
+    
 @admin.register(EventProduct)
 class EventProductAdmin(admin.ModelAdmin):
     list_display = ("title", "event", "seller", "price", "discount")
@@ -52,17 +56,25 @@ class EventProductAdmin(admin.ModelAdmin):
     search_fields = ("title", "description", "seller__email")
     filter_horizontal = ("categories", "materials")
     ordering = ("title",)
+    inlines = [ProductSizeInline]
+
+
+
+class EventProductOrderInline(admin.StackedInline):
+    model = EventProductOrder
+    extra = 0
 
 @admin.register(EventCart)
 class EventCartAdmin(admin.ModelAdmin):
-    list_display = ("uuid", "user", "event", "total", "shipping_cost", "approved", "submitted", "active", "created", "updated")
+    list_display = ("user", "event", "total", "shipping_cost", "approved", "submitted", "active", "created", "updated")
     list_filter = ("approved", "submitted", "active", "event")
     search_fields = ("user__email", "event__name", "notes", "shipping_address")
     ordering = ("-created",)
+    inlines = [EventProductOrderInline]
 
 @admin.register(EventProductOrder)
 class EventProductOrderAdmin(admin.ModelAdmin):
-    list_display = ("product", "cart", "quantity", "added", "price_at_purchase", "discount_applied", "status")
+    list_display = ("product", "cart", "quantity", "added", "size", "discount_applied", "status")
     list_filter = ("status", "product", "cart")
     search_fields = ("product__title", "cart__user__email")
     ordering = ("-added",)

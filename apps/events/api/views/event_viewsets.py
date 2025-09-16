@@ -13,6 +13,7 @@ from apps.events.models import (
 )
 from apps.events.api.serializers import *
 from apps.events.api.filters import EventFilter
+from apps.shop.api.serializers import EventProductSerializer
 from core.permissions import IsEncoderPermission
 
 class EventViewSet(viewsets.ModelViewSet):
@@ -114,6 +115,36 @@ class EventViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         
         serializer = EventWorkshopSerializer(workshops, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'], url_name="resources", url_path="resources")
+    def resources(self, request, pk=None):
+        '''
+        Retrieve a list of resources for a specific event.
+        '''
+        event = self.get_object()
+        resources = event.resources.all()
+        page = self.paginate_queryset(resources)
+        if page is not None:
+            serializer = PublicEventResourceSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = PublicEventResourceSerializer(resources, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_name="products", url_path="products")
+    def products(self, request, pk=None):
+        '''
+        Retrieve a list of products for a specific event.
+        '''
+        event = self.get_object()
+        products = event.products.all()
+        page = self.paginate_queryset(products)
+        if page is not None:
+            serializer = EventProductSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = EventProductSerializer(products, many=True)
         return Response(serializer.data)
 
 class EventServiceTeamMemberViewSet(viewsets.ModelViewSet):

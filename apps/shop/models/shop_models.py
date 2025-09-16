@@ -20,22 +20,6 @@ class EventProduct(models.Model):
         verbose_name=_("Event Associated With This Product"),
         related_name="products"
     )
-
-    # class Sizes(models.TextChoices): #TODO: Remove this and use ProductSize model instead
-    #     EXTRA_SMALL = "XS", _("Extra Small")
-    #     SMALL = "SM", _("Small")
-    #     MEDIUM = "MD", _("Medium")
-    #     LARGE = "LG", _("Large")
-    #     EXTRA_LARGE = "XL", _("Extra Large")
-
-    # size = models.CharField(
-    #     _("Size"),
-    #     max_length=5,
-    #     choices=Sizes.choices,
-    #     blank=True,
-    #     null=True,
-    #     default=Sizes.MEDIUM
-    # )
     
     price = models.FloatField(_("Product Cost (£)"))
     discount = models.FloatField(_("Product Discount (£)"), null=True, blank=True)
@@ -49,6 +33,7 @@ class EventProduct(models.Model):
 
     categories = models.ManyToManyField(ProductCategory, blank=True, verbose_name=_("Categories"))
     materials = models.ManyToManyField(ProductMaterial, blank=True, verbose_name=_("Materials"))
+    # maximum_order_quantity = models.IntegerField(_("Maximum Order Quantity"), default=10) TODO: implement this
 
     class Meta:
         ordering = ['title']
@@ -133,6 +118,7 @@ class EventProductOrder(models.Model):
         choices=Status.choices,
         default=Status.PENDING
     )
+    # TODO: add field to check if the product can be changed. maybe add a new model to submit change requests?
 
     class Meta:
         ordering = ['-added']

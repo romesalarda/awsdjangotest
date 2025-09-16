@@ -13,4 +13,5 @@ from .shop_metadata_serializers import (
     ProductCategorySerializer,  
     ProductMaterialSerializer,
     ProductImageSerializer,
+    ProductSizeSerializer
 )
