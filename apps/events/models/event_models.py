@@ -10,11 +10,13 @@ import uuid
 
 MAX_LENGTH_EVENT_NAME_CODE = 5
 
+# TODO: add model for event organisers E.g. cfcyfcuk.nationalevents@gmail.com or cfcyfcuk.southeast@gmail.com
+
 class EventResource(models.Model):
     '''
     represents a resource e.g. a link to a further google form or a memo
     '''
-    class ResourceType (models.TextChoices):
+    class ResourceType (models.TextChoices): # TODO add this as a field
         LINK = "LINK", _("Link")
         PDF = "PDF", _("pdf")
         FILE = "FILE", _("File")

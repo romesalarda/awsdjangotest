@@ -18,6 +18,9 @@ from core.permissions import IsEncoderPermission
 
 #! Remember that service team members are also participants but not all participants are service team members
 
+# TODO: work on extra questions view, add extra description to each questions
+# TODO: get query information for creating an event. I.e. fill information based on area
+
 class EventViewSet(viewsets.ModelViewSet):
     '''
     Viewset for CRUD operations with all types of events in the community
@@ -27,7 +30,7 @@ class EventViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = EventFilter
     # filterset_fields = ['event_type', 'area_type', 'specific_area', 'name']
-    search_fields = ['name', 'theme', 'venue_name', 'venue_address']
+    search_fields = ['name', 'theme']
     ordering_fields = ['start_date', 'end_date', 'name', 'number_of_pax']
     ordering = ['-start_date']
     permission_classes = [permissions.IsAuthenticated, IsEncoderPermission]
@@ -44,8 +47,12 @@ class EventViewSet(viewsets.ModelViewSet):
         # for normal authenticated users, only show public events
         return Event.objects.filter(is_public=True)
     
-    # participant related actions
+    def perform_create(self, serializer):
+        
+        serializer.save(created_by=self.request.user)
+        super().perform_create(serializer)
     
+    # participant related actions
     @action(detail=True, methods=['get'])
     def participants(self, request, pk=None):
         '''
@@ -344,6 +351,8 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
     
     #! remember to handle how service are register, can anyone just register as a participant?
     #! or should it be only event organizers/admins who can add participants?
+    
+    # TODO: add payment method
     
     @action(detail=False, methods=['post'], url_name="register", url_path="register")
     def register(self, request):

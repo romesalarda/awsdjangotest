@@ -7,6 +7,9 @@ from apps.events.models import (
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.shortcuts import get_list_or_404
+from django.db import transaction
+
 
 from apps.events.models import EventDayAttendance
 from apps.users.api.serializers import SimpleEmergencyContactSerializer, SimplifiedCommunityUserSerializer, SimpleAllergySerializer, SimpleMedicalConditionSerializer
@@ -81,9 +84,10 @@ class PublicEventResourceSerializer(serializers.ModelSerializer):
 
 
 class SimplifiedEventSerializer(serializers.ModelSerializer):
-    
-    name = serializers.CharField(required=True)
-    
+    '''
+    Simplified event serializer for dropdowns, lists, etc
+    '''
+    name = serializers.CharField(required=True)    
     class Meta:
         model = Event
         fields = (
@@ -125,7 +129,9 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
         }
         
 class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
-    # if you want to show unit + cluster names directly
+    '''
+    Simplified AreaLocation serializer for dropdowns, lists, etc
+    '''
     unit_name = serializers.CharField(source="unit.unit_name", read_only=True)
     cluster_name = serializers.CharField(source="unit.cluster.cluster_name", read_only=True)
 
@@ -133,29 +139,38 @@ class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
         model = AreaLocation
         fields = [
             "id", 
-            "area_name",   # or whatever field you use in AreaLocation
+            "area_name",   
             "unit_name",
             "cluster_name",
         ]
         
 class EventSerializer(serializers.ModelSerializer):
     """
-    Main event serializer
+    Event serializer for full detail - for event organizers/admins
     """
     
     name = serializers.CharField(required=True)
     event_type = serializers.ChoiceField(choices=Event.EventType.choices, required=True)
-    # Simplified service team info (just IDs for writes, details for reads)
-    # service_team_members = SimplifiedEventServiceTeamMemberSerializer(
-    #     many=True, read_only=True, source="service_team"
-    # )
-
-    # Supervisor details (read-only)
     supervising_youth_heads = SimplifiedCommunityUserSerializer(
         read_only=True, many=True
     )
+    supervisor_ids = serializers.PrimaryKeyRelatedField(
+        source="supervising_youth_heads",
+        queryset=get_user_model().objects.all(),
+        many=True,
+        write_only=True,
+        required=False,
+    )
+    
     supervising_CFC_coordinators = SimplifiedCommunityUserSerializer(
         read_only=True, many=True
+    )
+    cfc_coordinator_ids = serializers.PrimaryKeyRelatedField(
+        source="supervising_CFC_coordinators",
+        queryset=get_user_model().objects.all(),
+        many=True,
+        write_only=True,
+        required=False,
     )
 
     # Statistics and display fields
@@ -165,27 +180,32 @@ class EventSerializer(serializers.ModelSerializer):
     duration_days = serializers.SerializerMethodField(read_only=True)
     # Location
     areas_involved = SimplifiedAreaLocationSerializer(many=True, read_only=True)
-
-    # Venues
-    venues = EventVenueSerializer(many=True, read_only=True)
-    venue_ids = serializers.PrimaryKeyRelatedField(
-        source="venues",
-        queryset=EventVenue.objects.all(),
-        many=True,
+    area_names = serializers.ListField(
+        child=serializers.CharField(),
         write_only=True,
         required=False,
+        help_text="List of area names, e.g. ['Frimley', 'Horsham']"
+    )
+    
+    # Venues
+    venues = EventVenueSerializer(many=True, read_only=True)
+    venue_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="List of venue dicts, e.g. [{'venue_name': 'name', 'address': 'address', 'capacity': 100}]"
     )
 
     # Resources
     resources = PublicEventResourceSerializer(many=True, read_only=True)
-    memo = PublicEventResourceSerializer(read_only=True)
-    memo_id = serializers.PrimaryKeyRelatedField(
-        source="memo",
-        queryset=EventResource.objects.all(),
+    resource_data = serializers.ListField(
+        child=serializers.DictField(),
         write_only=True,
         required=False,
-        allow_null=True,
+        help_text="List of resource dicts, e.g. [{'resource_name': 'name', 'description': 'description', 'type': 'type'}]"
     )
+    
+    memo = PublicEventResourceSerializer(read_only=True)
 
     class Meta:
         model = Event
@@ -207,17 +227,20 @@ class EventSerializer(serializers.ModelSerializer):
             "theme",
             "anchor_verse",
             "areas_involved",
+            "area_names",
             "venues",
-            "venue_ids",
+            "venue_data",
             "resources",
+            "resource_data",
             "memo",
-            "memo_id",
             "notes",
             # Participants / service team
             "participants_count",
             # Write-only supervisor fields
             "supervising_youth_heads",
+            "supervisor_ids",
             "supervising_CFC_coordinators",
+            "cfc_coordinator_ids",
         ]
         read_only_fields = [
             "id",
@@ -287,8 +310,60 @@ class EventSerializer(serializers.ModelSerializer):
         start_date = validated_data.get('start_date', timezone.now())
         validated_data['start_date'] = start_date
         
-        return super().create(validated_data)
+        area_names = validated_data.pop('area_names', [])
+        venue_data = validated_data.pop('venue_data', [])
+        resource_data = validated_data.pop('resource_data', [])
+        memo_data = validated_data.pop('memo_data', {})
+        supervisor_ids = validated_data.pop('supervisor_ids', [])
+        cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
+        
+        
+        with transaction.atomic():
+            self.validate(validated_data)
+            event = Event.objects.create(**validated_data)
+            
+            area_names = [area.lower() for area in area_names]
 
+            # Areas
+            if area_names:
+                print(AreaLocation.objects.filter(area_name__in=area_names).values_list('area_name', flat=True))
+                for area in area_names:
+                    if not AreaLocation.objects.filter(area_name=area.lower()).exists():
+                        raise serializers.ValidationError({"area_names": _(f"Area '{area}' does not exist.")})
+    
+                areas = get_list_or_404(AreaLocation, area_name__in=area_names)
+                event.areas_involved.set(areas)
+
+            # Venue
+            if venue_data:
+                venue_serializer = EventVenueSerializer(data=venue_data, many=True)
+                venue_serializer.is_valid(raise_exception=True)
+                venues = venue_serializer.save()
+                event.venues.set(venues)
+
+            # Supervisors
+            if supervisor_ids:
+                event.supervising_youth_heads.set(supervisor_ids)
+            if cfc_coordinator_ids:
+                event.supervising_CFC_coordinators.set(cfc_coordinator_ids)
+
+            # Resources
+            if resource_data:
+                resource_serializer = PublicEventResourceSerializer(data=resource_data, many=True)
+                resource_serializer.is_valid(raise_exception=True)
+                resources = resource_serializer.save()
+                event.resources.set(resources)
+
+            # Memo
+            if memo_data:
+                memo_serializer = PublicEventResourceSerializer(data=memo_data)
+                memo_serializer.is_valid(raise_exception=True)
+                memo = memo_serializer.save()
+                event.memo = memo
+
+            event.save()
+        return event
+        
 class EventParticipantSerializer(serializers.ModelSerializer):
     '''
     Full detail Event participant serializer - for event organizers/admins
@@ -387,6 +462,8 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             },
         }
         
+    # TODO: add create and update methods to handle status changes, notifications, etc.
+        
 class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
     """
     Flat, minimal participant info for table/list views.
@@ -413,6 +490,9 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
         read_only_fields = fields
         
 class EventDayAttendanceSerializer(serializers.ModelSerializer):
+    '''
+    Serializer for event day attendance details.
+    '''
     user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
     event_code = serializers.CharField(source="event.event_code", read_only=True)
     duration = serializers.DurationField(read_only=True)

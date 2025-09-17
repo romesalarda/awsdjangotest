@@ -1,4 +1,5 @@
-from rest_framework import viewsets, filters, permissions
+from rest_framework import viewsets, filters, permissions, response, status
+from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models.query import Q
 
@@ -48,6 +49,46 @@ class ChapterLocationViewSet(viewsets.ModelViewSet):
         if self.action == 'retrieve' and self.request.query_params.get('nested', '').lower() == 'true':
             return NestedChapterLocationSerializer
         return ChapterLocationSerializer
+    
+    @action(detail=False, methods=['get'], url_name="from-location", url_path="from-location")
+    def get_chapter_from_location(self, request):
+        '''
+        get chapter info based on a location query parameter
+        1. Try to find AreaLocation with area_name matching the query
+        2. If not found, try to find SearchAreaSupportLocation with name matching the query
+        3. If not found, try to find EventVenue with name matching the query
+        4. If found in any of the above, return the associated ChapterLocation
+        5. If not found in any, return 404 not found
+        '''
+        location_query = request.query_params.get('location')
+        if not location_query:
+            return response.Response({"detail": "location query parameter is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Try AreaLocation
+        area = AreaLocation.objects.select_related('unit__chapter').filter(
+            area_name__icontains=location_query
+        ).first()
+        if area and area.unit and area.unit.chapter:
+            serializer = ChapterLocationSerializer(area.unit.chapter)
+            return response.Response(serializer.data)
+
+        # Try SearchAreaSupportLocation
+        support = SearchAreaSupportLocation.objects.select_related('relative_area__unit__chapter').filter(
+            name__icontains=location_query
+        ).first()
+        if support and support.relative_area and support.relative_area.unit and support.relative_area.unit.chapter:
+            serializer = ChapterLocationSerializer(support.relative_area.unit.chapter)
+            return response.Response(serializer.data)
+
+        # Try EventVenue
+        venue = EventVenue.objects.select_related('general_area__unit__chapter').filter(
+            name__icontains=location_query
+        ).first()
+        if venue and venue.general_area and venue.general_area.unit and venue.general_area.unit.chapter:
+            serializer = ChapterLocationSerializer(venue.general_area.unit.chapter)
+            return response.Response(serializer.data)
+
+        return response.Response({"detail": "No chapter found for this location."}, status=status.HTTP_404_NOT_FOUND)
 
 class UnitLocationViewSet(viewsets.ModelViewSet):
     queryset = UnitLocation.objects.all().select_related(
