@@ -6,6 +6,7 @@ from apps.events.models import (
 )
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from apps.events.models import EventDayAttendance
 from apps.users.api.serializers import SimpleEmergencyContactSerializer, SimplifiedCommunityUserSerializer, SimpleAllergySerializer, SimpleMedicalConditionSerializer
@@ -33,6 +34,9 @@ class SimplifiedEventServiceTeamMemberSerializer(serializers.ModelSerializer):
     #     return [role.get_role_name_display() for role in obj.roles.all()]
 
 class EventServiceTeamMemberSerializer(serializers.ModelSerializer):
+    '''
+    Full detail Event service team member serializer - for event organizers/admins
+    '''
     user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
     role_details = EventRoleSerializer(source='roles', many=True, read_only=True)
     
@@ -52,6 +56,9 @@ class EventTalkSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class EventWorkshopSerializer(serializers.ModelSerializer):
+    '''
+    Event workshop serializer
+    '''
     facilitator_details = SimplifiedCommunityUserSerializer(
         source='facilitators', many=True, read_only=True
     )
@@ -137,11 +144,11 @@ class EventSerializer(serializers.ModelSerializer):
     """
     
     name = serializers.CharField(required=True)
-
+    event_type = serializers.ChoiceField(choices=Event.EventType.choices, required=True)
     # Simplified service team info (just IDs for writes, details for reads)
-    service_team_members = SimplifiedEventServiceTeamMemberSerializer(
-        many=True, read_only=True, source="service_team"
-    )
+    # service_team_members = SimplifiedEventServiceTeamMemberSerializer(
+    #     many=True, read_only=True, source="service_team"
+    # )
 
     # Supervisor details (read-only)
     supervising_youth_heads = SimplifiedCommunityUserSerializer(
@@ -208,7 +215,6 @@ class EventSerializer(serializers.ModelSerializer):
             "notes",
             # Participants / service team
             "participants_count",
-            "service_team_members",
             # Write-only supervisor fields
             "supervising_youth_heads",
             "supervising_CFC_coordinators",
@@ -217,7 +223,6 @@ class EventSerializer(serializers.ModelSerializer):
             "id",
             "duration_days",
             "participants_count",
-            "service_team_members",
             "youth_head",
             "cfc_coordinator",
             "resources",
@@ -256,7 +261,6 @@ class EventSerializer(serializers.ModelSerializer):
             },
             "people": {
                 "participants_count": rep["participants_count"],
-                "service_team_members": rep["service_team_members"],
                 "event_heads": rep["supervising_youth_heads"],
                 "cfc_coordinators": rep["supervising_CFC_coordinators"],
             },
@@ -266,8 +270,24 @@ class EventSerializer(serializers.ModelSerializer):
             },
             "notes": rep["notes"],
         }
-
     
+    def validate(self, attrs):
+        
+        # ensure that name of event is unqiue at anytime
+        name = attrs.get('name', None)
+        if name:
+            existing_event = Event.objects.filter(name=name).exclude(id=self.instance.id if self.instance else None).first()
+            if existing_event:
+                raise serializers.ValidationError({"name": _("An event with this name already exists. Please choose a different name.")})
+        
+        return super().validate(attrs)
+    
+    def create(self, validated_data):
+        
+        start_date = validated_data.get('start_date', timezone.now())
+        validated_data['start_date'] = start_date
+        
+        return super().create(validated_data)
 
 class EventParticipantSerializer(serializers.ModelSerializer):
     '''
