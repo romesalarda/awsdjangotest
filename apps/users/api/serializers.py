@@ -9,11 +9,17 @@ from apps.users.models import (
 )
 
 class CommunityRoleSerializer(serializers.ModelSerializer):
+    '''
+    Serializer for community roles.
+    '''
     class Meta:
         model = CommunityRole
         fields = '__all__'
 
 class UserCommunityRoleSerializer(serializers.ModelSerializer):
+    '''
+    Serializer for user community roles.
+    '''
     role_name = serializers.CharField(source='role.get_role_name_display', read_only=True)
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
     
@@ -22,6 +28,9 @@ class UserCommunityRoleSerializer(serializers.ModelSerializer):
         fields = '__all__'
         
 class SimplifiedUserCommunityRoleSerializer(serializers.ModelSerializer):
+    '''
+    Simplified serializer for user roles.
+    '''
     role_name = serializers.CharField(source='role.get_role_name_display', read_only=True)
     
     class Meta:
@@ -29,6 +38,9 @@ class SimplifiedUserCommunityRoleSerializer(serializers.ModelSerializer):
         fields = ('role_name', 'start_date')
         
 class EmergencyContactSerializer(serializers.ModelSerializer):
+    '''
+    Serializer for emergency contacts.
+    '''
     contact_relationship_display = serializers.CharField(source="get_contact_relationship_display", read_only=True)
 
     class Meta:
@@ -52,7 +64,9 @@ class AllergySerializer(serializers.ModelSerializer):
 
 
 class MedicalConditionSerializer(serializers.ModelSerializer):
-    """Base medical condition definition (master data)."""
+    """
+    Base medical condition definition (master data).
+    """
 
     class Meta:
         model = MedicalCondition
@@ -60,6 +74,9 @@ class MedicalConditionSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 class UserAllergySerializer(serializers.ModelSerializer):
+    '''
+    Through model serializer for user allergies.
+    '''
     allergy = AllergySerializer(read_only=True)
     allergy_id = serializers.PrimaryKeyRelatedField(
         queryset=Allergy.objects.all(), source="allergy", write_only=True
@@ -75,8 +92,19 @@ class UserAllergySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def validate(self, attrs): # ensure both allergy and user are present and unique together
+        user = attrs.get('user') or self.instance.user if self.instance else None
+        allergy = attrs.get('allergy') or self.instance.allergy if self.instance else None
+        if not user or not allergy:
+            raise serializers.ValidationError("Both user and allergy must be specified.")
+        if UserAllergy.objects.exclude(id=self.instance.id if self.instance else None).filter(user=user, allergy=allergy).exists():
+            raise serializers.ValidationError("This allergy is already linked to the user.")
+        return super().validate(attrs)
 
 class UserMedicalConditionSerializer(serializers.ModelSerializer):
+    '''
+    Through model serializer for user medical conditions.
+    '''
     condition = MedicalConditionSerializer(read_only=True)
     condition_id = serializers.PrimaryKeyRelatedField(
         queryset=MedicalCondition.objects.all(), source="condition", write_only=True
@@ -92,25 +120,64 @@ class UserMedicalConditionSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
         
 class SimpleAllergySerializer(serializers.ModelSerializer):
-    # flatten instead of nesting user + full allergy model
-    name = serializers.CharField(source="allergy.name", read_only=True)
+    '''
+    Simplified USER serializer for allergies.
+    (THROUGH MODEL)
+    '''
+    name = serializers.CharField(source="allergy.name")
     severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+    user = serializers.PrimaryKeyRelatedField(
+        queryset=CommunityUser.objects.all(), write_only=True, required=False
+    )
 
     class Meta:
         model = UserAllergy
-        fields = ["id", "name", "severity", "severity_display", "instructions", "notes"]
+        fields = ["id", "name", "severity", "severity_display", "instructions", "notes", "user"]
+
+    def create(self, validated_data):
+        allergy_data = validated_data.pop('allergy', {})
+        allergy_name = allergy_data.get('name')
+        user = validated_data.pop('user', self.context.get('user'))
+        if not user:
+            raise serializers.ValidationError("User is required to create a UserAllergy.")  
+        allergy, created = Allergy.objects.get_or_create(name=allergy_name)
+        if UserAllergy.objects.filter(user=user, allergy=allergy).exists():
+            raise serializers.ValidationError("This allergy is already linked to the user.")
+        validated_data['user'] = user
+        validated_data['allergy'] = allergy
+        return super().create(validated_data)
+    
 
 
 class SimpleMedicalConditionSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(source="condition.name", read_only=True)
-    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
-
+    '''
+    Simplified USER serializer for medical conditions.
+    (THROUGH MODEL)
+    '''
+    name = serializers.CharField(source="condition.name")
+    severity_display = serializers.CharField(source="get_severity_display", required=False)
+    user = serializers.PrimaryKeyRelatedField(
+        queryset=CommunityUser.objects.all(), write_only=True, required=False
+    )
     class Meta:
         model = UserMedicalCondition
-        fields = ["id", "name", "severity", "severity_display", "instructions", "date_diagnosed"]
+        fields = ["id", "name", "user", "severity", "severity_display", "instructions", "date_diagnosed"]
 
-
+    def create(self, validated_data): # just ensure that user and condition are present
+        condition_data = validated_data.pop('condition', {})
+        condition_name = condition_data.get('name')
+        user = validated_data.pop('user', self.context.get('user'))
+        if not user:
+            raise serializers.ValidationError("User is required to create a UserMedicalCondition.")
+        condition, created = MedicalCondition.objects.get_or_create(name=condition_name)
+        user_medical_condition = UserMedicalCondition.objects.create(condition=condition, user=user, **validated_data)
+        return user_medical_condition
+    
 class SimpleEmergencyContactSerializer(serializers.ModelSerializer):
+    '''
+    Simplified USER serializer for emergency contacts.
+    (THROUGH MODEL)
+    '''
     contact_relationship_display = serializers.CharField(
         source="get_contact_relationship_display", read_only=True
     )
@@ -126,7 +193,8 @@ class SimpleEmergencyContactSerializer(serializers.ModelSerializer):
 
 class CommunityUserSerializer(serializers.ModelSerializer):
     '''
-    Main serializer for CommunityUser model
+    Main serializer for CommunityUser model. Use this to create new users and view/edit existing users.
+    For a simplified version and restrictive permissions (e.g. for dropdowns, lists, etc), use SimplifiedCommunityUserSerializer.
     '''
     roles = SimplifiedUserCommunityRoleSerializer(source='role_links', many=True, read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
@@ -260,46 +328,28 @@ class ReducedMinistryType(models.TextChoices):
     ADULT_GUEST = "AGT", _("Adult Guest") 
 
 class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
-    
-    first_name = serializers.CharField(required=True)
-    last_name = serializers.CharField(required=True)
-    
-    password = serializers.CharField(write_only=True, required=False, style={"input_type": "password"})
-    # age = serializers.IntegerField(source='get_age', write_only=True)
-    data_of_birth = serializers.DateTimeField(source='date_of_birth', write_only=True)
-    gender = serializers.ChoiceField(choices=CommunityUser.GenderType.choices, write_only=True)
-    ministry = serializers.ChoiceField(choices=ReducedMinistryType.choices, write_only=True)
-    
+    '''
+    Simplified Community User serializer for dropdowns, lists, etc
+    '''
+    first_name = serializers.CharField(required=False)
+    last_name = serializers.CharField(required=False)
+    data_of_birth = serializers.DateField(source='date_of_birth', required=False)
+    gender = serializers.ChoiceField(choices=CommunityUser.GenderType.choices, required=False)
+    ministry = serializers.ChoiceField(choices=ReducedMinistryType.choices, required=False)
+
     class Meta:
         model = CommunityUser
-        fields = ('member_id', 'first_name', 'last_name', 'ministry', 'password', 'gender', 'data_of_birth')
+        fields = ('first_name', 'last_name', 'ministry', 'gender', 'data_of_birth')
+        # member_id and password are excluded for safety
 
     def validate(self, attrs):
-        first_name = attrs.get('first_name')
-        last_name = attrs.get('last_name')
-        password = attrs.get('password')
-        errors = {}
-        if not first_name or not last_name:
-            errors["error"] = "First name and last name are required."
-        if not password:
-            errors["password"] = "Password is required for creating a user."
-        if errors:
-            raise serializers.ValidationError(errors)
+        # No required fields, so just return attrs
         return attrs
 
-    def create(self, validated_data):
-        password = validated_data.pop('password', None)
-        user = CommunityUser.objects.create(**validated_data)
-        user.set_password(password)
-        user.save()
-        return user
-    
     def update(self, instance, validated_data):
-        password = validated_data.pop('password', None)
+        # Only update provided fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        if password:
-            instance.set_password(password)
         instance.save()
         return instance
 

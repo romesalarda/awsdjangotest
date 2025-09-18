@@ -18,6 +18,10 @@ class Allergy(models.Model):
 
     def __str__(self):
         return self.name
+    
+    def save(self, *args, **kwargs):
+        self.name = self.name.title()
+        return super().save(*args, **kwargs)
 
 
 class MedicalCondition(models.Model):
@@ -35,6 +39,9 @@ class MedicalCondition(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        self.name = self.name.title()
+        return super().save(*args, **kwargs)
 
 class UserAllergy(models.Model):
     """Join model with user-specific allergy info."""
@@ -155,3 +162,15 @@ class EmergencyContact (models.Model):
     
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.contact_relationship or _('Contact')})"
+
+    def save(self, *args, **kwargs):
+        # normalise
+        self.first_name = self.first_name.title()
+        if self.last_name:
+            self.last_name = self.last_name.title()
+        if self.middle_name:
+            self.middle_name = self.middle_name.title()
+        if self.preferred_name:
+            self.preferred_name = self.preferred_name.title() 
+        
+        return super().save(*args, **kwargs)

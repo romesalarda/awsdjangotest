@@ -25,6 +25,8 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     permission_classes = [] # TODO: must change to authenticated only + add object permissions
     lookup_field = "member_id"
     
+    # TODO: on account creation, ensure the correct fields are added
+    
     
     def get_serializer_class(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -43,11 +45,6 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
             return SimplifiedCommunityUserSerializer
 
         # TODO: ensure members cannot see ANY user data except their own
-        # for listing others
-        # if self.action == "list":
-        #     return SimplifiedCommunityUserSerializer
-
-        # fallback
         return CommunityUserSerializer
 
     @action(detail=True, methods=['get'])

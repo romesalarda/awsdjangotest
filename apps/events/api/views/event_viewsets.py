@@ -389,6 +389,11 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 {'error': _('Invalid participant type.')},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        if participant_type == EventParticipant.ParticipantType.SERVICE_TEAM and not user.has_perm('events.add_eventserviceteammember'):
+            return Response(
+                {'error': _('Service team registration is not allowed via this endpoint.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         participant = EventParticipant.objects.create(
             event=event,
@@ -401,6 +406,8 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
     #TODO: add role to a service team member AND NOT a participant
+    #TODO: cancel booking
+    
     
     @action(detail=True, methods=['post'], url_name="mark-attended", url_path="mark-attended")
     def mark_attended(self, request, event_pax_id=None):
