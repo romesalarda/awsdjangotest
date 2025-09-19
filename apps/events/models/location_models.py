@@ -66,6 +66,7 @@ class CountryLocation (models.Model):
     '''
     specific country internationally
     '''
+    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
     
     country = CountryField(blank=True, null=True, unique=True) # only one country in the database
     general_sector = models.CharField(verbose_name="general world sector", choices=GeneralSectorType)
@@ -80,7 +81,8 @@ class ClusterLocation (models.Model):
     '''
     cluster_id = models.CharField(verbose_name="cluster-name", max_length=2)
     world_location = models.ForeignKey(CountryLocation, on_delete=models.CASCADE, related_name="clusters")
-    
+    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
+  
     def __str__(self):
         return f"{str(self.world_location)} -> Cluster {self.cluster_id}"
     
@@ -95,7 +97,8 @@ class ChapterLocation (models.Model):
     chapter_name = models.CharField(verbose_name="name-of-chapter", max_length=150) # verbose and nice name
     chapter_code = models.CharField(verbose_name="chapter-code", max_length=3, null=True) # for id purposes
     cluster = models.ForeignKey(ClusterLocation, on_delete=models.CASCADE, related_name="chapters")
-    
+    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
+
     class Meta:
         unique_together = ("chapter_name", "cluster")
         
@@ -119,7 +122,8 @@ class UnitLocation (models.Model):
     unit_id = models.CharField(verbose_name="unit-id", blank=True, null=True) # single letter/2
     unit_name = models.CharField(verbose_name="unit name", max_length=2)
     chapter = models.ForeignKey(ChapterLocation, on_delete=models.CASCADE, related_name="units")
-    
+    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
+ 
     class Meta:
         unique_together = ("unit_name", "chapter")
         
@@ -147,6 +151,14 @@ class AreaLocation (models.Model):
     unit = models.ForeignKey(UnitLocation, on_delete=models.CASCADE, related_name="areas")
     general_address = models.CharField(max_length=100, help_text="general postcode/address")
     location_description = models.TextField(blank=True, null=True)
+    
+    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
+    
+    # TODO
+    #? Add m2m field to show which users are incharge of this area or have a flag on the user model to show they are incharge of this area?
+    #? Or have a separate model that links users to areas they are incharge of?
+    # this is also the same for each location
+    # well user model already has a role field, so can just use that to filter users by role and area they are incharge of.
     
     class Meta:
         unique_together = ("area_name", "unit")
@@ -199,3 +211,5 @@ class EventVenue (models.Model):
     venue_type = models.CharField(verbose_name=_("type of venue"), choices=VenueType, default=VenueType.MAIN_VENUE)
     general_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, verbose_name=_("community general area"), related_name="event_venues", null=True, blank=True)
     primary_venue = models.BooleanField(verbose_name=_("is primary venue"), default=True, blank=True, null=True)
+
+    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."

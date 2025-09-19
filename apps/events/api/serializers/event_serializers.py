@@ -13,7 +13,7 @@ from django.db.models import Q
 
 import pprint
 
-from apps.events.models import EventDayAttendance, Event
+from apps.events.models import EventDayAttendance, Event, QuestionAnswer
 from apps.users.api.serializers import (
     SimpleEmergencyContactSerializer, SimplifiedCommunityUserSerializer, 
     SimpleAllergySerializer, SimpleMedicalConditionSerializer,
@@ -21,8 +21,7 @@ from apps.users.api.serializers import (
 )
 from apps.users.models import CommunityUser, MedicalCondition, Allergy, EmergencyContact
 from .location_serializers import EventVenueSerializer
-
-# TODO: create resources serializer, then to add a field onto the event serializer, for memo and extra resources attached to the event
+from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
 
 class EventRoleSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(source='get_role_name_display', read_only=True)
@@ -211,6 +210,7 @@ class EventSerializer(serializers.ModelSerializer):
         required=False,
         help_text="List of resource dicts, e.g. [{'resource_name': 'name', 'description': 'description', 'type': 'type'}]"
     )
+    extra_questions = ExtraQuestionSerializer(many=True, read_only=True)
     
     memo = PublicEventResourceSerializer(read_only=True)
 
@@ -241,6 +241,7 @@ class EventSerializer(serializers.ModelSerializer):
             "resource_data",
             "memo",
             "notes",
+            "extra_questions",
             # Participants / service team
             "participants_count",
             # Write-only supervisor fields
@@ -266,6 +267,7 @@ class EventSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
+        pprint.pprint(rep)  # ! DEBUG ONLY
         return {
             "id": rep["id"],
             "basic_info": {
@@ -299,6 +301,7 @@ class EventSerializer(serializers.ModelSerializer):
                 "extra_resources": rep["resources"],
             },
             "notes": rep["notes"],
+            "extra_questions": rep["extra_questions"],
         }
     
     def validate(self, attrs):
@@ -402,6 +405,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         source="user.user_medical_conditions", many=True, required=False
     )
     payment_date = serializers.DateTimeField(read_only=True)
+    event_question_answers = QuestionAnswerSerializer(many=True)
 
     class Meta:
         model = EventParticipant
@@ -426,6 +430,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "paid_amount",
             "payment_date",
             "verified",
+            "event_question_answers"
         ]
         read_only_fields = [
             "id",
@@ -470,8 +475,11 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "verified": rep["verified"]
         }
         
-    # TODO: add create and update methods to handle status changes, notifications, etc.
     def create(self, validated_data):
+        '''
+        Create or update a participant's registration for an event. Also can provide extra user information 
+        via this serializer to update their user profile with medical conditions, emergency contacts, allergies, etc.
+        '''
         # User must be logged in to register for an event
         user = self.context['request'].user
         if not user.is_authenticated:
@@ -480,6 +488,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         allergies_data = user_data.pop('user_allergies', [])
         emergency_contacts_data = user_data.pop('community_user_emergency_contacts', [])
         medical_conditions_data = user_data.pop('user_medical_conditions', [])
+        question_answers_data = validated_data.pop('event_question_answers', [])
 
         event_data = validated_data.pop('event', None)
         event_code = event_data.get('event_code') if event_data else None
@@ -497,81 +506,97 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "emergency_contacts_linked": [],
             "allergies_added": [],
             "allergies_linked": [],
+            "questions_answered": [],
         }
+        
+        pprint.pprint(question_answers_data)
 
         # uses full version serialiser, take user informatin and update the user record if they want to override their existing data
-        user_serializer = SimplifiedCommunityUserSerializer(user, data=user_data, partial=True) # used for restrictive updates
-        user_serializer.is_valid(raise_exception=True)
-        updated_user = user_serializer.save()
+        with transaction.atomic():
+            user_serializer = SimplifiedCommunityUserSerializer(user, data=user_data, partial=True) # used for restrictive updates
+            user_serializer.is_valid(raise_exception=True)
+            updated_user = user_serializer.save()
 
-        # Track user field changes
-        for field, value in user_data.items():
-            old_value = getattr(user, field, None)
-            if old_value != value:
-                changes["user_updates"].append(f"{field}: '{old_value}' -> '{value}'")
+            # Track user field changes
+            for field, value in user_data.items():
+                old_value = getattr(user, field, None)
+                if old_value != value:
+                    changes["user_updates"].append(f"{field}: '{old_value}' -> '{value}'")
 
-        # Medical conditions
-        for medical_condition in medical_conditions_data:
-            condition = medical_condition.get('condition', {})
-            condition_name = condition.get('name') if condition else None
-            condition_model = MedicalCondition.objects.filter(name__iexact=condition_name).first()
-            if condition_model and not updated_user.user_medical_conditions.filter(id=condition_model.id).exists():
-                updated_user.medical_conditions.add(condition_model)
-                changes["medical_conditions_linked"].append(condition_name)
-            elif condition_name and not updated_user.user_medical_conditions.filter(condition__name__iexact=condition_name).exists():
-                condition["user"] = updated_user.id  # associate new condition with user
-                new_condition = SimpleMedicalConditionSerializer(data=condition)
-                if new_condition.is_valid(raise_exception=True):
-                    new_condition.save()
-                    updated_user.user_medical_conditions.add(new_condition.instance)
-                    changes["medical_conditions_added"].append(condition_name)
-            # else:
-            #     print(f"Medical condition '{condition_name}' already linked to user '{updated_user}' or no name provided.")
-
-        # Emergency contacts
-        for contact in emergency_contacts_data:
-            first_name = contact.get('first_name')
-            last_name = contact.get('last_name')
-            phone_number = contact.get('phone_number')
-            if (first_name and last_name) or phone_number:
-                existing_contact = EmergencyContact.objects.filter(
-                    Q(
-                        (Q(first_name__iexact=first_name) & Q(last_name__iexact=last_name)) |
-                        Q(phone_number=phone_number)
-                    ),
-                    user=updated_user
-                ).first()
-                if not existing_contact:
-                    contact["user"] = updated_user.id  
-                    new_contact = SimpleEmergencyContactSerializer(data=contact)
-                    if new_contact.is_valid(raise_exception=True):
-                        new_contact.save()
-                        updated_user.community_user_emergency_contacts.add(new_contact.instance)
-                        changes["emergency_contacts_added"].append(f"{first_name} {last_name or ''}".strip())
+            # Medical conditions
+            for medical_condition in medical_conditions_data:
+                condition = medical_condition.get('condition', {})
+                condition_name = condition.get('name') if condition else None
+                condition_model = MedicalCondition.objects.filter(name__iexact=condition_name).first()
+                if condition_model and not updated_user.user_medical_conditions.filter(id=condition_model.id).exists():
+                    updated_user.medical_conditions.add(condition_model)
+                    changes["medical_conditions_linked"].append(condition_name)
+                elif condition_name and not updated_user.user_medical_conditions.filter(condition__name__iexact=condition_name).exists():
+                    condition["user"] = updated_user.id  # associate new condition with user
+                    new_condition = SimpleMedicalConditionSerializer(data=condition)
+                    if new_condition.is_valid(raise_exception=True):
+                        new_condition.save()
+                        updated_user.user_medical_conditions.add(new_condition.instance)
+                        changes["medical_conditions_added"].append(condition_name)
                 else:
-                    changes["emergency_contacts_linked"].append(f"{first_name} {last_name or ''}".strip())
-            else:
-                raise serializers.ValidationError({"emergency_contacts": _("First name, last name, and phone number are required for emergency contacts.")})
+                    raise serializers.ValidationError({"medical_conditions": _("Medical condition name is required.")})
+            # Emergency contacts
+            for contact in emergency_contacts_data:
+                first_name = contact.get('first_name')
+                last_name = contact.get('last_name')
+                phone_number = contact.get('phone_number')
+                if (first_name and last_name) or phone_number:
+                    existing_contact = EmergencyContact.objects.filter(
+                        Q(
+                            (Q(first_name__iexact=first_name) & Q(last_name__iexact=last_name)) |
+                            Q(phone_number=phone_number)
+                        ),
+                        user=updated_user
+                    ).first()
+                    if not existing_contact:
+                        contact["user"] = updated_user.id  
+                        new_contact = SimpleEmergencyContactSerializer(data=contact)
+                        if new_contact.is_valid(raise_exception=True):
+                            new_contact.save()
+                            updated_user.community_user_emergency_contacts.add(new_contact.instance)
+                            changes["emergency_contacts_added"].append(f"{first_name} {last_name or ''}".strip())
+                    else:
+                        changes["emergency_contacts_linked"].append(f"{first_name} {last_name or ''}".strip())
+                else:
+                    raise serializers.ValidationError({"emergency_contacts": _("First name, last name, and phone number are required for emergency contacts.")})
 
-        # Allergies
-        for allergy in allergies_data:
-            allergy_info = allergy.get('allergy', {})
-            allergy_name = allergy_info.get('name') if allergy_info else None
-            allergy_model = Allergy.objects.filter(name__iexact=allergy_name).first()
-            if allergy_model and not updated_user.user_allergies.filter(id=allergy_model.id).exists():
-                updated_user.allergies.add(allergy_model)
-                changes["allergies_linked"].append(allergy_name)
-            elif allergy_name and not updated_user.user_allergies.filter(allergy__name__iexact=allergy_name).exists():
-                allergy_info["user"] = updated_user.id
-                new_allergy = SimpleAllergySerializer(data=allergy_info)
-                if new_allergy.is_valid(raise_exception=True):
-                    new_allergy.save()
-                    updated_user.user_allergies.add(new_allergy.instance)
-                    changes["allergies_added"].append(allergy_name)
+            # Allergies
+            for allergy in allergies_data:
+                allergy_info = allergy.get('allergy', {})
+                allergy_name = allergy_info.get('name') if allergy_info else None
+                allergy_model = Allergy.objects.filter(name__iexact=allergy_name).first()
+                if allergy_model and not updated_user.user_allergies.filter(id=allergy_model.id).exists():
+                    updated_user.allergies.add(allergy_model)
+                    changes["allergies_linked"].append(allergy_name)
+                elif allergy_name and not updated_user.user_allergies.filter(allergy__name__iexact=allergy_name).exists():
+                    allergy_info["user"] = updated_user.id
+                    new_allergy = SimpleAllergySerializer(data=allergy_info)
+                    if new_allergy.is_valid(raise_exception=True):
+                        new_allergy.save()
+                        updated_user.user_allergies.add(new_allergy.instance)
+                        changes["allergies_added"].append(allergy_name)
+            
+            # for answer in question_answers_data:
+            participant = EventParticipant.objects.create(event=event, user=updated_user, **validated_data)
+            for answer in question_answers_data:
+                question = answer.get('question', None)
+                if not question:
+                    raise serializers.ValidationError({"event_question_answers": _("Each answer must be associated with a question.")})
+                answer_text = answer.get('answer_text', '').strip()
+                
+                selected_choices = answer.get('selected_choices', [])
+                answer = QuestionAnswer(participant=participant, question=question, answer_text=answer_text)
+                answer.selected_choices.set(selected_choices)
+                answer.save()
+                changes["questions_answered"].append(f"Question ID {getattr(question, 'question_name', 'No-id')} answered. with answer: {answer_text} and choices: {selected_choices}")
+                participant.event_question_answers.add(answer) 
 
-        participant = EventParticipant.objects.create(event=event, user=updated_user, **validated_data)
-        pprint.pprint(changes)
-        
+            pprint.pprint(changes) # ! DEBUG ONLY
         return participant
 
     # TODO: update method, but generally use the user serializer to update user information as each guest
@@ -579,7 +604,8 @@ class EventParticipantSerializer(serializers.ModelSerializer):
 
 class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
     """
-    Flat, minimal participant info for table/list views.
+    Flat, minimal participant info for table/list views. 
+    DO NOT use for detailed views to create or update participants.
     """
     event = serializers.CharField(source="event.event_code", read_only=True)
     first_name = serializers.CharField(source="user.first_name", read_only=True)
@@ -602,7 +628,7 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
         
-class EventDayAttendanceSerializer(serializers.ModelSerializer):
+class EventDayAttendanceSerializer(serializers.ModelSerializer): #! used for future reference, not currently implemented
     '''
     Serializer for event day attendance details.
     '''

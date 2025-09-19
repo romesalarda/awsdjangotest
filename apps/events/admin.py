@@ -92,7 +92,7 @@ class EventTalkInline(admin.TabularInline):
     autocomplete_fields = ('speaker',)
     fields = ('title', 'talk_type', 'speaker', 'start_time', 'end_time', 'is_published')
 
-class EventWorkshopInline(admin.TabularInline):
+class EventWorkshopInline(admin.StackedInline):
     model = EventWorkshop
     extra = 1
     autocomplete_fields = ('primary_facilitator',)
@@ -104,6 +104,19 @@ class QuestionChoiceInline(admin.TabularInline):
     extra = 2  # number of blank choices to show
     ordering = ["order"]
 
+@admin.register(ExtraQuestion)
+class ExtraQuestionAdmin(admin.ModelAdmin):
+    list_display = ("id", "question_name", "event", "question_type", "required", "order")
+    list_filter = ("event", "question_type", "required")
+    search_fields = ("question_name", "question_body")
+    ordering = ["event", "order"]
+    inlines = [QuestionChoiceInline]
+    
+class ExtraQuestionInline(admin.StackedInline):
+    model = ExtraQuestion
+    extra = 0
+    show_change_link = True
+    ordering = ["order"]
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
@@ -139,7 +152,8 @@ class EventAdmin(admin.ModelAdmin):
         EventServiceTeamMemberInline,
         EventParticipantInline,
         EventTalkInline,
-        EventWorkshopInline
+        EventWorkshopInline,
+        ExtraQuestionInline
     ]
     
     def get_queryset(self, request):
@@ -229,13 +243,7 @@ class PublicEventResourceAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
         
 
-@admin.register(ExtraQuestion)
-class ExtraQuestionAdmin(admin.ModelAdmin):
-    list_display = ("question_name", "event", "question_type", "required", "order")
-    list_filter = ("event", "question_type", "required")
-    search_fields = ("question_name", "question_body")
-    ordering = ["event", "order"]
-    inlines = [QuestionChoiceInline]
+
     
 @admin.register(QuestionAnswer)
 class QuestionAnswerAdmin(admin.ModelAdmin):
