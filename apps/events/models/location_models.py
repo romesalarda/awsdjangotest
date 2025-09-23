@@ -58,15 +58,12 @@ class SpecificSectorType(models.TextChoices):
     GULF = "GULF", _("Gulf States")
     LEVANT = "LEVANT", _("Levant")
     PERSIAN = "PERSIAN", _("Persian Region")
-    
-# TODO: to add european heads? not sure if that is a thing
-    
+        
 class CountryLocation (models.Model):
     
     '''
     specific country internationally
     '''
-    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
     
     country = CountryField(blank=True, null=True, unique=True) # only one country in the database
     general_sector = models.CharField(verbose_name="general world sector", choices=GeneralSectorType)
@@ -81,7 +78,10 @@ class ClusterLocation (models.Model):
     '''
     cluster_id = models.CharField(verbose_name="cluster-name", max_length=2)
     world_location = models.ForeignKey(CountryLocation, on_delete=models.CASCADE, related_name="clusters")
-    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
+    cluster_description = models.TextField(blank=True, null=True)
+    active = models.BooleanField(verbose_name="is-active-cluster", default=True)
+    number_of_parishes = models.IntegerField(verbose_name="number-of-parish-communities", default=0)
+    established_date = models.DateField(verbose_name="established-date", blank=True, null=True, auto_now_add=True)
   
     def __str__(self):
         return f"{str(self.world_location)} -> Cluster {self.cluster_id}"
@@ -97,7 +97,19 @@ class ChapterLocation (models.Model):
     chapter_name = models.CharField(verbose_name="name-of-chapter", max_length=150) # verbose and nice name
     chapter_code = models.CharField(verbose_name="chapter-code", max_length=3, null=True) # for id purposes
     cluster = models.ForeignKey(ClusterLocation, on_delete=models.CASCADE, related_name="chapters")
-    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
+    
+    email_contact = models.EmailField(verbose_name="chapter-contact-email", blank=True, null=True)
+    phone_contact = models.CharField(verbose_name="chapter-contact-phone", max_length=15, blank=True, null=True)
+    
+    chapter_description = models.TextField(blank=True, null=True)
+    active_members = models.IntegerField(verbose_name="number-of-active-members", default=0)
+    number_of_parishes = models.IntegerField(verbose_name="number-of-parish-communities", default=0)
+    active = models.BooleanField(verbose_name="is-active-chapter", default=True)
+    established_date = models.DateField(verbose_name="established-date", blank=True, null=True, auto_now_add=True)
+
+    youth_chapter_heads = models.ManyToManyField('users.CommunityUser', blank=True, related_name="youth_chapters")
+    adult_coordinators = models.ManyToManyField('users.CommunityUser', blank=True, related_name="adult_coordinated_chapters")
+    volunteers = models.ManyToManyField('users.CommunityUser', blank=True, related_name="volunteered_chapters")
 
     class Meta:
         unique_together = ("chapter_name", "cluster")
@@ -107,7 +119,6 @@ class ChapterLocation (models.Model):
         if not self.chapter_id:
             chapter_id = slugify(self.chapter_code).upper() # SOE-D20FAG2FSDS
             self.chapter_id = chapter_id + str(self.id)[:MAX_LENGTH_LOCATION_ID - len(chapter_id)]
-          
         super().save(*args, **kwargs)
     
     def __str__(self):
@@ -122,7 +133,6 @@ class UnitLocation (models.Model):
     unit_id = models.CharField(verbose_name="unit-id", blank=True, null=True) # single letter/2
     unit_name = models.CharField(verbose_name="unit name", max_length=2)
     chapter = models.ForeignKey(ChapterLocation, on_delete=models.CASCADE, related_name="units")
-    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
  
     class Meta:
         unique_together = ("unit_name", "chapter")
@@ -152,9 +162,9 @@ class AreaLocation (models.Model):
     general_address = models.CharField(max_length=100, help_text="general postcode/address")
     location_description = models.TextField(blank=True, null=True)
     
-    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."
-    
-    # TODO
+    active_members = models.IntegerField(verbose_name="number-of-active-members", default=0)
+    active = models.BooleanField(verbose_name="is-active-area", default=True)
+    parish_communities = models.IntegerField(verbose_name="number-of-parish-communities", default=0)
     #? Add m2m field to show which users are incharge of this area or have a flag on the user model to show they are incharge of this area?
     #? Or have a separate model that links users to areas they are incharge of?
     # this is also the same for each location
@@ -211,5 +221,16 @@ class EventVenue (models.Model):
     venue_type = models.CharField(verbose_name=_("type of venue"), choices=VenueType, default=VenueType.MAIN_VENUE)
     general_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, verbose_name=_("community general area"), related_name="event_venues", null=True, blank=True)
     primary_venue = models.BooleanField(verbose_name=_("is primary venue"), default=True, blank=True, null=True)
+    
+    contact_phone_number = models.CharField(verbose_name=_("contact phone number"), max_length=15, blank=True, null=True)
+    contact_email = models.EmailField(verbose_name=_("contact email"), blank=True, null=True)
+    
+    def __str__(self):
+        return f"{self.name} ({self.venue_type})"
+    
+    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
+        # ensure there is only one main venue
+        if self.venue_type == self.VenueType.MAIN_VENUE and self.primary_venue:
+            EventVenue.objects.filter(general_area=self.general_area, primary_venue=True).update(primary_venue=False)
+        return super().save(force_insert, force_update, using, update_fields)
 
-    # TODO: field for contact information I.e. email, phone number - this will be for "oraganised by..."

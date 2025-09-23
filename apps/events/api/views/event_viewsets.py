@@ -19,7 +19,7 @@ from core.permissions import IsEncoderPermission
 #! Remember that service team members are also participants but not all participants are service team members
 
 # TODO: work on extra questions view, add extra description to each questions
-# TODO: get query information for creating an event. I.e. fill information based on area
+# TODO :http://127.0.0.1:8000/api/events/manage/?location=crowthorne&detailed=False needs to return area details and venue details
 
 class EventViewSet(viewsets.ModelViewSet):
     '''

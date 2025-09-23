@@ -35,6 +35,9 @@ class ClusterLocationViewSet(viewsets.ModelViewSet):
         return ClusterLocationSerializer
 
 class ChapterLocationViewSet(viewsets.ModelViewSet):
+    '''
+    Viewset for managing chapter locations.
+    '''
     queryset = ChapterLocation.objects.all().select_related(
         'cluster__world_location'
     ).prefetch_related('units')

@@ -7,6 +7,7 @@ from .models import (
     UserCommunityRole, Allergy, 
     EmergencyContact, MedicalCondition, UserAllergy, UserMedicalCondition
     )
+from apps.events.admin import AreaLocationAdmin
 
 @admin.register(CommunityRole)
 class CommunityRoleAdmin(admin.ModelAdmin):
@@ -58,7 +59,7 @@ class CommunityUserAdmin(UserAdmin):
         (None, {"fields": ("username", "password")}),
         (_("Personal Info"), {"fields": (
             "member_id", "first_name", "last_name", "middle_name",
-            "preferred_name", "primary_email", "secondary_email", "phone_number"
+            "preferred_name", "primary_email", "secondary_email", "phone_number", "area_from"
         )}),
         (_("Demographic Info"), {"fields": (
             "ministry", "gender", "date_of_birth", "age", "marital_status", "blood_type"

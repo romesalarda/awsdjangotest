@@ -17,8 +17,10 @@ class ClusterLocationSerializer(serializers.ModelSerializer):
         read_only_fields = ('id',)
 
 class ChapterLocationSerializer(serializers.ModelSerializer):
+    
     cluster_name = serializers.CharField(source='cluster.cluster_id', read_only=True)
     country_name = serializers.CharField(source='cluster.world_location.country.name', read_only=True)
+    # chapter_head = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = ChapterLocation

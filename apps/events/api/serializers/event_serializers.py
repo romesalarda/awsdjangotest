@@ -20,7 +20,7 @@ from apps.users.api.serializers import (
     CommunityUserSerializer
 )
 from apps.users.models import CommunityUser, MedicalCondition, Allergy, EmergencyContact
-from .location_serializers import EventVenueSerializer
+from .location_serializers import EventVenueSerializer, AreaLocationSerializer
 from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
 
 class EventRoleSerializer(serializers.ModelSerializer):
@@ -94,6 +94,11 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     Simplified event serializer for dropdowns, lists, etc
     '''
     name = serializers.CharField(required=True)    
+    # only get the name of the area and not the full serializer
+    areas_involved = serializers.SerializerMethodField(read_only=True)
+    main_venue = serializers.SerializerMethodField(read_only=True)
+    chapter_head = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Event
         fields = (
@@ -108,7 +113,18 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
             "area_type",
             "theme",
             "anchor_verse",
+            "areas_involved",
+            "main_venue",
         )
+        
+    def get_main_venue(self, obj):
+        primary_venue = obj.venues.filter(primary_venue=True).first()
+        if primary_venue:
+            return primary_venue.name
+        return None
+        
+    def get_areas_involved(self, obj):
+        return [area.area_name for area in obj.areas_involved.all()]
         
     def to_representation(self, instance):
         rep = super().to_representation(instance)
@@ -130,7 +146,9 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 "duration_days": rep.get("duration_days")
             },
             "location": {
-                "area_type": rep.get("area_type")
+                "area_type": rep.get("area_type"),
+                "areas_involved": rep.get("areas_involved"),
+                "main_venue": rep.get("main_venue"),
             }
         }
         
