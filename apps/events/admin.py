@@ -10,6 +10,7 @@ from .models import (
     EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance
 )
 
+
 # ! Location related admin
 
 @admin.register(CountryLocation)
@@ -26,6 +27,20 @@ class ClusterLocationAdmin(admin.ModelAdmin):
     search_fields = ('cluster_id', 'world_location__country__name')
     ordering = ('world_location', 'cluster_id')
     autocomplete_fields = ('world_location',)
+    
+class YouthChapterHeadInline(admin.StackedInline):
+    verbose_name = "Youth Chapter Head"
+    verbose_name_plural = "Youth Chapter Heads"
+    model = ChapterLocation.youth_chapter_heads.through
+    extra = 1
+    autocomplete_fields = ('communityuser',)
+    
+class AdultCoordinatorInline(admin.StackedInline):
+    verbose_name = "Adult Coordinator"
+    verbose_name_plural = "Adult Coordinators"
+    model = ChapterLocation.adult_coordinators.through
+    extra = 1
+    autocomplete_fields = ('communityuser',)
 
 @admin.register(ChapterLocation)
 class ChapterLocationAdmin(admin.ModelAdmin):
@@ -35,6 +50,7 @@ class ChapterLocationAdmin(admin.ModelAdmin):
     ordering = ('cluster', 'chapter_name')
     autocomplete_fields = ('cluster',)
     readonly_fields = ('id', 'chapter_id')
+    inlines = [YouthChapterHeadInline, AdultCoordinatorInline]
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('cluster__world_location')

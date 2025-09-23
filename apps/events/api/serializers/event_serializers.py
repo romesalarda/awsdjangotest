@@ -97,7 +97,6 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     # only get the name of the area and not the full serializer
     areas_involved = serializers.SerializerMethodField(read_only=True)
     main_venue = serializers.SerializerMethodField(read_only=True)
-    chapter_head = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Event

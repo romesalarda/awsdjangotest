@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from apps.events.models import *
+from apps.users.api.serializers import SimplifiedCommunityUserSerializer
 from django_countries.serializers import CountryFieldMixin
 
 class CountryLocationSerializer(CountryFieldMixin, serializers.ModelSerializer):
@@ -20,7 +21,9 @@ class ChapterLocationSerializer(serializers.ModelSerializer):
     
     cluster_name = serializers.CharField(source='cluster.cluster_id', read_only=True)
     country_name = serializers.CharField(source='cluster.world_location.country.name', read_only=True)
-    # chapter_head = serializers.SerializerMethodField(read_only=True)
+    # get chapter heads names
+    youth_chapter_heads = SimplifiedCommunityUserSerializer(many=True, read_only=True)
+    adult_coordinators = SimplifiedCommunityUserSerializer(many=True, read_only=True)
     
     class Meta:
         model = ChapterLocation
