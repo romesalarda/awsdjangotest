@@ -93,7 +93,7 @@ class Event(models.Model):
         help_text=_("Short code for the event name, used in generating the event code E.g. for ANCHORED event, use ANCRD")
         ) # ANCRD
     
-    start_date = models.DateTimeField(_("event start date"), blank=True, null=True)  
+    start_date = models.DateTimeField(_("event start date"), blank=True, null=True) # TODO: make this required 
     end_date = models.DateTimeField(_("event end date"), blank=True, null=True) 
     
     # Location information

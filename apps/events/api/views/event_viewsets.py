@@ -35,6 +35,16 @@ class EventViewSet(viewsets.ModelViewSet):
     ordering = ['-start_date']
     permission_classes = [permissions.IsAuthenticated, IsEncoderPermission]
     
+    def get_serializer_class(self):
+        # if params 'detailed' in request query params, return detailed serializer
+        if self.action in ['list', 'retrieve']:
+            detailed = self.request.query_params.get('detailed', 'false').lower() == 'true'
+            if detailed:
+                return EventSerializer
+            else:
+                return SimplifiedEventSerializer
+        return super().get_serializer_class()
+    
     def get_queryset(self):
         user = self.request.user
         if user.is_superuser:

@@ -98,6 +98,8 @@ THIRD_PARTY_APPS = [
     'rest_framework_simplejwt',
     'drf_yasg',
     'django_filters',
+    'corsheaders',
+
 ]
 
 LOCAL_APPS = [
@@ -112,6 +114,7 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    'corsheaders.middleware.CorsMiddleware',
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -271,6 +274,15 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True  # Force HTTPSs
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+    ]
+    CORS_ALLOWED_ORIGINS = [
+        'http://localhost:3000',
+    ]
+
 
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",

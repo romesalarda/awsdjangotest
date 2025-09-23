@@ -1,6 +1,6 @@
 from rest_framework import filters, response
 from rest_framework.decorators import action
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, views
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
@@ -135,3 +135,9 @@ class EmergencyContactViewSet(viewsets.ModelViewSet):
     serializer_class = EmergencyContactSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+class CurrentUserView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        serializer = CommunityUserSerializer(request.user)
+        return response.Response(serializer.data)
