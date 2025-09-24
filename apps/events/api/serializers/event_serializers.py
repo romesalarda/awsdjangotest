@@ -97,10 +97,12 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     # only get the name of the area and not the full serializer
     areas_involved = serializers.SerializerMethodField(read_only=True)
     main_venue = serializers.SerializerMethodField(read_only=True)
+    # TODO: include package information, include whats included, registration deadline, event organiser
 
     class Meta:
         model = Event
         fields = (
+            "id",
             "event_type",
             "event_code",
             "name",
@@ -129,6 +131,7 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
         rep = super().to_representation(instance)
         return {
             "identity": {
+                "id": rep["id"],
                 "event_type": rep["event_type"],
                 "event_code": rep["event_code"],
                 "name": rep["name"],

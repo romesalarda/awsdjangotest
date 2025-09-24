@@ -19,7 +19,6 @@ from core.permissions import IsEncoderPermission
 #! Remember that service team members are also participants but not all participants are service team members
 
 # TODO: work on extra questions view, add extra description to each questions
-# TODO :http://127.0.0.1:8000/api/events/manage/?location=crowthorne&detailed=False needs to return area details and venue details
 
 class EventViewSet(viewsets.ModelViewSet):
     '''
@@ -61,6 +60,38 @@ class EventViewSet(viewsets.ModelViewSet):
         
         serializer.save(created_by=self.request.user)
         super().perform_create(serializer)
+        
+    # TODO: create a view that returns events that the user is involved in
+    @action(detail=False, methods=['get'], url_name="my-events", url_path="my-events")
+    def my_events(self, request):
+        '''
+        Retrieve a list of events that the user is involved in (created, supervisor, participant, service team member).
+        '''
+        simple = request.query_params.get('simple', 'true').lower() == 'true'
+        user = request.user
+        if not user.is_authenticated:
+            return Response(
+                {'error': _('Authentication credentials were not provided.')},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        events = Event.objects.filter(
+            models.Q(created_by=user) |
+            # models.Q(supervisors=user) |
+            models.Q(participants__user=user) |
+            models.Q(service_team_members__user=user)
+        ).distinct()
+        
+        page = self.paginate_queryset(events)
+        if page is not None:
+            if simple:
+                serializer = SimplifiedEventSerializer(page, many=True)
+            else:
+                serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(events, many=True)
+        return Response(serializer.data)
     
     # participant related actions
     @action(detail=True, methods=['get'])
