@@ -155,19 +155,12 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         # REMOVED: unique_together for first_name/last_name as it's too restrictive
         ordering = ["last_name", "first_name"]
 
+
     def save(self, *args, **kwargs):
-        if not self.member_id:
-            # Generate member ID
-            name_slug = slugify(
-                f"{self.first_name[:MAX_MEMBER_ID_FIRST_NAME]}{self.last_name[:MAX_MEMBER_ID_LAST_NAME]}"
-            ).upper()
-            
-            # Use current year if uploaded_at is not set
-            year = self.user_uploaded_at.year if self.user_uploaded_at else datetime.datetime.now().year
-            
-            # Generate unique member ID E.g. 2025-ROME-SALARDAbDASDS3S
-            self.member_id = f"{year}-{name_slug}{str(self.id)[:MAX_MEMBER_ID_LENGTH - len(name_slug) - 5]}"
-            
+        # Track if this is a new instance (needs member_id generation)
+        is_new_instance = self.pk is None
+        needs_member_id = not self.member_id and is_new_instance
+        
         # Ensure username is unique
         if not self.username:
             base_username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
@@ -185,8 +178,26 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
             self.age = today.year - self.date_of_birth.year - (
                 (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day)
             )
-            
+        
+        # First save to get the UUID if this is a new instance
         super().save(*args, **kwargs)
+        
+        # Generate member ID after we have the UUID
+        if needs_member_id:
+            # Generate member ID using the now-available UUID
+            name_slug = slugify(
+                f"{self.first_name[:MAX_MEMBER_ID_FIRST_NAME]}{self.last_name[:MAX_MEMBER_ID_LAST_NAME]}"
+            ).upper()
+            
+            # Use current year if uploaded_at is not set
+            year = self.user_uploaded_at.year if self.user_uploaded_at else datetime.datetime.now().year
+            
+            # Generate unique member ID E.g. 2025-ROME-SALARDAbDASDS3S
+            uuid_part = str(self.id).replace('-', '')[:MAX_MEMBER_ID_LENGTH - len(name_slug) - 5]
+            self.member_id = f"{year}-{name_slug}-{uuid_part}"
+            
+            # Save again to persist the member_id
+            super().save(update_fields=['member_id'])
         
     def get_full_name(self):
         """Return first + last name, or preferred name if available"""

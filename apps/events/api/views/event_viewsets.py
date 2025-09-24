@@ -33,7 +33,7 @@ class EventViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'theme']
     ordering_fields = ['start_date', 'end_date', 'name', 'number_of_pax']
     ordering = ['-start_date']
-    permission_classes = [permissions.IsAuthenticated, IsEncoderPermission]
+    permission_classes = [permissions.IsAuthenticated]
     
     def get_serializer_class(self):
         # if params 'detailed' in request query params, return detailed serializer

@@ -217,7 +217,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
         model = CommunityUser
         fields = ('member_id','roles', 'username', 'full_name', 'short_name','password', 'first_name', 'last_name', 'middle_name', 'preferred_name',
                   'primary_email', 'secondary_email', 'phone_number', 'address_line_1', 'address_line_2', 'postcode', 'area_from',
-                  'emergency_contacts', 'alergies', 'medical_conditions',)
+                  'emergency_contacts', 'alergies', 'medical_conditions', "is_encoder",)
         extra_kwargs = {
             'password': {'write_only': True},
             'member_id': {'read_only': True},
