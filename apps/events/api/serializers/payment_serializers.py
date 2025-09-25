@@ -3,14 +3,19 @@ from apps.events.models import EventPaymentMethod, EventPaymentPackage, EventPay
 
 
 class EventPaymentMethodSerializer(serializers.ModelSerializer):
+    '''
+    Serializer for the EventPaymentMethod model. Describes what payment methods are available for an event.
+    '''
     method_display = serializers.CharField(source="get_method_display", read_only=True)
 
     class Meta:
         model = EventPaymentMethod
         fields = [
             "id", "event", "method", "method_display",
-            "account_name", "account_number", "sort_code", "iban", "swift_bic",
-            "instructions", "is_active", "created_at", "updated_at"
+            "account_name", "account_number", "sort_code",
+            "reference_example", "reference_instruction", "important_information",
+            "fee_add_on", "percentage_fee_add_on", "currency",
+            "instructions", "is_active", "created_at", "updated_at",
         ]
         read_only_fields = ("id", "created_at", "updated_at")
 

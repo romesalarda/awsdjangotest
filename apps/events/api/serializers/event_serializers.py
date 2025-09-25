@@ -21,7 +21,7 @@ from apps.users.api.serializers import (
 from apps.users.models import CommunityUser, MedicalCondition, Allergy, EmergencyContact
 from .location_serializers import EventVenueSerializer, AreaLocationSerializer
 from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
-from .payment_serializers import EventPaymentPackageSerializer
+from .payment_serializers import EventPaymentPackageSerializer, EventPaymentMethodSerializer
 
 class EventRoleSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(source='get_role_name_display', read_only=True)
@@ -233,9 +233,8 @@ class EventSerializer(serializers.ModelSerializer):
     extra_questions = ExtraQuestionSerializer(many=True, read_only=True)
     memo = PublicEventResourceSerializer(read_only=True)
     
-    # TODO: package information 
     payment_packages = EventPaymentPackageSerializer(many=True, read_only=True)
-    # TODO: event organisers
+    payment_methods = EventPaymentMethodSerializer(many=True, read_only=True)
     organisers = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -272,6 +271,7 @@ class EventSerializer(serializers.ModelSerializer):
             "expected_attendees",
             "maximum_attendees",
             "payment_packages",
+            "payment_methods",
             "organisers",
             "important_information",
             # date information
@@ -351,6 +351,7 @@ class EventSerializer(serializers.ModelSerializer):
             "notes": rep["notes"],
             "extra_questions": rep["extra_questions"],
             "payment_packages": rep["payment_packages"],
+            "payment_methods": rep["payment_methods"],
         }
 
     def get_organisers(self, obj):
@@ -540,6 +541,10 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         Create or update a participant's registration for an event. Also can provide extra user information 
         via this serializer to update their user profile with medical conditions, emergency contacts, allergies, etc.
         '''
+        # TODO: event participant needs to be updated, i.e consent form 
+        # TODO: auto fill information 
+        # TODO: process payment information whether if it is a bank transfer or not 
+        
         # User must be logged in to register for an event
         user = self.context['request'].user
         if not user.is_authenticated:
@@ -552,11 +557,11 @@ class EventParticipantSerializer(serializers.ModelSerializer):
 
         event_data = validated_data.pop('event', None)
         event_code = event_data.get('event_code') if event_data else None
-        event = Event.objects.filter(event_code=event_code).first()
+        event = Event.objects.filter(Q(event_code = event_code) | Q(id = event_code)).first()
         if EventParticipant.objects.filter(event=event, user=user).exists():
             raise serializers.ValidationError({"non_field_errors": _("You are already registered for this event.")})  
         if not event:
-            raise serializers.ValidationError({"event": _("Event with this code does not exist.")})
+            raise serializers.ValidationError({"event": _("Event with this code does not exist. %s" % event_code)})
 
         changes = {
             "user_updates": [],

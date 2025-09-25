@@ -34,14 +34,28 @@ class EventPaymentMethod(models.Model):
     account_name = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("account name"))
     account_number = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("account number"))
     sort_code = models.CharField(max_length=20, blank=True, null=True, verbose_name=_("sort code"))
-    iban = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("IBAN"))
-    swift_bic = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("SWIFT/BIC"))
-
+    reference_instruction = models.TextField(max_length=100, blank=True, null=True, verbose_name=_("reference instruction"), help_text=_("E.g., 'Use your full name as reference'"))
+    reference_example = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("reference example"), help_text=_("E.g., 'John Smith'"))
+    important_information = models.TextField(blank=True, null=True, verbose_name=_("important information"), help_text=_("E.g., 'Payments may take 2-3 business days to process.'"))
+    
     instructions = models.TextField(
         blank=True,
         null=True,
         verbose_name=_("payment instructions"),
         help_text=_("E.g., 'Reference your full name when making the transfer'"),
+    )
+    fee_add_on = models.IntegerField(
+        default=0,
+        verbose_name=_("additional fee (in pence)"),
+        help_text=_("Optional: additional fee in smallest currency unit (e.g., pence for GBP, cents for USD)"),
+        validators=[validators.MinValueValidator(0)],
+    )
+    currency = models.CharField(max_length=10, default="gbp")
+    percentage_fee_add_on = models.FloatField(
+        default=0.0,
+        verbose_name=_("percentage fee (%)"),
+        help_text=_("Optional: percentage fee (e.g., 2.5 for 2.5%)"),
+        validators=[validators.MinValueValidator(0.0)],
     )
 
     is_active = models.BooleanField(default=True, verbose_name=_("active"))

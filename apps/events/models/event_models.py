@@ -161,7 +161,8 @@ class Event(models.Model):
         COMPLETED = "COMPLETED", _("Completed")
         CANCELLED = "CANCELLED", _("Cancelled")
         POSTPONED = "POSTPONED", _("Postponed") 
-    status = models.CharField(_("event status"), max_length=20, choices=EventStatus.choices, default=EventStatus.PLANNING)    
+    status = models.CharField(_("event status"), max_length=20, choices=EventStatus.choices, default=EventStatus.PLANNING)  
+    # TODO: auto_approve events if the user is a youth chapter head or CFC coordinator  
     
     def save(self, *args, **kwargs):
         if not self.event_code:
