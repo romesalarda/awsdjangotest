@@ -27,6 +27,11 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     
     # TODO: on account creation, ensure the correct fields are added
     
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], url_name="self", url_path="me")
+    def get_self(self, request):
+        serializer = CommunityUserSerializer(request.user)
+        return response.Response(serializer.data)
+    
     
     def get_serializer_class(self):
         if getattr(self, 'swagger_fake_view', False):

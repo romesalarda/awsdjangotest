@@ -303,7 +303,7 @@ class EventSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        pprint.pprint(rep)  # ! DEBUG ONLY
+        # pprint.pprint(rep)  # ! DEBUG ONLY
         return {
             "id": rep["id"],
             "basic_info": {
