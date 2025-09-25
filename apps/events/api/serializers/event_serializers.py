@@ -13,15 +13,15 @@ from django.db.models import Q
 
 import pprint
 
-from apps.events.models import EventDayAttendance, Event, QuestionAnswer
+from apps.events.models import EventDayAttendance, Event, QuestionAnswer, EventServiceTeamMember
 from apps.users.api.serializers import (
     SimpleEmergencyContactSerializer, SimplifiedCommunityUserSerializer, 
     SimpleAllergySerializer, SimpleMedicalConditionSerializer,
-    CommunityUserSerializer
 )
 from apps.users.models import CommunityUser, MedicalCondition, Allergy, EmergencyContact
 from .location_serializers import EventVenueSerializer, AreaLocationSerializer
 from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
+from .payment_serializers import EventPaymentPackageSerializer
 
 class EventRoleSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(source='get_role_name_display', read_only=True)
@@ -33,14 +33,10 @@ class EventRoleSerializer(serializers.ModelSerializer):
 
 class SimplifiedEventServiceTeamMemberSerializer(serializers.ModelSerializer):
     user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
-    # role_names = serializers.SerializerMethodField()
     
     class Meta:
         model = EventServiceTeamMember
         fields = ['id', 'user_details', 'head_of_role', 'assigned_at']
-    
-    # def get_role_names(self, obj):
-    #     return [role.get_role_name_display() for role in obj.roles.all()]
 
 class EventServiceTeamMemberSerializer(serializers.ModelSerializer):
     '''
@@ -98,6 +94,10 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     areas_involved = serializers.SerializerMethodField(read_only=True)
     main_venue = serializers.SerializerMethodField(read_only=True)
     # TODO: include package information, include whats included, registration deadline, event organiser
+    # TODO packages - nested serializer
+    # TODO: whats included - text
+    # TODO: registration deadline - datefield
+    # TODO: event organisers - serializer field
 
     class Meta:
         model = Event
@@ -231,8 +231,12 @@ class EventSerializer(serializers.ModelSerializer):
         help_text="List of resource dicts, e.g. [{'resource_name': 'name', 'description': 'description', 'type': 'type'}]"
     )
     extra_questions = ExtraQuestionSerializer(many=True, read_only=True)
-    
     memo = PublicEventResourceSerializer(read_only=True)
+    
+    # TODO: package information 
+    payment_packages = EventPaymentPackageSerializer(many=True, read_only=True)
+    # TODO: event organisers
+    organisers = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Event
@@ -255,6 +259,7 @@ class EventSerializer(serializers.ModelSerializer):
             "anchor_verse",
             "areas_involved",
             "area_names",
+            "area_type",
             "venues",
             "venue_data",
             "resources",
@@ -262,6 +267,16 @@ class EventSerializer(serializers.ModelSerializer):
             "memo",
             "notes",
             "extra_questions",
+            "status",
+            "age_range",
+            "expected_attendees",
+            "maximum_attendees",
+            "payment_packages",
+            "organisers",
+            # date information
+            "registration_deadline",
+            "registration_open",
+            "registration_open_date",
             # Participants / service team
             "participants_count",
             # Write-only supervisor fields
@@ -300,21 +315,32 @@ class EventSerializer(serializers.ModelSerializer):
                 "theme": rep["theme"],
                 "anchor_verse": rep["anchor_verse"],
                 "is_public": rep["is_public"],
+                "registration_open": rep["registration_open"],
+                "status": rep["status"],
                 "landing_image": rep["landing_image"],
             },
             "dates": {
                 "start_date": rep["start_date"],
                 "end_date": rep["end_date"],
                 "duration_days": rep["duration_days"],
+                # "registration_open": rep["registration_open"],
+                "registration_open_date": rep["registration_open_date"],
+                "registration_deadline": rep["registration_deadline"],
             },
             "venue": {
                 "venues": rep["venues"],
                 "areas_involved": rep["areas_involved"],
+                "area_type": rep["area_type"],
             },
             "people": {
                 "participants_count": rep["participants_count"],
                 "event_heads": rep["supervising_youth_heads"],
                 "cfc_coordinators": rep["supervising_CFC_coordinators"],
+                "maximum_attendees": rep["maximum_attendees"],
+                "expected_attendees": rep["expected_attendees"],
+                "age_range": rep["age_range"],
+                "organisers": rep["organisers"],
+                
             },
             "resources": {
                 "memo": rep["memo"],
@@ -322,8 +348,19 @@ class EventSerializer(serializers.ModelSerializer):
             },
             "notes": rep["notes"],
             "extra_questions": rep["extra_questions"],
+            "payment_packages": rep["payment_packages"],
         }
-    
+
+    def get_organisers(self, obj):
+        return SimplifiedEventServiceTeamMemberSerializer(
+            EventServiceTeamMember.objects.filter(
+                Q(roles__role_name=EventRole.EventRoleTypes.EVENT_HEADS) & Q(head_of_role=True) | 
+                Q(roles__role_name=EventRole.EventRoleTypes.CFC_COORDINATOR ) & Q(head_of_role=True),
+                event=obj
+            ).distinct(),
+            many=True
+        ).data
+
     def validate(self, attrs):
         
         # ensure that name of event is unqiue at anytime

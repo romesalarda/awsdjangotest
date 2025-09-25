@@ -228,6 +228,11 @@ class EventVenue (models.Model):
     def __str__(self):
         return f"{self.name} ({self.venue_type})"
     
+    @property
+    def full_address(self):
+        parts = [self.address_line_1, self.address_line_2, self.address_line_3, self.postcode]
+        return ', '.join(part for part in parts if part)
+    
     def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
         # ensure there is only one main venue
         if self.venue_type == self.VenueType.MAIN_VENUE and self.primary_venue:

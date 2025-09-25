@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+from django.core import validators
 
 from .event_models import EventResource, EventParticipant
 
@@ -69,11 +70,20 @@ class EventPaymentPackage(models.Model):
     )
 
     name = models.CharField(max_length=100, verbose_name=_("package name"))
-    description = models.TextField(blank=True, null=True, verbose_name=_("package description"))
+    description = models.TextField(blank=True, null=True, verbose_name=_("package description"), help_text=_("E.g., short description of this package/ticket type"))
+    package_date_starts = models.DateField(blank=True, null=True, verbose_name=_("package start date"), auto_now=True)
+    package_date_ends = models.DateField(blank=True, null=True, verbose_name=_("package end date"))
 
     price = models.IntegerField(
         verbose_name=_("price (in pence)"),
         help_text=_("Store in smallest currency unit (e.g., pence for GBP, cents for USD)"),
+    )
+    discounted_price = models.IntegerField(
+        blank=True,
+        verbose_name=_("discounted price (in pence)"),
+        help_text=_("Optional: discounted price in smallest currency unit"),
+        default=0,
+        validators=[validators.MinValueValidator(0)],
     )
     currency = models.CharField(max_length=10, default="gbp")
 
@@ -93,13 +103,16 @@ class EventPaymentPackage(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    
+    whats_included = models.TextField(blank=True, null=True, verbose_name=_("what's included"), help_text=_("E.g., 'Includes access to all sessions, meals, and a T-shirt.' Ensure items are separated by a comma"))
+    main_package = models.BooleanField(default=False, verbose_name=_("is main package"), help_text=_("Mark this as the main package for the event (e.g., General Admission)"))
+    
     class Meta:
         verbose_name = _("Event Payment Package")
         verbose_name_plural = _("Event Payment Packages")
 
     def __str__(self):
-        return f"{self.name} - {self.price / 100:.2f} {self.currency.upper()}"
+        return f"{self.name} - {self.price:.2f} {self.currency.upper()}"
 
 class EventPayment(models.Model):
     """

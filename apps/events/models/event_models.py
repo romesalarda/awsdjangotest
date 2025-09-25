@@ -76,6 +76,7 @@ class Event(models.Model):
         verbose_name=_("sentence description"), blank=True, null=True, max_length=300,
         help_text=_("A brief one-sentence description of the event, for promotional purposes. E.g. A youth camp to anchor our faith in Christ.")
         ) 
+    important_information = models.TextField(verbose_name=_("important information"), blank=True, null=True)
     landing_image = models.ImageField(        
         upload_to="event-landing-images/", 
         blank=True, 
@@ -107,7 +108,13 @@ class Event(models.Model):
     ])
     theme = models.CharField(_("event theme"), max_length=200, blank=True, null=True)
     anchor_verse = models.CharField(_("anchor verse"), max_length=200, blank=True, null=True)
-    
+    age_range = models.CharField(_("age range"), max_length=100, blank=True, null=True, help_text=_("E.g. 11-30"))
+    expected_attendees = models.IntegerField(_("expected attendees"), blank=True, null=True, default=0, validators=[
+        validators.MinValueValidator(0)
+    ])
+    maximum_attendees = models.IntegerField(_("maximum attendees"), blank=True, null=True, default=0, validators=[
+        validators.MinValueValidator(0)
+    ])
     # marks users that are able to view this event
     supervising_youth_heads = models.ManyToManyField(
         settings.AUTH_USER_MODEL, blank=True,  
@@ -143,6 +150,11 @@ class Event(models.Model):
         )
     notes = models.TextField(verbose_name=_("event notes"), blank=True, null=True)
     approved = models.BooleanField(verbose_name=_("event approved"), default=False)
+    # registration dates
+    registration_open = models.BooleanField(verbose_name=_("is registration open"), default=False)
+    registration_open_date = models.DateTimeField(verbose_name=_("registration open date"), blank=True, null=True, auto_now=True)
+    registration_deadline = models.DateTimeField(verbose_name=_("registration deadline"), blank=True, null=True)
+    
     class EventStatus(models.TextChoices):
         PLANNING = "PLANNING", _("Planning")
         ONGOING = "ONGOING", _("Ongoing")

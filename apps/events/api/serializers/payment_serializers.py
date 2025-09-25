@@ -29,7 +29,7 @@ class EventPaymentPackageSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at")
 
     def get_price_display(self, obj):
-        return f"{obj.price / 100:.2f} {obj.currency.upper()}"
+        return f"{obj.price :.2f} {obj.currency.upper()}"
 
 
 class EventPaymentSerializer(serializers.ModelSerializer):
