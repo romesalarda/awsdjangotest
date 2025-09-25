@@ -157,12 +157,15 @@ class Event(models.Model):
     
     class EventStatus(models.TextChoices):
         PLANNING = "PLANNING", _("Planning")
+        CONFIRMED = "CONFIRMED", _("Confirmed")
         ONGOING = "ONGOING", _("Ongoing")
         COMPLETED = "COMPLETED", _("Completed")
         CANCELLED = "CANCELLED", _("Cancelled")
         POSTPONED = "POSTPONED", _("Postponed") 
+        
     status = models.CharField(_("event status"), max_length=20, choices=EventStatus.choices, default=EventStatus.PLANNING)  
-    # TODO: auto_approve events if the user is a youth chapter head or CFC coordinator  
+    
+    auto_approve_participants = models.BooleanField(verbose_name=_("auto approve participants"), default=False)
     
     def save(self, *args, **kwargs):
         if not self.event_code:
@@ -314,10 +317,10 @@ class EventParticipant(models.Model):
     understood_registration = models.BooleanField(default=False)
     
     # Additional information
-    dietary_restrictions = models.TextField(_("dietary restrictions"), blank=True, null=True)
-    special_needs = models.TextField(_("special needs"), blank=True, null=True)
-    emergency_contact = models.CharField(_("emergency contact"), max_length=200, blank=True, null=True)
-    emergency_phone = models.CharField(_("emergency phone"), max_length=20, blank=True, null=True)
+    # dietary_restrictions = models.TextField(_("dietary restrictions"), blank=True, null=True)
+    # special_needs = models.TextField(_("special needs"), blank=True, null=True)
+    # emergency_contact = models.CharField(_("emergency contact"), max_length=200, blank=True, null=True)
+    # emergency_phone = models.CharField(_("emergency phone"), max_length=20, blank=True, null=True)
     
     # Payment information (if applicable)
     paid_amount = models.DecimalField(_("paid amount"), max_digits=10, decimal_places=2, default=0.00)
@@ -325,7 +328,9 @@ class EventParticipant(models.Model):
     
     notes = models.TextField(_("notes"), blank=True, null=True)
     verified = models.BooleanField(verbose_name=_("participant approved"), default=False) # set to true when payments paid and they are approved to attend
-
+    accessibility_requirements = models.TextField(_("accessibility requirements"), blank=True, null=True)
+    
+    
     class Meta:
         verbose_name = _("Event Participant")
         verbose_name_plural = _("Event Participants")

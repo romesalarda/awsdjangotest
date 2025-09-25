@@ -13,7 +13,10 @@ from django.db.models import Q
 
 import pprint
 
-from apps.events.models import EventDayAttendance, Event, QuestionAnswer, EventServiceTeamMember
+from apps.events.models import (
+    EventDayAttendance, Event, QuestionAnswer, 
+    EventServiceTeamMember, EventPaymentMethod, EventPaymentPackage
+    )
 from apps.users.api.serializers import (
     SimpleEmergencyContactSerializer, SimplifiedCommunityUserSerializer, 
     SimpleAllergySerializer, SimpleMedicalConditionSerializer,
@@ -21,7 +24,7 @@ from apps.users.api.serializers import (
 from apps.users.models import CommunityUser, MedicalCondition, Allergy, EmergencyContact
 from .location_serializers import EventVenueSerializer, AreaLocationSerializer
 from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
-from .payment_serializers import EventPaymentPackageSerializer, EventPaymentMethodSerializer
+from .payment_serializers import EventPaymentPackageSerializer, EventPaymentMethodSerializer, EventPaymentSerializer
 
 class EventRoleSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(source='get_role_name_display', read_only=True)
@@ -274,6 +277,7 @@ class EventSerializer(serializers.ModelSerializer):
             "payment_methods",
             "organisers",
             "important_information",
+            "auto_approve_participants",
             # date information
             "registration_deadline",
             "registration_open",
@@ -320,6 +324,7 @@ class EventSerializer(serializers.ModelSerializer):
                 "status": rep["status"],
                 "landing_image": rep["landing_image"],
                 "important_information": rep["important_information"],
+                "auto_approve_participants": rep["auto_approve_participants"],
             },
             "dates": {
                 "start_date": rep["start_date"],
@@ -377,7 +382,6 @@ class EventSerializer(serializers.ModelSerializer):
         return super().validate(attrs)
     
     def create(self, validated_data):
-        
         start_date = validated_data.get('start_date', timezone.now())
         validated_data['start_date'] = start_date
         
@@ -388,6 +392,7 @@ class EventSerializer(serializers.ModelSerializer):
         supervisor_ids = validated_data.pop('supervisor_ids', [])
         cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
         
+        pprint.pprint(validated_data)
         
         with transaction.atomic():
             self.validate(validated_data)
@@ -466,7 +471,22 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         source="user.user_medical_conditions", many=True, required=False
     )
     payment_date = serializers.DateTimeField(read_only=True)
+    participant_event_payments = EventPaymentSerializer(many=True, read_only=True)
     event_question_answers = QuestionAnswerSerializer(many=True)
+    
+    # write only fields
+    payment_method = serializers.PrimaryKeyRelatedField(
+        source="payment_methods",
+        queryset=EventPaymentMethod.objects.all(),
+        write_only=True,
+        required=False,
+    )
+    payment_package = serializers.PrimaryKeyRelatedField(
+        source="payment_packages",
+        queryset=EventPaymentPackage.objects.all(),
+        write_only=True,
+        required=False,
+    )
 
     class Meta:
         model = EventParticipant
@@ -484,14 +504,17 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "data_consent",
             "understood_registration",
             "allergies",
-            "special_needs",
+            # "special_needs",
             "emergency_contacts",
             "medical_conditions",
             "notes",
             "paid_amount",
             "payment_date",
             "verified",
-            "event_question_answers"
+            "event_question_answers",
+            "participant_event_payments",
+            "payment_method",
+            "payment_package",
         ]
         read_only_fields = [
             "id",
@@ -526,14 +549,14 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "health": {
                 "allergies": rep["allergies"],
                 "medical_conditions": rep["medical_conditions"],
-                "special_needs": rep["special_needs"],
             },
             "emergency_contacts": rep["emergency_contacts"],
             "notes": rep["notes"],
             "payment": {
                 "paid_amount": rep["paid_amount"],
             },
-            "verified": rep["verified"]
+            "verified": rep["verified"],
+            "event_payments": rep["participant_event_payments"],
         }
         
     def create(self, validated_data):
@@ -542,7 +565,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         via this serializer to update their user profile with medical conditions, emergency contacts, allergies, etc.
         '''
         # TODO: event participant needs to be updated, i.e consent form 
-        # TODO: auto fill information 
+        # TODO: auto fill information, medical info, emergency contacts, allergies
         # TODO: process payment information whether if it is a bank transfer or not 
         
         # User must be logged in to register for an event
@@ -555,6 +578,8 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         medical_conditions_data = user_data.pop('user_medical_conditions', [])
         question_answers_data = validated_data.pop('event_question_answers', [])
 
+        pprint.pprint("user_data: " + str(validated_data))
+        
         event_data = validated_data.pop('event', None)
         event_code = event_data.get('event_code') if event_data else None
         event = Event.objects.filter(Q(event_code = event_code) | Q(id = event_code)).first()
@@ -645,7 +670,10 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                         new_allergy.save()
                         updated_user.user_allergies.add(new_allergy.instance)
                         changes["allergies_added"].append(allergy_name)
-            
+            # TODO: implement payment details
+            payment_method = validated_data.pop('payment_methods', None)
+            payment_package = validated_data.pop('payment_packages', None)
+
             # for answer in question_answers_data:
             participant = EventParticipant.objects.create(event=event, user=updated_user, **validated_data)
             for answer in question_answers_data:
@@ -660,6 +688,9 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                 answer.save()
                 changes["questions_answered"].append(f"Question ID {getattr(question, 'question_name', 'No-id')} answered. with answer: {answer_text} and choices: {selected_choices}")
                 participant.event_question_answers.add(answer) 
+                
+            # payment 
+            
 
             pprint.pprint(changes) # ! DEBUG ONLY
         return participant
