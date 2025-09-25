@@ -273,6 +273,7 @@ class EventSerializer(serializers.ModelSerializer):
             "maximum_attendees",
             "payment_packages",
             "organisers",
+            "important_information",
             # date information
             "registration_deadline",
             "registration_open",
@@ -318,6 +319,7 @@ class EventSerializer(serializers.ModelSerializer):
                 "registration_open": rep["registration_open"],
                 "status": rep["status"],
                 "landing_image": rep["landing_image"],
+                "important_information": rep["important_information"],
             },
             "dates": {
                 "start_date": rep["start_date"],
@@ -355,6 +357,7 @@ class EventSerializer(serializers.ModelSerializer):
         return SimplifiedEventServiceTeamMemberSerializer(
             EventServiceTeamMember.objects.filter(
                 Q(roles__role_name=EventRole.EventRoleTypes.EVENT_HEADS) & Q(head_of_role=True) | 
+                Q(roles__role_name=EventRole.EventRoleTypes.TEAM_LEADER ) & Q(head_of_role=True) |
                 Q(roles__role_name=EventRole.EventRoleTypes.CFC_COORDINATOR ) & Q(head_of_role=True),
                 event=obj
             ).distinct(),

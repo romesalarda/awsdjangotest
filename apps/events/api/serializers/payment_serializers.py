@@ -24,7 +24,7 @@ class EventPaymentPackageSerializer(serializers.ModelSerializer):
             "id", "event", "name", "description", "price", "price_display",
             "currency", "capacity", "resources",
             "available_from", "available_until",
-            "is_active", "created_at", "updated_at"
+            "is_active", "created_at", "updated_at", "whats_included"
         ]
         read_only_fields = ("id", "created_at", "updated_at")
 

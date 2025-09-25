@@ -151,7 +151,8 @@ class EventAdmin(admin.ModelAdmin):
             'area_type', 'areas_involved', 'venues'
         )}),
         (_('Event Details'), {'fields': (
-            'description', 'sentence_description', 'theme', 'anchor_verse', 'number_of_pax'
+            'description', 'sentence_description', 'theme', 'anchor_verse', 'number_of_pax', 'important_information', 
+            'registration_deadline'
         )}),
         (_('Supervision'), {'fields': (
             'supervising_youth_heads', 'supervising_CFC_coordinators'
@@ -160,7 +161,7 @@ class EventAdmin(admin.ModelAdmin):
             'resources', 'memo', 'landing_image'
         )}),
         (_('Admin'), {'fields': (
-            'notes', 'is_public'
+            'notes', 'is_public', 'registration_open'
         )}),
     )
     

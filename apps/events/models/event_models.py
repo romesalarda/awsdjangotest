@@ -168,6 +168,9 @@ class Event(models.Model):
             if not self.name_code:
                 self.name_code = self.name.upper()[:MAX_LENGTH_EVENT_NAME_CODE]
             self.event_code = f"{self.get_event_type_display()}{str(self.start_date.year)}{self.name_code}"
+            
+        if not self.duration_days and self.start_date and self.end_date:
+            self.duration_days = (self.end_date - self.start_date).days + 1
         
         return super().save(*args, **kwargs)
     
