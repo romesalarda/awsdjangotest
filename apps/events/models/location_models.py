@@ -233,9 +233,9 @@ class EventVenue (models.Model):
         parts = [self.address_line_1, self.address_line_2, self.address_line_3, self.postcode]
         return ', '.join(part for part in parts if part)
     
-    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
+    def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
         # ensure there is only one main venue
         if self.venue_type == self.VenueType.MAIN_VENUE and self.primary_venue:
             EventVenue.objects.filter(general_area=self.general_area, primary_venue=True).update(primary_venue=False)
-        return super().save(force_insert, force_update, using, update_fields)
+        return super().save(force_insert=force_insert, force_update=force_update, using=using, update_fields=update_fields)
 

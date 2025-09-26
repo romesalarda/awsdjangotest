@@ -236,6 +236,13 @@ class EventSerializer(serializers.ModelSerializer):
     extra_questions = ExtraQuestionSerializer(many=True, read_only=True)
     memo = PublicEventResourceSerializer(read_only=True)
     
+    # File upload field for landing image
+    landing_image_file = serializers.ImageField(
+        write_only=True,
+        required=False,
+        help_text="Upload a new landing image file"
+    )
+    
     payment_packages = EventPaymentPackageSerializer(many=True, read_only=True)
     payment_methods = EventPaymentMethodSerializer(many=True, read_only=True)
     
@@ -282,6 +289,11 @@ class EventSerializer(serializers.ModelSerializer):
         if 'payment_methods' in data and isinstance(data['payment_methods'], list):
             data['payment_methods_data'] = data.pop('payment_methods')
         
+        # Handle resource data sent from frontend
+        if 'resource_data' in data and isinstance(data['resource_data'], list):
+            # Keep the resource_data as is, it's already in the correct format
+            pass
+        
         return super().to_internal_value(data)
 
     class Meta:
@@ -295,6 +307,7 @@ class EventSerializer(serializers.ModelSerializer):
             "description",
             "sentence_description",
             "landing_image",
+            "landing_image_file",
             "is_public",
             "start_date",
             "end_date",
@@ -473,10 +486,25 @@ class EventSerializer(serializers.ModelSerializer):
 
             # Resources
             if resource_data:
-                resource_serializer = PublicEventResourceSerializer(data=resource_data, many=True)
-                resource_serializer.is_valid(raise_exception=True)
-                resources = resource_serializer.save()
-                event.resources.set(resources)
+                for resource_item in resource_data:
+                    # Prepare resource data
+                    mapped_data = {
+                        'resource_name': resource_item.get('resource_name', ''),
+                        'resource_link': resource_item.get('resource_link', ''),
+                        'public_resource': resource_item.get('public_resource', False),
+                        'added_by': self.context['request'].user.id if 'request' in self.context else None,
+                    }
+                    
+                    # Handle file uploads
+                    if 'image_file' in resource_item:
+                        mapped_data['image'] = resource_item['image_file']
+                    elif 'resource_file' in resource_item:
+                        mapped_data['resource_file'] = resource_item['resource_file']
+                    
+                    resource_serializer = PublicEventResourceSerializer(data=mapped_data)
+                    resource_serializer.is_valid(raise_exception=True)
+                    resource = resource_serializer.save()
+                    event.resources.add(resource)
 
             # Memo
             if memo_data:
@@ -499,6 +527,7 @@ class EventSerializer(serializers.ModelSerializer):
         memo_data = validated_data.pop('memo_data', {})
         supervisor_ids = validated_data.pop('supervisor_ids', [])
         cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
+        landing_image_file = validated_data.pop('landing_image_file', None)
         
         # Payment-related data - accept both field names for compatibility
         payment_packages_data = validated_data.pop('payment_packages_data', None) or validated_data.pop('payment_packages', None)
@@ -508,6 +537,10 @@ class EventSerializer(serializers.ModelSerializer):
             self.validate(validated_data)
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
+
+            # Handle landing image file upload
+            if landing_image_file:
+                instance.landing_image = landing_image_file
 
             # Areas
             if area_names:
@@ -519,12 +552,38 @@ class EventSerializer(serializers.ModelSerializer):
                 areas = get_list_or_404(AreaLocation, area_name__in=area_names)
                 instance.areas_involved.set(areas)
 
-            # Venue
-            if venue_data:
-                venue_serializer = EventVenueSerializer(data=venue_data, many=True)
-                venue_serializer.is_valid(raise_exception=True)
-                venues = venue_serializer.save()
-                instance.venues.set(venues)
+            # Venue - Handle CRUD operations
+            if venue_data is not None:
+                # Keep track of existing venues
+                existing_venues = {venue.id: venue for venue in instance.venues.all()}
+                processed_ids = set()
+                
+                for venue_item in venue_data:
+                    venue_id = venue_item.get('id')
+                    
+                    if venue_id and venue_id in existing_venues:
+                        # Update existing venue
+                        venue_serializer = EventVenueSerializer(
+                            existing_venues[venue_id], 
+                            data=venue_item, 
+                            partial=True
+                        )
+                        if venue_serializer.is_valid(raise_exception=True):
+                            venue_serializer.save()
+                            processed_ids.add(venue_id)
+                    else:
+                        # Create new venue
+                        venue_serializer = EventVenueSerializer(data=venue_item)
+                        if venue_serializer.is_valid(raise_exception=True):
+                            venue = venue_serializer.save()
+                            instance.venues.add(venue)
+                            processed_ids.add(venue.id)
+                
+                # Remove venues that weren't in the update
+                for venue_id, venue in existing_venues.items():
+                    if venue_id not in processed_ids:
+                        instance.venues.remove(venue)
+                        venue.delete()
 
             # Supervisors
             if supervisor_ids:
@@ -532,12 +591,51 @@ class EventSerializer(serializers.ModelSerializer):
             if cfc_coordinator_ids:
                 instance.supervising_CFC_coordinators.set(cfc_coordinator_ids)
 
-            # Resources
-            if resource_data:
-                resource_serializer = PublicEventResourceSerializer(data=resource_data, many=True)
-                resource_serializer.is_valid(raise_exception=True)
-                resources = resource_serializer.save()
-                instance.resources.set(resources)
+            # Resources - Handle CRUD operations
+            if resource_data is not None:
+                # Keep track of existing and new resource IDs
+                existing_resources = {resource.id: resource for resource in instance.resources.all()}
+                processed_ids = set()
+                
+                for resource_item in resource_data:
+                    # Prepare resource data
+                    mapped_data = {
+                        'resource_name': resource_item.get('resource_name', ''),
+                        'resource_link': resource_item.get('resource_link', ''),
+                        'public_resource': resource_item.get('public_resource', False),
+                        'added_by': self.context['request'].user.id if 'request' in self.context else None,
+                    }
+                    
+                    # Handle file uploads
+                    if 'image_file' in resource_item:
+                        mapped_data['image'] = resource_item['image_file']
+                    elif 'resource_file' in resource_item:
+                        mapped_data['resource_file'] = resource_item['resource_file']
+                    
+                    resource_id = resource_item.get('id')
+                    if resource_id and resource_id in existing_resources:
+                        # Update existing resource
+                        resource_serializer = PublicEventResourceSerializer(
+                            existing_resources[resource_id], 
+                            data=mapped_data, 
+                            partial=True
+                        )
+                        resource_serializer.is_valid(raise_exception=True)
+                        resource_serializer.save()
+                        processed_ids.add(resource_id)
+                    else:
+                        # Create new resource
+                        resource_serializer = PublicEventResourceSerializer(data=mapped_data)
+                        resource_serializer.is_valid(raise_exception=True)
+                        new_resource = resource_serializer.save()
+                        instance.resources.add(new_resource)
+                        processed_ids.add(new_resource.id)
+                
+                # Remove resources that weren't in the update
+                for resource_id, resource in existing_resources.items():
+                    if resource_id not in processed_ids:
+                        instance.resources.remove(resource)
+                        resource.delete()
 
             # Memo
             if memo_data:
