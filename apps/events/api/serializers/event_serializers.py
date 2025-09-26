@@ -1004,7 +1004,8 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             # TODO Shaina - show statistics based on certain area, size, colour, basically all attributes. 
             payment_method: EventPaymentMethod = validated_data.pop('payment_methods', None)
             payment_package: EventPaymentPackage = validated_data.pop('payment_packages', None)
-        
+            participant = EventParticipant.objects.create(event=event, user=updated_user, **validated_data)
+
             # payment - register the type of payment used
             if payment_method: # optional if the event is free
                 payment_method.save()
@@ -1014,12 +1015,12 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                 
                 if payment_method:
                     status = (
-                        EventPayment.PaymentStatus.PENDING if payment_method.MethodType == EventPaymentMethod.MethodTypes.BANK_TRANSFER 
+                        EventPayment.PaymentStatus.PENDING if payment_method.MethodType == EventPaymentMethod.MethodType.BANK_TRANSFER 
                         else EventPayment.PaymentStatus.SUCCEEDED
                     )
                     # if bank transfer, then we do not mark as paid until admin verifies payment
                     EventPayment.objects.create(
-                        user=updated_user,
+                        user=participant,
                         event=event,
                         package=payment_package,
                         method=payment_method,
@@ -1053,7 +1054,6 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                     validated_data['understood_registration'] = understood_registration
 
             # for answer in question_answers_data:
-            participant = EventParticipant.objects.create(event=event, user=updated_user, **validated_data)
             for answer in question_answers_data:
                 question = answer.get('question', None)
                 if not question:
