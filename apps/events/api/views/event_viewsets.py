@@ -406,9 +406,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
     
     #! remember to handle how service are register, can anyone just register as a participant?
     #! or should it be only event organizers/admins who can add participants?
-    
-    # TODO: add payment method
-    
+        
     @action(detail=False, methods=['post'], url_name="register", url_path="register")
     def register(self, request):
         '''
@@ -472,6 +470,12 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         participant.save()
         serializer = self.get_serializer(participant)
         return Response(serializer.data)
+    
+    def create(self, request, *args, **kwargs):
+        # only return event code
+        request = super().create(request, *args, **kwargs)
+        data = request.data
+        return Response({"event_user_id": data["event_user_id"]}, status=request.status_code)
 
 class EventTalkViewSet(viewsets.ModelViewSet):
     '''

@@ -487,7 +487,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False,
     )
-    consent_data = serializers.DictField(
+    consent = serializers.DictField(
         write_only=True,    
         required=False,
         help_text="Dictionary containing consent fields, e.g. 'consent: {photos: false, dataProtection: false, terms: false,newsletter: false}'"
@@ -499,6 +499,8 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             # identity
             "event",
             "user_details",
+            "event_pax_id",
+            # status
             "status",
             "status_display",
             "participant_type",
@@ -525,7 +527,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "participant_event_payments",
             "payment_method",
             "payment_package",
-            "consent_data",
+            "consent",
         ]
         read_only_fields = [
             "id",
@@ -541,6 +543,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         rep = super().to_representation(instance)
         return {
             "event": rep["event"],
+            "event_user_id": rep["event_pax_id"],
             "user": rep["user_details"],
             "status": {
                 "code": rep["status"],
@@ -713,7 +716,9 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             
                 
             # consent data
-            consent_data = validated_data.pop('consent_data', {})
+            consent_data = validated_data.pop('consent', {})
+            
+            pprint.pprint("consent_data: " + str(consent_data))
             if consent_data:
                 media_consent = consent_data.get('photos', None)
                 if media_consent is not None and isinstance(media_consent, bool):
