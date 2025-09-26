@@ -238,7 +238,51 @@ class EventSerializer(serializers.ModelSerializer):
     
     payment_packages = EventPaymentPackageSerializer(many=True, read_only=True)
     payment_methods = EventPaymentMethodSerializer(many=True, read_only=True)
+    
+    # Write-only payment fields for updating
+    payment_packages_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="List of payment package dicts for creation/update"
+    )
+    payment_methods_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="List of payment method dicts for creation/update"
+    )
+    
     organisers = serializers.SerializerMethodField(read_only=True)
+
+    def to_internal_value(self, data):
+        # Handle nested data structures sent from frontend
+        
+        # Handle basic_info nested structure
+        if 'basic_info' in data:
+            basic_info = data.pop('basic_info')
+            for key, value in basic_info.items():
+                data[key] = value
+        
+        # Handle venue nested structure
+        if 'venue' in data:
+            venue_data = data.pop('venue')
+            for key, value in venue_data.items():
+                data[key] = value
+        
+        # Handle people nested structure
+        if 'people' in data:
+            people_data = data.pop('people')
+            for key, value in people_data.items():
+                data[key] = value
+        
+        # Handle payment data sent from frontend
+        if 'payment_packages' in data and isinstance(data['payment_packages'], list):
+            data['payment_packages_data'] = data.pop('payment_packages')
+        if 'payment_methods' in data and isinstance(data['payment_methods'], list):
+            data['payment_methods_data'] = data.pop('payment_methods')
+        
+        return super().to_internal_value(data)
 
     class Meta:
         model = Event
@@ -275,6 +319,8 @@ class EventSerializer(serializers.ModelSerializer):
             "maximum_attendees",
             "payment_packages",
             "payment_methods",
+            "payment_packages_data",
+            "payment_methods_data",
             "organisers",
             "important_information",
             "auto_approve_participants",
@@ -453,6 +499,10 @@ class EventSerializer(serializers.ModelSerializer):
         memo_data = validated_data.pop('memo_data', {})
         supervisor_ids = validated_data.pop('supervisor_ids', [])
         cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
+        
+        # Payment-related data - accept both field names for compatibility
+        payment_packages_data = validated_data.pop('payment_packages_data', None) or validated_data.pop('payment_packages', None)
+        payment_methods_data = validated_data.pop('payment_methods_data', None) or validated_data.pop('payment_methods', None)
 
         with transaction.atomic():
             self.validate(validated_data)
@@ -495,6 +545,114 @@ class EventSerializer(serializers.ModelSerializer):
                 memo_serializer.is_valid(raise_exception=True)
                 memo = memo_serializer.save()
                 instance.memo = memo
+
+            # Payment Packages - Replace existing with new ones
+            if payment_packages_data is not None:
+                # Clear existing packages
+                instance.payment_packages.all().delete()
+                
+                # Create new packages
+                from .payment_serializers import EventPaymentPackageSerializer
+                from django.utils.dateparse import parse_datetime
+                
+                for package_data in payment_packages_data:
+                    # Map frontend field names to model field names
+                    mapped_data = {
+                        'event': instance.id,
+                        'name': package_data.get('package_name', ''),
+                        'description': package_data.get('description', ''),
+                        'price': int(float(package_data.get('price', 0)) * 100),  # Convert pounds to pence
+                        'currency': package_data.get('currency', 'GBP').lower(),
+                        'capacity': package_data.get('capacity'),
+                        'is_active': package_data.get('is_active', True),
+                    }
+                    
+                    # Handle datetime conversion for deadline
+                    deadline = package_data.get('deadline')
+                    if deadline and deadline.strip():
+                        try:                            
+                            # Handle HTML datetime-local format (YYYY-MM-DDTHH:MM)
+                            if isinstance(deadline, str):
+                                deadline = deadline.strip()
+                                
+                                # Add seconds if missing (HTML datetime-local format)
+                                if 'T' in deadline and len(deadline) == 16:
+                                    deadline += ':00'
+                                
+                                # Parse the datetime
+                                parsed_datetime = parse_datetime(deadline)
+                                if parsed_datetime:
+                                    # Make timezone aware if naive
+                                    if timezone.is_naive(parsed_datetime):
+                                        parsed_datetime = timezone.make_aware(parsed_datetime)
+                                    mapped_data['available_until'] = parsed_datetime
+                                    
+                        except (ValueError, TypeError) as e:
+                            # Log the error for debugging
+                            print(f"Error parsing deadline '{deadline}': {e}")
+                            # Skip invalid datetime - don't set the field
+                    
+                    package_serializer = EventPaymentPackageSerializer(data=mapped_data)
+                    package_serializer.is_valid(raise_exception=True)
+                    package_serializer.save()
+
+            # Payment Methods - Replace existing with new ones
+            if payment_methods_data is not None:
+                from .payment_serializers import EventPaymentMethodSerializer
+                
+                # Keep track of existing and new method IDs
+                existing_methods = {method.id: method for method in instance.payment_methods.all()}
+                processed_ids = set()
+                
+                for method_data in payment_methods_data:
+                    # Map frontend field names to model field names
+                    method_type = method_data.get('method_type', 'other')
+                    
+                    # Map frontend method types to model choices
+                    method_mapping = {
+                        'stripe': 'STRIPE',
+                        'bank-transfer': 'BANK',
+                        'cash': 'CASH',
+                        'paypal': 'PAYPAL',
+                        'other': 'OTHER',
+                    }
+                    
+                    mapped_data = {
+                        'event': instance.id,
+                        'method': method_mapping.get(method_type.lower(), 'OTHER'),
+                        'instructions': method_data.get('instructions', ''),
+                        'account_name': method_data.get('account_name', ''),
+                        'account_number': method_data.get('account_number', ''),
+                        'sort_code': method_data.get('sort_code', ''),
+                        'reference_instruction': method_data.get('reference_instruction', ''),
+                        'reference_example': method_data.get('reference_example', ''),
+                        'important_information': method_data.get('important_information', ''),
+                        'percentage_fee_add_on': method_data.get('percentage_fee_add_on', 0),
+                        'is_active': method_data.get('is_active', True),
+                    }
+                    
+                    method_id = method_data.get('id')
+                    if method_id and method_id in existing_methods:
+                        # Update existing method
+                        method_serializer = EventPaymentMethodSerializer(
+                            existing_methods[method_id], 
+                            data=mapped_data, 
+                            partial=True
+                        )
+                        method_serializer.is_valid(raise_exception=True)
+                        method_serializer.save()
+                        processed_ids.add(method_id)
+                    else:
+                        # Create new method
+                        method_serializer = EventPaymentMethodSerializer(data=mapped_data)
+                        method_serializer.is_valid(raise_exception=True)
+                        new_method = method_serializer.save()
+                        processed_ids.add(new_method.id)
+                
+                # Delete methods that weren't in the update
+                for method_id, method in existing_methods.items():
+                    if method_id not in processed_ids:
+                        method.delete()
 
             instance.save()
         return instance
