@@ -257,6 +257,9 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         if password:
             instance.set_password(password)
+            
+        # TODO: handle m2ms with allergies, medical conditions, emergency contacts, roles, etc
+            
         instance.save()
         return instance
     

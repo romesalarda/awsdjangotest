@@ -381,6 +381,8 @@ class EventSerializer(serializers.ModelSerializer):
         
         return super().validate(attrs)
     
+    # TODO: create update function
+    
     def create(self, validated_data):
         start_date = validated_data.get('start_date', timezone.now())
         validated_data['start_date'] = start_date
@@ -439,7 +441,65 @@ class EventSerializer(serializers.ModelSerializer):
 
             event.save()
         return event
+    
+    def update(self, instance, validated_data):
+        # similar to create, but update existing instance
+        start_date = validated_data.get('start_date', timezone.now())
+        validated_data['start_date'] = start_date
         
+        area_names = validated_data.pop('area_names', [])
+        venue_data = validated_data.pop('venue_data', [])
+        resource_data = validated_data.pop('resource_data', [])
+        memo_data = validated_data.pop('memo_data', {})
+        supervisor_ids = validated_data.pop('supervisor_ids', [])
+        cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
+
+        with transaction.atomic():
+            self.validate(validated_data)
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+
+            # Areas
+            if area_names:
+                print(AreaLocation.objects.filter(area_name__in=area_names).values_list('area_name', flat=True))
+                for area in area_names:
+                    if not AreaLocation.objects.filter(area_name=area.lower()).exists():
+                        raise serializers.ValidationError({"area_names": _(f"Area '{area}' does not exist.")})
+
+                areas = get_list_or_404(AreaLocation, area_name__in=area_names)
+                instance.areas_involved.set(areas)
+
+            # Venue
+            if venue_data:
+                venue_serializer = EventVenueSerializer(data=venue_data, many=True)
+                venue_serializer.is_valid(raise_exception=True)
+                venues = venue_serializer.save()
+                instance.venues.set(venues)
+
+            # Supervisors
+            if supervisor_ids:
+                instance.supervising_youth_heads.set(supervisor_ids)
+            if cfc_coordinator_ids:
+                instance.supervising_CFC_coordinators.set(cfc_coordinator_ids)
+
+            # Resources
+            if resource_data:
+                resource_serializer = PublicEventResourceSerializer(data=resource_data, many=True)
+                resource_serializer.is_valid(raise_exception=True)
+                resources = resource_serializer.save()
+                instance.resources.set(resources)
+
+            # Memo
+            if memo_data:
+                memo_serializer = PublicEventResourceSerializer(data=memo_data)
+                memo_serializer.is_valid(raise_exception=True)
+                memo = memo_serializer.save()
+                instance.memo = memo
+
+            instance.save()
+        return instance
+
+
 class EventParticipantSerializer(serializers.ModelSerializer):
     '''
     Full detail Event participant serializer - for event organizers/admins
