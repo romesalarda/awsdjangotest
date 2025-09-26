@@ -51,11 +51,25 @@ class EventViewSet(viewsets.ModelViewSet):
         # returns events that are specific to the user, created_by, supervisor, participant, service team member
         if user.is_authenticated and user.is_encoder:
             return Event.objects.filter(
-                models.Q(created_by=user)
+                models.Q(created_by=user),
+                is_public=True
             ).distinct()
         # for normal authenticated users, only show public events
         return Event.objects.filter(is_public=True)
     
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+        
+        # check if the user is already registered as a participant
+        user = request.user
+        if user.is_authenticated:
+            is_participant = EventParticipant.objects.filter(event=instance, user=user).exists()
+            data['is_participant'] = is_participant
+
+        return Response(data)
+        
     def perform_create(self, serializer):
         
         serializer.save(created_by=self.request.user)

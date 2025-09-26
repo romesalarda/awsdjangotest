@@ -315,7 +315,9 @@ class EventParticipant(models.Model):
     media_consent = models.BooleanField(default=False)
     data_consent = models.BooleanField(default=False)
     understood_registration = models.BooleanField(default=False)
-    
+    terms_and_conditions_consent = models.BooleanField(default=False)
+    news_letter_consent = models.BooleanField(default=False)
+
     # Additional information
     # dietary_restrictions = models.TextField(_("dietary restrictions"), blank=True, null=True)
     # special_needs = models.TextField(_("special needs"), blank=True, null=True)

@@ -15,7 +15,7 @@ import pprint
 
 from apps.events.models import (
     EventDayAttendance, Event, QuestionAnswer, 
-    EventServiceTeamMember, EventPaymentMethod, EventPaymentPackage
+    EventServiceTeamMember, EventPaymentMethod, EventPaymentPackage, EventPayment
     )
 from apps.users.api.serializers import (
     SimpleEmergencyContactSerializer, SimplifiedCommunityUserSerializer, 
@@ -487,10 +487,16 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False,
     )
+    consent_data = serializers.DictField(
+        write_only=True,    
+        required=False,
+        help_text="Dictionary containing consent fields, e.g. 'consent: {photos: false, dataProtection: false, terms: false,newsletter: false}'"
+    )
 
     class Meta:
         model = EventParticipant
         fields = [
+            # identity
             "event",
             "user_details",
             "status",
@@ -500,13 +506,17 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "registered_on",
             "confirmed_on",
             "attended_on",
+            # consents
             "media_consent",
             "data_consent",
             "understood_registration",
+            "terms_and_conditions_consent",
+            "news_letter_consent",
+            # health and emergency
             "allergies",
-            # "special_needs",
             "emergency_contacts",
             "medical_conditions",
+            # metadata
             "notes",
             "paid_amount",
             "payment_date",
@@ -515,6 +525,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "participant_event_payments",
             "payment_method",
             "payment_package",
+            "consent_data",
         ]
         read_only_fields = [
             "id",
@@ -670,9 +681,55 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                         new_allergy.save()
                         updated_user.user_allergies.add(new_allergy.instance)
                         changes["allergies_added"].append(allergy_name)
-            # TODO: implement payment details
-            payment_method = validated_data.pop('payment_methods', None)
-            payment_package = validated_data.pop('payment_packages', None)
+                        
+            # TODO Shaina - show statistics based on certain area, size, colour, basically all attributes. 
+            payment_method: EventPaymentMethod = validated_data.pop('payment_methods', None)
+            payment_package: EventPaymentPackage = validated_data.pop('payment_packages', None)
+        
+            # payment - register the type of payment used
+            if payment_method: # optional if the event is free
+                payment_method.save()
+                
+            if payment_package:
+                payment_package.save()
+                
+                if payment_method:
+                    status = (
+                        EventPayment.PaymentStatus.PENDING if payment_method.MethodType == EventPaymentMethod.MethodTypes.BANK_TRANSFER 
+                        else EventPayment.PaymentStatus.SUCCEEDED
+                    )
+                    # if bank transfer, then we do not mark as paid until admin verifies payment
+                    EventPayment.objects.create(
+                        user=updated_user,
+                        event=event,
+                        package=payment_package,
+                        method=payment_method,
+                        amount=payment_package.price if payment_package else 0,
+                        currency=payment_package.currency if payment_package else "gbp",
+                        status=status
+                    )
+            else:
+                raise serializers.ValidationError({"payment_package": _("Payment package is required.")})
+            
+                
+            # consent data
+            consent_data = validated_data.pop('consent_data', {})
+            if consent_data:
+                media_consent = consent_data.get('photos', None)
+                if media_consent is not None and isinstance(media_consent, bool):
+                    validated_data['media_consent'] = media_consent
+                data_protection_consent = consent_data.get('dataProtection', None)
+                if data_protection_consent is not None and isinstance(data_protection_consent, bool):
+                    validated_data['data_consent'] = data_protection_consent
+                terms_and_conditions_consent = consent_data.get('terms', None)
+                if terms_and_conditions_consent is not None and isinstance(terms_and_conditions_consent, bool):
+                    validated_data['terms_and_conditions_consent'] = terms_and_conditions_consent
+                newsletter_consent = consent_data.get('newsletter', None)
+                if newsletter_consent is not None and isinstance(newsletter_consent, bool):
+                    validated_data['news_letter_consent'] = newsletter_consent
+                understood_registration = consent_data.get('understood_registration', None)
+                if understood_registration is not None and isinstance(understood_registration, bool):
+                    validated_data['understood_registration'] = understood_registration
 
             # for answer in question_answers_data:
             participant = EventParticipant.objects.create(event=event, user=updated_user, **validated_data)
@@ -689,7 +746,6 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                 changes["questions_answered"].append(f"Question ID {getattr(question, 'question_name', 'No-id')} answered. with answer: {answer_text} and choices: {selected_choices}")
                 participant.event_question_answers.add(answer) 
                 
-            # payment 
             
 
             pprint.pprint(changes) # ! DEBUG ONLY
