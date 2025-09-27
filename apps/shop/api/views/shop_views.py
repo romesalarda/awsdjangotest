@@ -10,8 +10,8 @@ from apps.shop.api.serializers.shop_serializers import (
     EventProductSerializer,
     EventCartSerializer,
     EventProductOrderSerializer,
-    ProductSizeSerializer,
 )
+from apps.shop.api.serializers.shop_metadata_serializers import ProductSizeSerializer
 
 class EventProductViewSet(viewsets.ModelViewSet):
     '''
@@ -19,12 +19,29 @@ class EventProductViewSet(viewsets.ModelViewSet):
     '''
     queryset = EventProduct.objects.prefetch_related("categories", "materials").select_related("event", "seller")
     serializer_class = EventProductSerializer
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]  # Allow authenticated users to manage products
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["event", "seller", "categories", "materials"]
-    search_fields = ["title", "description", "seller__email"]
-    ordering_fields = ["title", "price", "discount"]
+    filterset_fields = ["event", "seller", "categories", "materials", "category", "featured", "in_stock"]
+    search_fields = ["title", "description", "seller__email", "category"]
+    ordering_fields = ["title", "price", "discount", "stock", "featured"]
     ordering = ["title"]
+    
+    def get_queryset(self):
+        """Filter products based on user permissions"""
+        user = self.request.user
+        if user.is_superuser:
+            return self.queryset
+        # For now, allow all authenticated users to see all products
+        # You can modify this to filter by user's events or roles
+        return self.queryset
+    
+    def perform_create(self, serializer):
+        """Set the seller to the current user when creating a product"""
+        serializer.save(seller=self.request.user)
+    
+    def perform_update(self, serializer):
+        """Handle product updates"""
+        serializer.save()
     
     @action(detail=True, methods=['get'], url_name='sizes', url_path='sizes')
     def available_sizes(self, request, pk=None):

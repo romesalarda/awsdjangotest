@@ -14,22 +14,42 @@ class ProductCategoryViewSet(viewsets.ModelViewSet):
     '''
     queryset = ProductCategory.objects.all()
     serializer_class = ProductCategorySerializer
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["title"]
     search_fields = ["title", "description"]
-    ordering_fields = ["title", "product_count"]
+    ordering_fields = ["title"]
     ordering = ["title"]
+    
+    def get_permissions(self):
+        """
+        Allow authenticated users to read, only admin users to write
+        """
+        if self.action in ['list', 'retrieve']:
+            permission_classes = [permissions.IsAuthenticated]
+        else:
+            permission_classes = [permissions.IsAdminUser]
+        return [permission() for permission in permission_classes]
 
 class ProductMaterialViewSet(viewsets.ModelViewSet):
     queryset = ProductMaterial.objects.all()
     serializer_class = ProductMaterialSerializer
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["title"]
     search_fields = ["title", "description"]
-    ordering_fields = ["title", "product_count"]
+    ordering_fields = ["title"]
     ordering = ["title"]
+    
+    def get_permissions(self):
+        """
+        Allow authenticated users to read, only admin users to write
+        """
+        if self.action in ['list', 'retrieve']:
+            permission_classes = [permissions.IsAuthenticated]
+        else:
+            permission_classes = [permissions.IsAdminUser]
+        return [permission() for permission in permission_classes]
 
 class ProductImageViewSet(viewsets.ModelViewSet):
     queryset = ProductImage.objects.select_related("product").all()
