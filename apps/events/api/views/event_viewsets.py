@@ -99,12 +99,15 @@ class EventViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(events)
         if page is not None:
             if simple:
-                serializer = SimplifiedEventSerializer(page, many=True)
+                serializer = UserAwareEventSerializer(page, many=True, context={'request': request})
             else:
                 serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         
-        serializer = self.get_serializer(events, many=True)
+        if simple:
+            serializer = UserAwareEventSerializer(events, many=True, context={'request': request})
+        else:
+            serializer = self.get_serializer(events, many=True)
         return Response(serializer.data)
     
     # participant related actions

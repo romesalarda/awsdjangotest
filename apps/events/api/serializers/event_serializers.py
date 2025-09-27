@@ -156,6 +156,58 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 "main_venue": rep.get("main_venue"),
             }
         }
+
+
+class UserAwareEventSerializer(SimplifiedEventSerializer):
+    '''
+    Enhanced event serializer that includes user-specific information like registration status and organizer permissions
+    '''
+    user_registration_status = serializers.SerializerMethodField(read_only=True)
+    is_user_organizer = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta(SimplifiedEventSerializer.Meta):
+        fields = list(SimplifiedEventSerializer.Meta.fields) + [
+            "user_registration_status",
+            "is_user_organizer"
+        ]
+    
+    def get_user_registration_status(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return None
+            
+        participant = obj.participants.filter(user=request.user).first()
+        if participant:
+            return participant.status
+        return None
+        
+    def get_is_user_organizer(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+            
+        # Check if user is the creator of the event
+        if obj.created_by == request.user:
+            return True
+            
+        # Check if user is a service team member
+        if obj.service_team_members.filter(user=request.user).exists():
+            return True
+            
+        # Check if user has encoder permissions (can manage events)
+        if hasattr(request.user, 'community') and request.user.community.encoder:
+            return True
+            
+        return False
+        
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        # Add user-specific information to the response
+        rep["user_info"] = {
+            "registration_status": self.get_user_registration_status(instance),
+            "is_organizer": self.get_is_user_organizer(instance)
+        }
+        return rep
         
 class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
     '''
