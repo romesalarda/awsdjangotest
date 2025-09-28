@@ -7,7 +7,7 @@ from .models import (
     CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation,
     EventResource, EventVenue, SearchAreaSupportLocation,
     ExtraQuestion, QuestionChoice, QuestionAnswer,
-    EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance
+    EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance, ParticipantQuestion
 )
 
 
@@ -232,15 +232,15 @@ class PublicEventResourceAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at',)
     date_hierarchy = 'created_at'
     
-    fieldsets = (
-        (_('Resource Information'), {
-            'fields': ('resource_name', 'resource_link', 'resource_file', 'public_resource')
-        }),
-        (_('Metadata'), {
-            'fields': ('created_at',),
-            'classes': ('collapse',)
-        }),
-    )
+    # fieldsets = (
+    #     (_('Resource Information'), {
+    #         'fields': ('resource_name', 'resource_link', 'resource_file', 'public_resource')
+    #     }),
+    #     (_('Metadata'), {
+    #         'fields': ('created_at',),
+    #         'classes': ('collapse',)
+    #     }),
+    # )
     
     def resource_link_preview(self, obj):
         if obj.resource_link:
@@ -360,3 +360,8 @@ class EventDayAttendanceAdmin(admin.ModelAdmin):
     autocomplete_fields = ('user', 'event')
     readonly_fields = ('duration',)
     ordering = ('-check_in_time',)
+    
+@admin.register(ParticipantQuestion)
+class ParticipantQuestionAdmin(admin.ModelAdmin):
+    list_display = ('question','participant', 'event', 'status', 'submitted_at', 'responded_at')
+    

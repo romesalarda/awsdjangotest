@@ -26,6 +26,6 @@ class QuestionAnswerViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     
 class ParticipantQuestionViewSet(viewsets.ModelViewSet):
-    queryset = ParticipantQuestion.objects.filter().order_by("order")
+    queryset = ParticipantQuestion.objects.filter()
     serializer_class = ParticipantQuestionSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]

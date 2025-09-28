@@ -15,3 +15,14 @@ from .shop_metadata_serializers import (
     ProductImageSerializer,
     ProductSizeSerializer
 )
+
+# Display-optimized serializers (simplified for frontend)
+from .shop_display_serializers import (
+    EventProductDisplaySerializer,
+    EventCartDisplaySerializer,
+    EventProductOrderDisplaySerializer,
+    EventCartMinimalSerializer,
+    EventProductOrderMinimalSerializer,
+    EventProductLightSerializer,
+    ProductSizeDisplaySerializer,
+)

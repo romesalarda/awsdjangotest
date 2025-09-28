@@ -388,6 +388,7 @@ class EventSerializer(serializers.ModelSerializer):
             "payment_methods_data",
             "organisers",
             "important_information",
+            "what_to_bring",
             "auto_approve_participants",
             # date information
             "registration_deadline",
@@ -435,6 +436,7 @@ class EventSerializer(serializers.ModelSerializer):
                 "status": rep["status"],
                 "landing_image": rep["landing_image"],
                 "important_information": rep["important_information"],
+                "what_to_bring": rep["what_to_bring"],
                 "auto_approve_participants": rep["auto_approve_participants"],
             },
             "dates": {

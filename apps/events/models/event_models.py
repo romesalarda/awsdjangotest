@@ -86,6 +86,7 @@ class Event(models.Model):
         help_text=_("A brief one-sentence description of the event, for promotional purposes. E.g. A youth camp to anchor our faith in Christ.")
         ) 
     important_information = models.TextField(verbose_name=_("important information"), blank=True, null=True)
+    what_to_bring = models.TextField(verbose_name=_("what to bring"), blank=True, null=True)
     landing_image = models.ImageField(        
         upload_to="event-landing-images/", 
         blank=True, 
