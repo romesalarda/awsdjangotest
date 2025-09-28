@@ -1,7 +1,9 @@
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 from django.core import validators
+import uuid
 
 from .event_models import EventResource, EventParticipant
 
@@ -9,6 +11,8 @@ class EventPaymentMethod(models.Model):
     """
     Payment method/configuration available for an event.
     """
+    
+    # TODO: migrate from integer id to uuid field?
 
     class MethodType(models.TextChoices):
         STRIPE = "STRIPE", _("Stripe")
@@ -75,6 +79,9 @@ class EventPaymentPackage(models.Model):
     Represents different ticket/package options for an event.
     Example: £50 VIP (includes food + merch), £10 General Admission
     """
+    
+    # TODO: migrate from integer id to uuid field?
+
 
     event = models.ForeignKey(
         "Event",
@@ -132,6 +139,8 @@ class EventPayment(models.Model):
     """
     Tracks a user's payment for an event
     """
+    
+    # TODO: maybe migrate uuid for payments to be a uuid field instead of integer id?
 
     class PaymentStatus(models.TextChoices):
         PENDING = "PENDING", _("Pending")
@@ -140,6 +149,11 @@ class EventPayment(models.Model):
 
     user = models.ForeignKey(EventParticipant, on_delete=models.CASCADE, related_name="participant_event_payments")
     event = models.ForeignKey("Event", on_delete=models.SET_NULL, null=True, blank=True, related_name="event_payments")
+    # used for customer reference and tracking
+    event_payment_tracking_number = models.CharField(
+        max_length=100, unique=True, verbose_name=_("payment tracking number"), help_text=_("Unique identifier for this payment (e.g., UUID or custom format)"),
+        blank=True, null=True
+        )
 
     package = models.ForeignKey(
         "EventPaymentPackage",
@@ -170,12 +184,22 @@ class EventPayment(models.Model):
         default=PaymentStatus.PENDING,
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True) 
+    paid_at = models.DateTimeField(blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    verified = models.BooleanField(default=False, verbose_name=_("payment verified"), help_text=_("Set to true when payment is verified/confirmed"))
 
     def mark_as_paid(self):
         self.status = self.PaymentStatus.SUCCEEDED
+        self.paid_at = timezone.now()
         self.save()
+        
+    def save(self, *args, **kwargs):
+        if self.event_payment_tracking_number is None:
+            self.event_payment_tracking_number = f"{self.event.event_code}-PAY-{uuid.uuid4()}".upper()
+            self.save()
+        return super().save(*args, **kwargs)
 
     class Meta:
         verbose_name = _("Event Payment")

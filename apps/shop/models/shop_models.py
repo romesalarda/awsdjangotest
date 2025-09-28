@@ -109,8 +109,12 @@ class EventProduct(models.Model):
 class EventCart(models.Model):
     """
     A shopping cart for products associated with a specific event.
+    
+    Represents a full order. Once a cart is approved and submitted, it should not be modified.
     """
     uuid = models.UUIDField(_("Cart UUID"), default=uuid.uuid4, editable=False, primary_key=True)
+    order_reference_id = models.CharField(_("Order ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking order references
+    
     total = models.FloatField(_("Total Cost"), default=0)
     shipping_cost = models.FloatField(_("Shipping Cost"), default=0)
     created = models.DateTimeField(_("Created At"), default=timezone.now)
@@ -151,12 +155,23 @@ class EventCart(models.Model):
     
     def save(self, *args, **kwargs):
         self.updated = timezone.now()
+        
+        if self.order_reference_id is None: # ORD<event-code>-<uuid[:10]>
+            
+            if self.uuid is None: # save if uuid not set yet
+                super().save(*args, **kwargs)
+
+            self.order_reference_id = f"ORD{self.event.event_code}-{str(self.uuid)[:10]}"
+
         return super().save(*args, **kwargs)
     
 class EventProductOrder(models.Model):
     '''
     Product order within an event cart.
     '''
+    # TODO: switch integer id to uuid?
+    
+    order_reference_id = models.CharField(_("Order ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking order references
     product = models.ForeignKey(EventProduct, on_delete=models.CASCADE, related_name="orders")
     cart = models.ForeignKey(EventCart, on_delete=models.CASCADE, related_name="orders")
     quantity = models.IntegerField(default=1)
@@ -185,11 +200,26 @@ class EventProductOrder(models.Model):
         default=Status.PENDING
     )
     # TODO: add field to check if the product can be changed. maybe add a new model to submit change requests?
+    changeable = models.BooleanField(default=True, help_text=_("Flags if the product order can be changed"))
+    
+    change_requested = models.BooleanField(default=False, help_text=_("Flags if a change has been requested for this order"))
+    change_reason = models.TextField(_("Reason for Change Request"), blank=True, null=True)
+    admin_notes = models.TextField(_("Admin Notes"), blank=True, null=True, help_text=_("Notes for admin use only"))
 
     class Meta:
         ordering = ['-added']
         verbose_name = _("Event Product Order")
         verbose_name_plural = _("Event Product Orders")
+
+    def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
+        if self.order_reference_id is None: # ORD<event-code>-<cart-uuid[:10]>-<product-uuid[:10]>
+            
+            if self.cart is None or self.cart.uuid is None:
+                raise ValueError("Cart must be set and saved before saving an order.")
+            if self.product is None or self.product.uuid is None:
+                raise ValueError("Product must be set and saved before saving an order.")
+            self.order_reference_id = f"ORD{self.cart.event.event_code}-{str(self.cart.uuid)[:10]}-{str(self.product.uuid)[:10]}"
+        return super().save(force_insert, force_update, using, update_fields)
 
     def __str__(self) -> str:
         return f"{self.product.title} ({self.cart.user.member_id})"

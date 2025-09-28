@@ -5,6 +5,7 @@ registration_router = DefaultRouter()
 registration_router.register(r"extra-questions", ExtraQuestionViewSet)
 registration_router.register(r"question-choices", QuestionChoiceViewSet)
 registration_router.register(r"question-answers", QuestionAnswerViewSet)
+registration_router.register(r"participant-questions", ParticipantQuestionViewSet)
 
 location_router = DefaultRouter()
 location_router.register(r'countries', CountryLocationViewSet)

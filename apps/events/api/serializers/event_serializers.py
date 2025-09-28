@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from apps.events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
-    EventTalk, EventWorkshop, EventResource,
+    EventTalk, EventWorkshop, EventResource, ParticipantQuestion,
     AreaLocation, EventVenue
 )
 from django.utils.translation import gettext_lazy as _
@@ -14,7 +14,7 @@ from django.db.models import Q
 import pprint
 
 from apps.events.models import (
-    EventDayAttendance, Event, QuestionAnswer, 
+    EventDayAttendance, QuestionAnswer,
     EventServiceTeamMember, EventPaymentMethod, EventPaymentPackage, EventPayment
     )
 from apps.users.api.serializers import (
@@ -865,6 +865,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         model = EventParticipant
         fields = [
             # identity
+            "id",
             "event",
             "user_details",
             "event_pax_id",
@@ -886,6 +887,8 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "allergies",
             "emergency_contacts",
             "medical_conditions",
+            "accessibility_requirements",
+            "special_requests",
             # metadata
             "notes",
             "paid_amount",
@@ -946,9 +949,6 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         Create or update a participant's registration for an event. Also can provide extra user information 
         via this serializer to update their user profile with medical conditions, emergency contacts, allergies, etc.
         '''
-        # TODO: event participant needs to be updated, i.e consent form 
-        # TODO: auto fill information, medical info, emergency contacts, allergies
-        # TODO: process payment information whether if it is a bank transfer or not 
         
         # User must be logged in to register for an event
         user = self.context['request'].user
@@ -1135,7 +1135,7 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
     event = serializers.CharField(source="event.event_code", read_only=True)
     first_name = serializers.CharField(source="user.first_name", read_only=True)
     last_name = serializers.CharField(source="user.last_name", read_only=True)
-    email = serializers.EmailField(source="user.email", read_only=True)
+    email = serializers.EmailField(source="user.primary_email", read_only=True)
     registration_date = serializers.DateTimeField(read_only=True)
 
     class Meta:
@@ -1176,3 +1176,83 @@ class EventDayAttendanceSerializer(serializers.ModelSerializer): #! used for fut
             "duration",
         ]
         read_only_fields = ["id", "duration", "event_code", "user_details"]
+        
+class ParticipantQuestionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for participant questions and answers that participants submit to event organizers.
+    
+    Example API object:
+    {
+        "participant": "123e4567-e89b-12d3-a456-426614174000",  // EventParticipant UUID
+        "event": "456e7890-e89b-12d3-a456-426614174001",       // Event UUID
+        "question_subject": "Dietary Requirements Change",
+        "question": "I need to change my dietary requirements from vegetarian to vegan. Is this possible?",
+        "questions_type": "CHANGE_REQUEST",
+        "priority": "MEDIUM"
+    }
+    
+    Response includes additional computed fields:
+    {
+        "id": "789e0123-e89b-12d3-a456-426614174002",
+        "participant_details": {
+            "event_pax_id": "CNF25ANCRD-123456",
+            "participant_name": "John Smith",
+            "participant_email": "john@example.com"
+        },
+        "event_name": "Anchored Conference 2025",
+        "status_display": "Pending",
+        "questions_type_display": "Change request",
+        "priority_display": "Medium",
+        "submitted_at": "2025-01-15T14:30:00Z",
+        "updated_at": "2025-01-15T14:30:00Z",
+        "responded_at": null,
+        "answer": null,
+        "admin_notes": null
+    }
+    """
+    participant_details = serializers.SerializerMethodField(read_only=True)
+    event_name = serializers.CharField(source="event.name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    questions_type_display = serializers.CharField(source="get_questions_type_display", read_only=True)
+    priority_display = serializers.CharField(source="get_priority_display", read_only=True)
+    
+    class Meta:
+        model = ParticipantQuestion
+        fields = [
+            "id", "participant", "participant_details", "event", "event_name",
+            "question_subject", "question", "questions_type", "questions_type_display",
+            "priority", "priority_display", "status", "status_display",
+            "submitted_at", "updated_at", "responded_at",
+            "answer", "admin_notes"
+        ]
+        read_only_fields = [
+            "id", "participant_details", "event_name", "status_display",
+            "questions_type_display", "priority_display", "submitted_at", "updated_at"
+        ]
+    
+    def get_participant_details(self, obj):
+        """Get participant details including registration info"""
+        if obj.participant and obj.participant.user:
+            return {
+                "event_pax_id": obj.participant.event_pax_id,
+                "participant_name": f"{obj.participant.user.first_name} {obj.participant.user.last_name}",
+                "participant_email": obj.participant.user.primary_email,
+                "participant_type": obj.participant.participant_type,
+                "participant_status": obj.participant.status
+            }
+        return None
+    
+    def create(self, validated_data):
+        # Set event from participant if not provided
+        if not validated_data.get('event') and validated_data.get('participant'):
+            validated_data['event'] = validated_data['participant'].event
+            
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        # Handle status changes and timestamps
+        if 'status' in validated_data:
+            if validated_data['status'] == ParticipantQuestion.StatusChoices.ANSWERED and not instance.responded_at:
+                instance.responded_at = timezone.now()
+                
+        return super().update(instance, validated_data)

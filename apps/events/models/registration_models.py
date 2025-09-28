@@ -62,3 +62,54 @@ class QuestionAnswer(models.Model):
 
     def __str__(self):
         return f"{self.participant} - {self.question.question_name}"
+    
+class ParticipantQuestion(models.Model):
+    '''
+    Model that allows for participants to submit Q&A for event organizers
+    '''
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    participant = models.ForeignKey("EventParticipant", on_delete=models.CASCADE, related_name="participant_questions")
+    event = models.ForeignKey("Event", on_delete=models.CASCADE, related_name="participant_questions")
+    question_subject = models.CharField(max_length=255)
+    question = models.TextField(max_length=1000)
+    
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    responded_at = models.DateTimeField(blank=True, null=True)
+    
+    class StatusChoices(models.TextChoices):
+        PENDING = "PENDING", _("Pending")
+        ANSWERED = "ANSWERED", _("Answered")
+        CLOSED = "CLOSED", _("Closed")
+    
+    status = models.CharField(
+        max_length=20,
+        choices=StatusChoices.choices,
+        default=StatusChoices.PENDING
+    )
+    admin_notes = models.TextField(blank=True, null=True, help_text="Internal notes for admins")
+    answer = models.TextField(blank=True, null=True, help_text="Answer provided by admin")
+    
+    class QuestionType(models.TextChoices):
+        GENERAL = "GENERAL", _("General")
+        CHANGE_REQUEST = "CHANGE_REQUEST", _("Change request")
+        OTHER = "OTHER", _("Other")
+    
+    questions_type = models.CharField(
+        max_length=20,
+        choices=QuestionType.choices,
+        default=QuestionType.GENERAL
+    )
+    
+    class PriorityChoices(models.TextChoices):
+        LOW = "LOW", _("Low")
+        MEDIUM = "MEDIUM", _("Medium")
+        HIGH = "HIGH", _("High")
+    
+    priority = models.CharField(
+        max_length=20,
+        choices=PriorityChoices.choices,
+        default=PriorityChoices.MEDIUM,
+    )
+    def __str__(self):
+        return f"Question from {self.participant}: {self.question_subject}"

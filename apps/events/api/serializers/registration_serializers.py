@@ -10,26 +10,158 @@ class QuestionChoiceSerializer(serializers.ModelSerializer):
 
 
 class ExtraQuestionSerializer(serializers.ModelSerializer):
-    '''
-    Serializer for extra questions associated with events.
-    '''
+    """
+    Serializer for extra questions associated with events with nested choice creation.
+    
+    Example API object:
+    {
+        "event": "456e7890-e89b-12d3-a456-426614174001",  // Event UUID
+        "question_name": "Dietary Requirements",
+        "question_body": "Do you have any dietary requirements or food allergies?",
+        "question_type": "MULTICHOICE",
+        "required": true,
+        "order": 1,
+        "choice_data": [
+            {
+                "text": "Vegetarian",
+                "value": "vegetarian",
+                "order": 1
+            },
+            {
+                "text": "Vegan",
+                "value": "vegan",
+                "order": 2
+            },
+            {
+                "text": "Gluten Free",
+                "value": "gluten_free",
+                "order": 3
+            },
+            {
+                "text": "No Requirements",
+                "value": "none",
+                "order": 4
+            }
+        ]
+    }
+    
+    Response includes additional computed fields:
+    {
+        "id": "123e4567-e89b-12d3-a456-426614174005",
+        "question_type_display": "Multiple Choice",
+        "choices": [
+            {
+                "id": "234e5678-e89b-12d3-a456-426614174006",
+                "text": "Vegetarian",
+                "value": "vegetarian",
+                "order": 1
+            }
+            // ... other choices
+        ]
+    }
+    """
     choices = QuestionChoiceSerializer(many=True, read_only=True)
     question_type_display = serializers.CharField(source="get_question_type_display", read_only=True)
+    
+    # Write-only field for creating choices
+    choice_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="List of choice dicts to create for this question"
+    )
 
     class Meta:
         model = ExtraQuestion
         fields = [
             "id", "event", "question_name", "question_body",
             "question_type", "question_type_display",
-            "required", "order", "choices"
+            "required", "order", "choices", "choice_data"
         ]
-        read_only_fields = ["id"]
+        read_only_fields = ["id", "question_type_display"]
+        
+    def create(self, validated_data):
+        choice_data = validated_data.pop('choice_data', [])
+        
+        # Create the question
+        question = super().create(validated_data)
+        
+        # Create choices if this is a choice/multichoice question
+        if question.question_type in [ExtraQuestion.QuestionType.CHOICE, ExtraQuestion.QuestionType.MULTICHOICE]:
+            for choice_dict in choice_data:
+                QuestionChoice.objects.create(
+                    question=question,
+                    text=choice_dict.get('text', ''),
+                    value=choice_dict.get('value', choice_dict.get('text', '')),
+                    order=choice_dict.get('order', 0)
+                )
+        
+        return question
+    
+    def update(self, instance, validated_data):
+        choice_data = validated_data.pop('choice_data', None)
+        
+        # Update the question
+        question = super().update(instance, validated_data)
+        
+        # Handle choices updates (replace existing)
+        if choice_data is not None and question.question_type in [ExtraQuestion.QuestionType.CHOICE, ExtraQuestion.QuestionType.MULTICHOICE]:
+            # Delete existing choices
+            question.choices.all().delete()
+            
+            # Create new choices
+            for choice_dict in choice_data:
+                QuestionChoice.objects.create(
+                    question=question,
+                    text=choice_dict.get('text', ''),
+                    value=choice_dict.get('value', choice_dict.get('text', '')),
+                    order=choice_dict.get('order', 0)
+                )
+        
+        return question
 
 
 class QuestionAnswerSerializer(serializers.ModelSerializer):
-    '''
-    Serializer for participant's answers to extra questions.
-    '''
+    """
+    Serializer for participant's answers to extra questions with validation and choice handling.
+    
+    Example API object for TEXT/TEXTAREA question:
+    {
+        "participant": "123e4567-e89b-12d3-a456-426614174000",  // EventParticipant UUID
+        "question": "234e5678-e89b-12d3-a456-426614174005",   // ExtraQuestion UUID
+        "answer_text": "I am allergic to nuts and dairy products"
+    }
+    
+    Example API object for CHOICE question:
+    {
+        "participant": "123e4567-e89b-12d3-a456-426614174000",
+        "question": "345e6789-e89b-12d3-a456-426614174006",
+        "selected_choices": ["456e7890-e89b-12d3-a456-426614174007"]  // Single choice ID
+    }
+    
+    Example API object for MULTICHOICE question:
+    {
+        "participant": "123e4567-e89b-12d3-a456-426614174000",
+        "question": "567e8901-e89b-12d3-a456-426614174008",
+        "selected_choices": [
+            "678e9012-e89b-12d3-a456-426614174009",
+            "789e0123-e89b-12d3-a456-426614174010"
+        ]
+    }
+    
+    Example API object for BOOLEAN question:
+    {
+        "participant": "123e4567-e89b-12d3-a456-426614174000",
+        "question": "890e1234-e89b-12d3-a456-426614174011",
+        "answer_text": "true"  // or "false", "yes", "no"
+    }
+    
+    Response includes additional computed fields:
+    {
+        "id": "901e2345-e89b-12d3-a456-426614174012",
+        "question_text": "Do you have any dietary requirements or food allergies?"
+    }
+    """
     question = serializers.PrimaryKeyRelatedField(
         queryset=ExtraQuestion.objects.all()
     )
@@ -80,3 +212,48 @@ class QuestionAnswerSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(f"The choice '{choice}' does not belong to the question '{question}'.")
                 
         return data
+    
+    def create(self, validated_data):
+        # Ensure unique constraint is maintained (participant, question)
+        participant = validated_data.get('participant')
+        question = validated_data.get('question')
+        
+        # Check if answer already exists and update instead of creating duplicate
+        existing_answer = QuestionAnswer.objects.filter(
+            participant=participant, 
+            question=question
+        ).first()
+        
+        if existing_answer:
+            # Update existing answer
+            for attr, value in validated_data.items():
+                setattr(existing_answer, attr, value)
+            existing_answer.save()
+            
+            # Handle selected_choices for existing answer
+            if 'selected_choices' in validated_data:
+                existing_answer.selected_choices.set(validated_data['selected_choices'])
+                
+            return existing_answer
+        
+        # Create new answer
+        selected_choices = validated_data.pop('selected_choices', [])
+        answer = super().create(validated_data)
+        
+        # Set selected choices
+        if selected_choices:
+            answer.selected_choices.set(selected_choices)
+            
+        return answer
+    
+    def update(self, instance, validated_data):
+        selected_choices = validated_data.pop('selected_choices', None)
+        
+        # Update the answer
+        answer = super().update(instance, validated_data)
+        
+        # Update selected choices if provided
+        if selected_choices is not None:
+            answer.selected_choices.set(selected_choices)
+            
+        return answer

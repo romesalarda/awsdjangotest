@@ -85,8 +85,10 @@ class ProductPayment(models.Model):
         SUCCEEDED = "SUCCEEDED", _("Succeeded")
         FAILED = "FAILED", _("Failed")
 
+    payment_reference_id = models.CharField(_("Payment ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking payment references
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="product_payments")
     cart = models.ForeignKey(EventCart, on_delete=models.SET_NULL, null=True, blank=True, related_name="product_payments")
+    
     package = models.ForeignKey(
         ProductPaymentPackage,
         on_delete=models.SET_NULL,
@@ -111,6 +113,10 @@ class ProductPayment(models.Model):
         choices=PaymentStatus.choices,
         default=PaymentStatus.PENDING,
     )
+    
+    approved = models.BooleanField(default=False, help_text=_("Flags if the payment has been approved"))
+    paid_at = models.DateTimeField(blank=True, null=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -121,6 +127,18 @@ class ProductPayment(models.Model):
     def mark_as_paid(self):
         self.status = self.PaymentStatus.SUCCEEDED
         self.save()
+        
+    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
+        if self.payment_reference_id is None: # PAY<cart-uuid[:10]>-<uuid[:10]>
+            
+            if self.cart is None or self.cart.uuid is None:
+                raise ValueError("Cart must be set and saved before saving a payment.")
+            
+            if not self.pk: # only generate new uuid if this is a new object
+                super().save(force_insert, force_update, using, update_fields) # save to get a primary key
+            
+            self.payment_reference_id = f"PAY{self.cart.uuid[:10]}-{str(self.pk).zfill(10)}"
+        return super().save(force_insert, force_update, using, update_fields)
 
     def __str__(self):
         return f"{self.user} - {self.cart} - {self.get_status_display()}"

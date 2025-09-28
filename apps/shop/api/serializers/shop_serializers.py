@@ -5,10 +5,44 @@ from apps.shop.api.serializers.shop_metadata_serializers import (
 from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
 
 class EventProductSerializer(serializers.ModelSerializer):
-    '''
-    Serializer for EventProduct model
-    '''
-    seller_email = serializers.EmailField(source="seller.email", read_only=True)
+    """
+    Serializer for EventProduct model with comprehensive product management.
+    
+    Example API object:
+    {
+        "title": "Conference T-Shirt",
+        "description": "Official conference t-shirt with logo",
+        "extra_info": "Made from 100% organic cotton",
+        "event": "456e7890-e89b-12d3-a456-426614174001",  // Event UUID
+        "price": 25.00,
+        "discount": 2.50,
+        "seller": 1,  // CommunityUser ID (will use seller.primary_email)
+        "category": "clothing",
+        "stock": 100,
+        "featured": true,
+        "colors": ["red", "blue", "white"],
+        "maximum_order_quantity": 5,
+        "image_uploads": [/* image files */],
+        "size_list": "[\"S\", \"M\", \"L\", \"XL\"]",  // JSON string
+        "category_ids": "[1, 2]",  // JSON string of category IDs
+        "material_ids": "[1]"      // JSON string of material IDs
+    }
+    
+    Response includes additional computed fields:
+    {
+        "uuid": "789e0123-e89b-12d3-a456-426614174002",
+        "seller_email": "seller@example.com",  // seller.primary_email
+        "event_name": "Anchored Conference 2025",
+        "imageUrl": "https://example.com/media/product.jpg",
+        "sizes": ["S", "M", "L", "XL"],
+        "inStock": true,
+        "categories": [...],  // ProductCategorySerializer data
+        "materials": [...],   // ProductMaterialSerializer data
+        "images": [...],      // ProductImageSerializer data
+        "product_sizes": [...]  // ProductSizeSerializer data
+    }
+    """
+    seller_email = serializers.EmailField(source="seller.primary_email", read_only=True)
     event_name = serializers.CharField(source="event.name", read_only=True)
     
     # Related model serializers
@@ -320,36 +354,195 @@ class EventProductSerializer(serializers.ModelSerializer):
         return product
 
 class EventProductOrderSerializer(serializers.ModelSerializer):
-    '''
-    Serializer for EventProductOrder model
-    '''
+    """
+    Serializer for EventProductOrder model with comprehensive order management.
+    
+    Example API object:
+    {
+        "product": "789e0123-e89b-12d3-a456-426614174002",  // EventProduct UUID
+        "cart": "345e6789-e89b-12d3-a456-426614174004",   // EventCart UUID
+        "quantity": 2,
+        "price_at_purchase": 25.00,
+        "discount_applied": 2.50,
+        "size": 1,  // ProductSize ID
+        "uses_size": true,
+        "status": "pending",
+        "changeable": true,
+        "change_requested": false,
+        "change_reason": "",
+        "admin_notes": "Customer requested expedited shipping"
+    }
+    
+    Response includes additional computed fields:
+    {
+        "id": 1,
+        "order_reference_id": "ORDCNF25ANCRD-3456789012-7890123456",
+        "product_title": "Conference T-Shirt",
+        "product_details": {...}, // Full EventProductSerializer data
+        "cart_uuid": "345e6789-e89b-12d3-a456-426614174004",
+        "cart_user_email": "user@example.com",  // cart.user.primary_email
+        "size": {
+            "id": 1,
+            "size": "MD",
+            "price_modifier": 0.0
+        },
+        "status_display": "Pending",
+        "added": "2025-01-15T10:30:00Z",
+        "time_added": "2025-01-15T10:30:00Z"
+    }
+    """
     product_title = serializers.CharField(source="product.title", read_only=True)
+    product_details = EventProductSerializer(source="product", read_only=True)
     cart_uuid = serializers.UUIDField(source="cart.uuid", read_only=True)
-    cart_user_email = serializers.EmailField(source="cart.user.email", read_only=True)
+    cart_user_email = serializers.EmailField(source="cart.user.primary_email", read_only=True)
     size = ProductSizeSerializer(read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:
         model = EventProductOrder
         fields = [
-            "id", "product", "product_title", "cart", "cart_uuid", "cart_user_email",
-            "quantity", "added", "price_at_purchase", "discount_applied", "status", "size", "time_added"
+            "id", "order_reference_id", "product", "product_title", "product_details", 
+            "cart", "cart_uuid", "cart_user_email", "quantity", "added", "time_added",
+            "price_at_purchase", "discount_applied", "status", "status_display", 
+            "size", "uses_size", "changeable", "change_requested", "change_reason", "admin_notes"
         ]
+        read_only_fields = ["id", "order_reference_id", "product_title", "product_details", 
+                           "cart_uuid", "cart_user_email", "added", "time_added", "status_display"]
+        
+    def create(self, validated_data):
+        # Set price_at_purchase from product if not provided
+        if not validated_data.get('price_at_purchase') and validated_data.get('product'):
+            validated_data['price_at_purchase'] = validated_data['product'].price
+            
+        # Set uses_size flag if size is provided
+        if validated_data.get('size'):
+            validated_data['uses_size'] = True
+            
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        # Handle status changes
+        old_status = instance.status
+        new_status = validated_data.get('status')
+        
+        if new_status and old_status != new_status:
+            # Handle specific status transitions
+            if new_status == EventProductOrder.Status.PURCHASED:
+                validated_data['changeable'] = False
+                
+        # Update uses_size flag if size is changed
+        if 'size' in validated_data:
+            validated_data['uses_size'] = bool(validated_data['size'])
+            
+        return super().update(instance, validated_data)
 
 class EventCartSerializer(serializers.ModelSerializer):
-    '''
-    Serializer for EventCart model
-    '''
+    """
+    Serializer for EventCart model with nested product order creation.
+    
+    Example API object:
+    {
+        "event": "456e7890-e89b-12d3-a456-426614174001",  // Event UUID
+        "total": 125.50,
+        "shipping_cost": 5.00,
+        "approved": false,
+        "submitted": false,
+        "active": true,
+        "notes": "Please deliver to reception",
+        "shipping_address": "123 Main St, London, SW1A 1AA, UK",
+        "product_orders": [
+            {
+                "product_id": "789e0123-e89b-12d3-a456-426614174002",
+                "quantity": 2,
+                "size_id": 1,
+                "price_at_purchase": 25.00,
+                "discount_applied": 2.50
+            },
+            {
+                "product_id": "012e3456-e89b-12d3-a456-426614174003",
+                "quantity": 1,
+                "price_at_purchase": 75.00
+            }
+        ]
+    }
+    
+    Response includes additional computed fields:
+    {
+        "uuid": "345e6789-e89b-12d3-a456-426614174004",
+        "user": "USR001",
+        "user_email": "user@example.com",  // user.primary_email
+        "event_name": "Anchored Conference 2025",
+        "order_reference_id": "ORDCNF25ANCRD-3456789012",
+        "created": "2025-01-15T10:30:00Z",
+        "updated": "2025-01-15T10:35:00Z",
+        "orders": [...] // EventProductOrderSerializer data
+    }
+    """
     user = serializers.CharField(source="user.member_id", read_only=True)
     user_email = serializers.EmailField(source="user.primary_email", read_only=True)
     event_name = serializers.CharField(source="event.name", read_only=True)
     orders = EventProductOrderSerializer(many=True, read_only=True)
+    
+    # Write-only fields for creating orders
+    product_orders = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="List of product order dicts to create with this cart"
+    )
 
     class Meta:
         model = EventCart
         fields = [
-            "uuid", "user", "user_email", "event", "event_name", "total", "shipping_cost",
-            "created", "updated", "orders"
+            "uuid", "user", "user_email", "event", "event_name", "order_reference_id",
+            "total", "shipping_cost", "created", "updated", "approved", "submitted", 
+            "active", "notes", "shipping_address", "orders", "product_orders"
         ]
         
-        read_only_fields = ["total", "created", "updated"]
+        read_only_fields = ["uuid", "user", "user_email", "event_name", "order_reference_id", "created", "updated"]
+        
+    def create(self, validated_data):
+        from apps.shop.models.shop_models import EventProductOrder
+        product_orders_data = validated_data.pop('product_orders', [])
+        
+        # Set user from request context
+        if 'request' in self.context:
+            validated_data['user'] = self.context['request'].user
+            
+        # Create the cart
+        cart = super().create(validated_data)
+        
+        # Create associated product orders
+        for order_data in product_orders_data:
+            EventProductOrder.objects.create(
+                cart=cart,
+                product_id=order_data.get('product_id'),
+                quantity=order_data.get('quantity', 1),
+                size_id=order_data.get('size_id'),
+                price_at_purchase=order_data.get('price_at_purchase'),
+                discount_applied=order_data.get('discount_applied', 0)
+            )
+            
+        return cart
+    
+    def update(self, instance, validated_data):
+        from apps.shop.models.shop_models import EventProductOrder
+        product_orders_data = validated_data.pop('product_orders', None)
+        
+        # Update the cart
+        cart = super().update(instance, validated_data)
+        
+        # Handle product orders updates (add new orders, don't remove existing)
+        if product_orders_data is not None:
+            for order_data in product_orders_data:
+                EventProductOrder.objects.create(
+                    cart=cart,
+                    product_id=order_data.get('product_id'),
+                    quantity=order_data.get('quantity', 1),
+                    size_id=order_data.get('size_id'),
+                    price_at_purchase=order_data.get('price_at_purchase'),
+                    discount_applied=order_data.get('discount_applied', 0)
+                )
+                
+        return cart
         

@@ -21,13 +21,18 @@ class EventResource(models.Model):
         PDF = "PDF", _("pdf")
         FILE = "FILE", _("File")
         PHOTO = "PHOTO", _("Photo")
+        SOCIAL_MEDIA = "SOCIAL_MEDIA", _("Social Media")
 
     id = models.UUIDField(verbose_name=_("resource id"), default=uuid.uuid4, editable=False, primary_key=True)
     resource_name = models.CharField(verbose_name=_("public resource name"))
+    # types
     resource_link = models.CharField(verbose_name=_("public resource link"), blank=True, null=True)
     resource_file = models.FileField(verbose_name=("file resource"), upload_to="public-event-file-resources", blank=True, null=True)
     image = models.FileField(verbose_name=("image resource"), upload_to="public-event-image-resources", blank=True, null=True)
     
+    description = models.TextField(verbose_name=_("resource description"), max_length=500, blank=True, null=True)
+    word_descriptor = models.TextField(verbose_name=_("word description"), max_length=100, blank=True, null=True, help_text=_("A word I.e. schedule or map"))
+
     created_at = models.DateTimeField(auto_now_add=True)
     public_resource = models.BooleanField(default=False)
     
@@ -38,6 +43,10 @@ class EventResource(models.Model):
         ChapterLocation, on_delete=models.SET_NULL, 
         verbose_name=_("chapter that owns resource"), null=True, blank=True
         )
+
+    # if used for events, can be gatekept until data is available
+    release_date = models.DateTimeField(verbose_name=_("resource release date"), blank=True, null=True)
+    expiry_date = models.DateTimeField(verbose_name=_("resource expiry date"), blank=True, null=True)
     
 
 class Event(models.Model):
@@ -213,12 +222,11 @@ class EventServiceTeamMember(models.Model):
         verbose_name_plural = _("Event Service Team Members")
 
     def __str__(self):
-        # role_names = ", ".join([str(role) for role in self.roles.all()])
         return f"ST: {self.user}"
     
 class EventRole(models.Model):
     '''
-    Event roles that can be assigned to service team members
+    Event roles that can be assigned to service team members - Global use for reference
     '''
     id = models.UUIDField(verbose_name=_("event role id"), default=uuid.uuid4, editable=False, primary_key=True)
 
@@ -293,7 +301,9 @@ class EventParticipant(models.Model):
     
     # essential info
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    event_pax_id = models.CharField(verbose_name=_("Participant ID"), blank=True, null=True) # LUMOS
+    # unique participant ID for the event - basically their reference number
+    # event code + unique uuid of this participant object
+    event_pax_id = models.CharField(verbose_name=_("Participant ID"), blank=True, null=True)
     
     event = models.ForeignKey("Event", on_delete=models.CASCADE, related_name="participants")
     
@@ -318,19 +328,15 @@ class EventParticipant(models.Model):
     terms_and_conditions_consent = models.BooleanField(default=False)
     news_letter_consent = models.BooleanField(default=False)
 
-    # Additional information
-    # dietary_restrictions = models.TextField(_("dietary restrictions"), blank=True, null=True)
-    # special_needs = models.TextField(_("special needs"), blank=True, null=True)
-    # emergency_contact = models.CharField(_("emergency contact"), max_length=200, blank=True, null=True)
-    # emergency_phone = models.CharField(_("emergency phone"), max_length=20, blank=True, null=True)
-    
     # Payment information (if applicable)
     paid_amount = models.DecimalField(_("paid amount"), max_digits=10, decimal_places=2, default=0.00)
     payment_date = models.DateTimeField(_("most recent payment date"), blank=True, null=True)
     
     notes = models.TextField(_("notes"), blank=True, null=True)
     verified = models.BooleanField(verbose_name=_("participant approved"), default=False) # set to true when payments paid and they are approved to attend
+    
     accessibility_requirements = models.TextField(_("accessibility requirements"), blank=True, null=True)
+    special_requests = models.TextField(_("special requests"), blank=True, null=True)
     
     
     class Meta:
@@ -339,7 +345,6 @@ class EventParticipant(models.Model):
         ordering = ['registration_date']
         
         constraints = [
-            # Official members: can't register twice for the same event
             models.UniqueConstraint(
                 fields=["event", "user"],
                 name="unique_event_user_participation"
@@ -350,7 +355,12 @@ class EventParticipant(models.Model):
         return f"{self.user} - {self.event} ({self.get_status_display()})"
 
     def save(self, *args, **kwargs):
+        # TODO: if this is a premature save (i.e. no id yet), then save first and then update the event_pax_id
+        if not self.id:
+            super().save(*args, **kwargs)  # Save first to get an ID
+            
         if not self.event_pax_id:
+            # Save first to get an ID
             self.event_pax_id = f"{self.event.event_code}-{self.id}".upper()
             while EventParticipant.objects.filter(event_pax_id=self.event_pax_id).exists():
                 self.id = uuid.uuid4()
