@@ -122,13 +122,7 @@ class EventViewSet(viewsets.ModelViewSet):
         event_people = event_data.pop("people", {})
         event_data.pop("payment_packages")
         event_data.pop("payment_methods")
-        
-        print(event_people)
-        
-        # organiser_info = {
-        #     "event_heads": event_people.get("event_heads", []),
-        #     "coordinators": event_people.get("cfc_coordinators", []),
-        # }
+        payment_deadline = event_dates.get("payment_deadline", None)
 
         basic_info.update({
             "dates": event_dates,
@@ -181,8 +175,10 @@ class EventViewSet(viewsets.ModelViewSet):
             payment_details["method_info"] = EventPaymentMethod.objects.filter(id=method_id).values().first()
         else:
             payment_details["method_info"] = None
+            
+        payment_details["payment_deadline"] = payment_deadline
         
-        extra_questions = event_data.pop("extra_questions", [])
+        # extra_questions = event_data.pop("extra_questions", [])
 
         question_answers = QuestionAnswer.objects.filter(participant=event_participant).prefetch_related("selected_choices")
         question_answer_serializer = QuestionAnswerSerializer(question_answers, many=True)
@@ -195,9 +191,11 @@ class EventViewSet(viewsets.ModelViewSet):
             "dates": register_data.pop("dates", {}),
             "consents": register_data.pop("consents", {}),
             # flatten
-            "medical_conditions": [condition.get('name', '') for condition in medical_info],
+            # "medical_conditions": [condition.get('name', '') for condition in medical_info],
             "emergency_contacts": [self.filter_emergency_contact(contact) for contact in register_data.pop("emergency_contacts", [])],
-            "allergies": [condition.get('name', '') for condition in allergies],
+            # "allergies": [condition.get('name', '') for condition in allergies],
+            "medical_conditions": medical_info,
+            "allergies": allergies,
             # only pick the most recent to show
             "payment_details": payment_details,
             "questions": answers_data,

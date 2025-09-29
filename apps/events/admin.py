@@ -145,7 +145,7 @@ class EventAdmin(admin.ModelAdmin):
     
     fieldsets = (
         (_('Basic Information'), {'fields': (
-            'name', 'name_code', 'event_code', 'event_type', 'start_date', 'end_date', 'duration_days', 'created_by', 'status', 'approved'
+            'name', 'name_code', 'event_code', 'event_type', 'start_date', 'end_date', 'duration_days', 'created_by', 'status', 'approved', "payment_deadline"
         )}),
         (_('Location Information'), {'fields': (
             'area_type', 'areas_involved', 'venues'

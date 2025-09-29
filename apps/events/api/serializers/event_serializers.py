@@ -394,6 +394,7 @@ class EventSerializer(serializers.ModelSerializer):
             "registration_deadline",
             "registration_open",
             "registration_open_date",
+            "payment_deadline", 
             # Participants / service team
             "participants_count",
             # Write-only supervisor fields
@@ -446,6 +447,7 @@ class EventSerializer(serializers.ModelSerializer):
                 # "registration_open": rep["registration_open"],
                 "registration_open_date": rep["registration_open_date"],
                 "registration_deadline": rep["registration_deadline"],
+                "payment_deadline": rep["payment_deadline"],
             },
             "venue": {
                 "venues": rep["venues"],
@@ -571,6 +573,144 @@ class EventSerializer(serializers.ModelSerializer):
         return event
     
     def update(self, instance, validated_data):
+        """
+        Update an existing Event instance with comprehensive data handling.
+        
+        This method handles complex nested updates including venues, resources, areas,
+        supervisors, payment packages, and payment methods. It supports both frontend
+        nested structures and flat data formats.
+        
+        Example API request payload:
+        {
+            "basic_info": {
+                "name": "Updated Youth Conference 2025",
+                "event_type": "conference",
+                "description": "An amazing updated youth conference for spiritual growth",
+                "sentence_description": "Join us for an incredible spiritual journey",
+                "theme": "Walking in Faith",
+                "anchor_verse": "Hebrews 11:1",
+                "is_public": true,
+                "status": "published",
+                "auto_approve_participants": false,
+                "important_information": "Bring your Bible and notebook",
+                "what_to_bring": "Bible, notebook, water bottle"
+            },
+            "dates": {
+                "start_date": "2025-07-15T09:00:00Z",
+                "end_date": "2025-07-17T18:00:00Z",
+                "registration_open_date": "2025-06-01T00:00:00Z",
+                "registration_deadline": "2025-07-10T23:59:59Z",
+                "payment_deadline": "2025-07-12T23:59:59Z"
+            },
+            "venue": {
+                "area_names": ["london", "birmingham"],
+                "venue_data": [
+                    {
+                        "id": "existing-venue-uuid",  // Include ID to update existing
+                        "venue_name": "Updated Main Hall",
+                        "address": "123 Updated Street, London",
+                        "capacity": 500,
+                        "primary_venue": true
+                    },
+                    {
+                        // No ID = new venue
+                        "venue_name": "New Breakout Room",
+                        "address": "456 New Avenue, London", 
+                        "capacity": 50,
+                        "primary_venue": false
+                    }
+                ]
+            },
+            "people": {
+                "supervisor_ids": ["uuid1", "uuid2"],  // Youth head IDs
+                "cfc_coordinator_ids": ["uuid3", "uuid4"],  // CFC coordinator IDs
+                "maximum_attendees": 400,
+                "expected_attendees": 350,
+                "age_range": "16-25"
+            },
+            "resource_data": [
+                {
+                    "id": "existing-resource-uuid",  // Include ID to update existing
+                    "resource_name": "Updated Conference Handbook",
+                    "resource_link": "https://example.com/updated-handbook.pdf",
+                    "public_resource": true
+                },
+                {
+                    // No ID = new resource
+                    "resource_name": "Prayer Guide",
+                    "resource_link": "https://example.com/prayer-guide.pdf",
+                    "public_resource": false,
+                    "image_file": "<file_object>",  // Optional file upload
+                    "resource_file": "<file_object>"  // Alternative file upload
+                }
+            ],
+            "payment_packages": [
+                {
+                    "package_name": "Early Bird Special",
+                    "description": "Special pricing for early registrations",
+                    "price": "25.00",  // String format, converted to pence
+                    "currency": "GBP",
+                    "capacity": 100,
+                    "deadline": "2025-06-30T23:59:59",  // ISO format or HTML datetime-local
+                    "is_active": true
+                },
+                {
+                    "package_name": "Standard Registration",
+                    "description": "Regular conference registration",
+                    "price": "35.00",
+                    "currency": "GBP",
+                    "capacity": 300,
+                    "is_active": true
+                }
+            ],
+            "payment_methods": [
+                {
+                    "id": "existing-method-uuid",  // Include ID to update existing
+                    "method_type": "bank-transfer",
+                    "instructions": "Transfer to the account below",
+                    "account_name": "Youth Conference Fund",
+                    "account_number": "12345678",
+                    "sort_code": "12-34-56",
+                    "reference_instruction": "Use your name as reference",
+                    "reference_example": "JohnSmith-YC2025",
+                    "important_information": "Allow 3-5 working days",
+                    "percentage_fee_add_on": 0,
+                    "is_active": true
+                },
+                {
+                    // No ID = new method
+                    "method_type": "stripe",
+                    "instructions": "Pay securely online with card",
+                    "percentage_fee_add_on": 2.5,
+                    "is_active": true
+                }
+            ],
+            "landing_image_file": "<file_object>",  // Optional new image upload
+            "notes": "Updated event notes for organizers"
+        }
+        
+        Alternative flat format (legacy support):
+        {
+            "name": "Updated Conference Name",
+            "start_date": "2025-07-15T09:00:00Z", 
+            "area_names": ["london", "birmingham"],
+            "venue_data": [...],
+            "resource_data": [...],
+            "payment_packages_data": [...],  // Alternative field name
+            "payment_methods_data": [...]    // Alternative field name
+        }
+        
+        Key behaviors:
+        - Venues: CRUD operations - updates existing (with ID), creates new (no ID), deletes omitted
+        - Resources: CRUD operations - same pattern as venues
+        - Payment Packages: Full replacement - deletes all existing, creates new ones
+        - Payment Methods: CRUD operations - same pattern as venues
+        - Areas: Full replacement based on area_names array
+        - Supervisors: Full replacement based on provided IDs
+        - File uploads: Handles landing_image_file, resource image_file, and resource_file
+        - Datetime handling: Supports ISO format and HTML datetime-local format
+        - Price conversion: Automatically converts string prices to integer pence
+        """
         # similar to create, but update existing instance
         start_date = validated_data.get('start_date', timezone.now())
         validated_data['start_date'] = start_date
@@ -1146,6 +1286,7 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
             "event_pax_id",
             "event",  # UUID of event
             "user",   # UUID of user
+            "member_id",
             "first_name",
             "last_name",
             "email",

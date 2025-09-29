@@ -164,6 +164,7 @@ class Event(models.Model):
     registration_open = models.BooleanField(verbose_name=_("is registration open"), default=False)
     registration_open_date = models.DateTimeField(verbose_name=_("registration open date"), blank=True, null=True, auto_now=True)
     registration_deadline = models.DateTimeField(verbose_name=_("registration deadline"), blank=True, null=True)
+    payment_deadline = models.DateTimeField(verbose_name=_("payment deadline"), blank=True, null=True)
     
     class EventStatus(models.TextChoices):
         PLANNING = "PLANNING", _("Planning")
