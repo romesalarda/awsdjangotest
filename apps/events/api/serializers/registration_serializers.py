@@ -171,14 +171,21 @@ class QuestionAnswerSerializer(serializers.ModelSerializer):
     selected_choices = serializers.PrimaryKeyRelatedField(
         queryset=QuestionChoice.objects.all(),
         many=True,
-        required=False
+        required=False,
+        write_only=True
+    )
+    # selected choices display field as list
+    selected_choices_display = serializers.ListSerializer(
+        child=serializers.CharField(),
+        source="selected_choices",
+        read_only=True
     )
 
     class Meta:
         model = QuestionAnswer
         fields = [
             "id", "participant", "question",
-            "answer_text", "selected_choices", "question_text"
+            "answer_text", "selected_choices", "question_text", "selected_choices_display"
         ]
         read_only_fields = ["id", "participant", "question_text"]
         

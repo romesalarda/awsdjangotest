@@ -92,133 +92,13 @@ class EventViewSet(viewsets.ModelViewSet):
         Handle event booking logic here.
         '''
         # Manual booking details
-        data = {
-            "event": {
-                "name": "Sample Event",
-                "start_date": "2023-10-01",
-                "end_date": "2023-10-05",
-                "start_time": "09:00",
-                "end_time": "17:00",
-                "locations": [{
-                    "name": "Main Hall",
-                    "address": "123 Event St, City, Country",
-                    "main_venue": True
-                }],
-                "areas_involved": ["Area 1", "Area 2"],
-                "what_to_bring": ["ID", "Notebook", "Pen"],
-                "important_info": ["Be on time", "Follow the schedule"] 
-            },
-            "registration": {
-                "ticket_type": "General Admission",
-                # payment info
-                "payment_status": "Paid",
-                "payment_method": "Credit Card",
-                "transaction_id": "TXN123456789",
-                "payment_date": "2023-09-15",
-                
-                # registration info
-                "confirmation_number": "ABC123XYZ",
-                "registration_date": "2023-09-15",
-                "registration_confirmed_date": "2023-09-16",
-                "registration_status": "Confirmed",
-                
-                "additional_info": {
-                    "questions": [
-                        {
-                            "question": "Do you have any dietary restrictions?",
-                            "answer": "Vegetarian"
-                        },
-                        {
-                            "question": "Will you need accommodation?",
-                            "answer": "Yes, for 3 nights"
-                        }
-                    ],
-                    "special_requests": "Need wheelchair access",
-                    "accessibility_requirements": "None",
-                    "medical_info": "None",
-                    "emergency_contact": [{
-                        "name": "Jane Doe",
-                        "relationship": "Sister",
-                        "phone": "+0987654321",
-                        "email": "jane.doe@example.com"
-                    }]
-                }
-                 
-                
-            }, 
-            "user": {
-                "name": "John Doe",
-                "primary_email": "john.doe@example.com",
-                "phone": "+1234567890",
-                "date_of_birth": "1990-01-01",
-                "address": "456 User St, City, Country",
-                "registration_date": "2023-09-10",
-            },
-            "merch": {
-                "orders": [{
-                    "order_id": "ORDER12345",
-                    "items": [
-                        {
-                            "id": 1,
-                            "order_reference_id": "ORDCNF25ANCRD-3456789012-7890123456",
-                            "product_title": "Conference T-Shirt",
-                            "product_details": "<SERIALIZER>",
-                            "cart_uuid": "345e6789-e89b-12d3-a456-426614174004",
-                            "cart_user_email": "user@example.com", 
-                            "size": {
-                                "id": 1,
-                                "size": "MD",
-                                "price_modifier": 0.0
-                            },
-                            "status_display": "Pending",
-                            "added": "2025-01-15T10:30:00Z",
-                            "time_added": "2025-01-15T10:30:00Z"
-                        }
-                    ],
-                    "total_amount": 30.00,
-                    "status": "Confirmed",
-                    "order_date": "2023-09-15"
-                }]
-            },
-            "resources": {
-                "memos": [{
-                    "title": "Event Schedule",
-                    "url": "https://example.com/docs/event-schedule.pdf",
-                    "description": "Detailed event schedule"
-                }],
-                "files": [{
-                    "title": "Venue Map",
-                    "url": "https://example.com/docs/venue-map.pdf",
-                    "description": "Map of the event venue"
-                }],
-                "links": [{
-                    "title": "Event Website",
-                    "url": "https://example.com/events/sample-event",
-                    "description": "Official event page"
-                }],
-                "social_media": [{ # Not implemented yet
-                    "title": "Facebook",
-                    "url": "https://facebook.com/sample-event"
-                }]
-            }, 
-            "questions": [{
-                "id": "789e0123-e89b-12d3-a456-426614174002",
-                "participant_details": {
-                    "event_pax_id": "CNF25ANCRD-123456",
-                    "participant_name": "John Smith",
-                    "participant_email": "john@example.com"
-                },
-                "event_name": "Anchored Conference 2025",
-                "status_display": "Pending",
-                "questions_type_display": "Change request",
-                "priority_display": "Medium",
-                "submitted_at": "2025-01-15T14:30:00Z",
-                "updated_at": "2025-01-15T14:30:00Z",
-                "responded_at": "2025-01-16T10:00:00Z",
-                "answer": "2025-01-16T10:00:00Z",
-                "admin_notes": "2025-01-16T10:00:00Z"
-            }]
-                
+        data = {           
+            "event": {},
+            "registration": {},
+            "user": {},
+            "merch": [],
+            "resources": [],
+            "questions": []
         }
         
         user = request.user
@@ -243,10 +123,12 @@ class EventViewSet(viewsets.ModelViewSet):
         event_data.pop("payment_packages")
         event_data.pop("payment_methods")
         
-        organiser_info = {
-            "event_heads": event_people.get("event_heads", []),
-            "coordinators": event_people.get("cfc_coordinators", []),
-        }
+        print(event_people)
+        
+        # organiser_info = {
+        #     "event_heads": event_people.get("event_heads", []),
+        #     "coordinators": event_people.get("cfc_coordinators", []),
+        # }
 
         basic_info.update({
             "dates": event_dates,
@@ -259,7 +141,7 @@ class EventViewSet(viewsets.ModelViewSet):
                 for location in event_venue.pop("venues", [])
                 ],
             "areas_involved": [area['area_name'] for area in event_venue.get("areas_involved", [])],
-            "organiser_info": organiser_info,
+            "organiser_info": event_people.get("organisers", []),
         })
         data['event'] = basic_info
         
@@ -289,11 +171,23 @@ class EventViewSet(viewsets.ModelViewSet):
         payment_details.pop("status", None)
         payment_details.pop("package", None)
         payment_details.pop("stripe_payment_intent", None)
-        payment_details.pop("method", None)
+        method_id = payment_details.pop("method", None)
         payment_details.pop("amount", None)
         payment_details.pop("participant_user_email", None)
         
+        print(payment_details)
+        
+        if method_id and not payment_details.get("verified", False):
+            payment_details["method_info"] = EventPaymentMethod.objects.filter(id=method_id).values().first()
+        else:
+            payment_details["method_info"] = None
+        
         extra_questions = event_data.pop("extra_questions", [])
+
+        question_answers = QuestionAnswer.objects.filter(participant=event_participant).prefetch_related("selected_choices")
+        question_answer_serializer = QuestionAnswerSerializer(question_answers, many=True)
+        answers_data = question_answer_serializer.data
+
         registration_data = {
             "confirmation_number": register_data.pop("event_user_id"),
             "status": register_data.pop("status", {}).get("code", "500 ERROR"),
@@ -306,9 +200,11 @@ class EventViewSet(viewsets.ModelViewSet):
             "allergies": [condition.get('name', '') for condition in allergies],
             # only pick the most recent to show
             "payment_details": payment_details,
-            "questions": extra_questions,
+            "questions": answers_data,
             "verified": payment_details.get("verified", False)
         }
+        
+        
         data["registration"] = registration_data
         
         #! user info
@@ -755,6 +651,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], url_name="mark-attended", url_path="mark-attended")
     def mark_attended(self, request, event_pax_id=None):
+        # TODO: only allow event organizers/admins to mark attendance
         participant = self.get_object()
         participant.status = EventParticipant.ParticipantStatus.ATTENDED
         participant.attended_date = timezone.now()
