@@ -49,8 +49,8 @@ urlpatterns = [
     path('api/roles/', include(role_router.urls)),
     path('api/users/', include(user_router.urls)),
     path('api/users/current/', CurrentUserView.as_view(), name='current-user'),
-    path('api/users/registration/', include(registration_router.urls)),
     path('api/events/', include(event_router.urls)),
+    path('api/events/registration/', include(registration_router.urls)),
     
     path('api/shop/', include(shop.urls)),
     path('api/shop/metadata/', include(metadata.urls)),

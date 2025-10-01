@@ -760,6 +760,7 @@ class EventSerializer(serializers.ModelSerializer):
                 processed_ids = set()
                 
                 for venue_item in venue_data:
+                    print(venue_item)
                     venue_id = venue_item.get('id')
                     
                     if venue_id and venue_id in existing_venues:

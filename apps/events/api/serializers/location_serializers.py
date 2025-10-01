@@ -110,4 +110,5 @@ class EventVenueSerializer(serializers.ModelSerializer):
             "general_area",
             "general_area_name",
             "primary_venue",
+            "contact_phone_number",
         ]

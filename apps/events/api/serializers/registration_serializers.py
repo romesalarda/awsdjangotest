@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.events.models import ExtraQuestion, QuestionChoice, QuestionAnswer
+from apps.events.models import ExtraQuestion, QuestionChoice, QuestionAnswer, ParticipantQuestion
 from apps.events.models.event_models import EventParticipant
 
 class QuestionChoiceSerializer(serializers.ModelSerializer):
@@ -264,3 +264,62 @@ class QuestionAnswerSerializer(serializers.ModelSerializer):
             answer.selected_choices.set(selected_choices)
             
         return answer
+
+
+class ParticipantQuestionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for participant questions (Q&A system for event organizers).
+    
+    Example API object:
+    {
+        "participant": "123e4567-e89b-12d3-a456-426614174000",  // EventParticipant UUID
+        "event": "456e7890-e89b-12d3-a456-426614174001",       // Event UUID
+        "question_subject": "Change Request",
+        "question": "Can I change my dietary preference from vegetarian to vegan?",
+        "questions_type": "CHANGE_REQUEST",
+        "priority": "MEDIUM"
+    }
+    
+    Response includes additional computed fields:
+    {
+        "id": "789e0123-e89b-12d3-a456-426614174002",
+        "submitted_at": "2024-01-15T10:30:00Z",
+        "status": "PENDING",
+        "status_display": "Pending",
+        "questions_type_display": "Change request",
+        "priority_display": "Medium",
+        "participant_name": "John Doe",
+        "answered_by_name": null
+    }
+    """
+    participant_name = serializers.CharField(source="participant.user.get_full_name", read_only=True)
+    answered_by_name = serializers.CharField(source="answered_by.get_full_name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    questions_type_display = serializers.CharField(source="get_questions_type_display", read_only=True)
+    priority_display = serializers.CharField(source="get_priority_display", read_only=True)
+
+    class Meta:
+        model = ParticipantQuestion
+        fields = [
+            "id", "participant", "event", "question_subject", "question",
+            "submitted_at", "updated_at", "responded_at", "status", "status_display",
+            "admin_notes", "answer", "answered_by", "answered_by_name",
+            "questions_type", "questions_type_display", "priority", "priority_display",
+            "participant_name"
+        ]
+        read_only_fields = [
+            "id", "submitted_at", "updated_at", "participant_name", 
+            "answered_by_name", "status_display", "questions_type_display", "priority_display"
+        ]
+        
+    def validate(self, data):
+        """
+        Ensure required fields are present and valid.
+        """
+        if not data.get('question_subject', '').strip():
+            raise serializers.ValidationError("Question subject is required.")
+        
+        if not data.get('question', '').strip():
+            raise serializers.ValidationError("Question body is required.")
+            
+        return data

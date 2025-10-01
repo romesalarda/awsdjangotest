@@ -184,15 +184,15 @@ class Event(models.Model):
                 self.name_code = self.name.upper()[:MAX_LENGTH_EVENT_NAME_CODE]
             self.event_code = f"{self.get_event_type_display()}{str(self.start_date.year)}{self.name_code}"
             
-        if not self.duration_days and self.start_date and self.end_date:
-            self.duration_days = (self.end_date - self.start_date).days + 1
+        # if not self.duration_days and self.start_date and self.end_date:
+        #     self.duration_days = (self.end_date - self.start_date).days + 1
         
         return super().save(*args, **kwargs)
     
     def __str__(self):
         event_type = self.get_event_type_display()
         return f"{event_type}: {self.name or 'Unnamed Event'} ({self.start_date})" if self.start_date else f"{event_type}: {self.name or 'Unnamed Event'}"
-    
+
     @property
     def duration_days(self):
         if self.start_date and self.end_date:
