@@ -35,7 +35,7 @@ class EventProductSerializer(serializers.ModelSerializer):
         "event_name": "Anchored Conference 2025",
         "imageUrl": "https://example.com/media/product.jpg",
         "sizes": ["S", "M", "L", "XL"],
-        "inStock": true,
+        "in_stock": true,
         "categories": [...],  // ProductCategorySerializer data
         "materials": [...],   // ProductMaterialSerializer data
         "images": [...],      // ProductImageSerializer data
@@ -54,7 +54,7 @@ class EventProductSerializer(serializers.ModelSerializer):
     # Frontend compatibility fields
     imageUrl = serializers.SerializerMethodField()
     sizes = serializers.SerializerMethodField()
-    inStock = serializers.BooleanField(source="in_stock", read_only=True)
+    in_stock = serializers.BooleanField(read_only=True)
     
     # Write-only fields for creating/updating
     image_uploads = serializers.ListField(
@@ -85,8 +85,12 @@ class EventProductSerializer(serializers.ModelSerializer):
         print(f"DEBUG - Getting imageUrl for {obj.title}: raw_url={url}")
         
         if url and not url.startswith('http'):
-            # Make URL absolute if it's relative
             from django.conf import settings
+            # Check if URL already starts with media path to avoid duplication
+            if url.startswith('/media/') or url.startswith('media/'):
+                print(f"DEBUG - URL already has media path: {url}")
+                return url if url.startswith('/') else f"/{url}"
+            # Make URL absolute if it's relative
             absolute_url = f"{settings.MEDIA_URL}{url.lstrip('/')}"
             print(f"DEBUG - Made absolute URL: {absolute_url}")
             return absolute_url
@@ -102,11 +106,11 @@ class EventProductSerializer(serializers.ModelSerializer):
         fields = [
             "uuid", "title", "description", "extra_info", "event", "event_name",
             "price", "discount", "seller", "seller_email", "category", "stock", "featured", 
-            "inStock", "in_stock", "imageUrl", "sizes", "colors",
+            "in_stock", "imageUrl", "sizes", "colors",
             "categories", "materials", "images", "product_sizes", "maximum_order_quantity",
             "image_uploads", "size_list", "category_ids", "material_ids"
         ]
-        read_only_fields = ["seller", "seller_email", "uuid", "event_name", "inStock", "in_stock", "imageUrl", "sizes"]
+        read_only_fields = ["seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes"]
         
     def create(self, validated_data):
         # Extract related data
@@ -397,6 +401,7 @@ class EventProductOrderSerializer(serializers.ModelSerializer):
     cart_user_email = serializers.EmailField(source="cart.user.primary_email", read_only=True)
     size = ProductSizeSerializer(read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    # TODO: set up landing image field for product
 
     class Meta:
         model = EventProductOrder

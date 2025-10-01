@@ -2,11 +2,14 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
-
+import uuid
 class ProductPaymentMethod(models.Model):
     """
     Payment method/configuration available for product purchases.
     """
+    # TODO: migrate this
+    # id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
     class MethodType(models.TextChoices):
         STRIPE = "STRIPE", _("Stripe")
         BANK_TRANSFER = "BANK", _("Bank Transfer")
@@ -25,6 +28,15 @@ class ProductPaymentMethod(models.Model):
     sort_code = models.CharField(max_length=20, blank=True, null=True, verbose_name=_("sort code"))
     iban = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("IBAN"))
     swift_bic = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("SWIFT/BIC"))
+    
+    event = models.ForeignKey(
+        'events.Event',
+        on_delete=models.CASCADE,
+        related_name="product_payment_methods",
+        verbose_name=_("event"),
+        blank=True,
+        null=True,
+    )
 
     instructions = models.TextField(
         blank=True,
@@ -86,6 +98,7 @@ class ProductPayment(models.Model):
         FAILED = "FAILED", _("Failed")
 
     payment_reference_id = models.CharField(_("Payment ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking payment references
+    bank_reference = models.CharField(_("Bank Transfer Reference"), max_length=18, unique=True, blank=True, null=True) # short reference for bank transfers
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="product_payments")
     cart = models.ForeignKey(EventCart, on_delete=models.SET_NULL, null=True, blank=True, related_name="product_payments")
     
@@ -127,18 +140,63 @@ class ProductPayment(models.Model):
     def mark_as_paid(self):
         self.status = self.PaymentStatus.SUCCEEDED
         self.save()
+    
+    def get_bank_transfer_instructions(self):
+        """
+        Get formatted bank transfer instructions including the short reference ID.
+        """
+        if not self.method or self.method.method != ProductPaymentMethod.MethodType.BANK_TRANSFER:
+            return None
+            
+        instructions = []
+        # Use the short bank reference for transfers
+        reference = self.bank_reference or self.payment_reference_id
+        instructions.append(f"**Transfer Reference: {reference}**")
+        instructions.append(f"Amount: £{self.amount / 100:.2f}")
+        instructions.append("")
         
-    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
-        if self.payment_reference_id is None: # PAY<cart-uuid[:10]>-<uuid[:10]>
+        if self.method.account_name:
+            instructions.append(f"Account Name: {self.method.account_name}")
+        if self.method.account_number:
+            instructions.append(f"Account Number: {self.method.account_number}")
+        if self.method.sort_code:
+            instructions.append(f"Sort Code: {self.method.sort_code}")
+        if self.method.iban:
+            instructions.append(f"IBAN: {self.method.iban}")
+        if self.method.swift_bic:
+            instructions.append(f"SWIFT/BIC: {self.method.swift_bic}")
+            
+        instructions.append("")
+        instructions.append(f"⚠️ IMPORTANT: Use reference '{reference}' in your bank transfer.")
+        instructions.append("This reference MUST be included for us to match your payment.")
+        
+        if self.method.instructions:
+            instructions.append("")
+            instructions.append("Additional Instructions:")
+            instructions.append(self.method.instructions)
+            
+        return "\n".join(instructions)
+        
+    def save(self, force_insert = False, force_update = False, using = None, update_fields = None):
+        if self.payment_reference_id is None:
             
             if self.cart is None or self.cart.uuid is None:
                 raise ValueError("Cart must be set and saved before saving a payment.")
             
             if not self.pk: # only generate new uuid if this is a new object
-                super().save(force_insert, force_update, using, update_fields) # save to get a primary key
+                super().save(force_insert=True, using=using) # save to get a primary key
+
+            # Generate standard payment reference ID
+            self.payment_reference_id = f"PAY{str(self.cart.uuid)[:10]}-{str(self.pk).zfill(10)}"
             
-            self.payment_reference_id = f"PAY{self.cart.uuid[:10]}-{str(self.pk).zfill(10)}"
-        return super().save(force_insert, force_update, using, update_fields)
+            # Generate short bank reference for bank transfers (max 18 chars)
+            if self.method and self.method.method == ProductPaymentMethod.MethodType.BANK_TRANSFER:
+                from datetime import datetime
+                # Format: YFC241001123 (YFC + YYMMDD + ID) = 12-15 characters
+                date_str = datetime.now().strftime("%y%m%d")
+                self.bank_reference = f"YFC{date_str}{str(self.pk)}"
+                
+        return super().save(force_insert=False, force_update=force_update, using=using, update_fields=update_fields)
 
     def __str__(self):
         return f"{self.user} - {self.cart} - {self.get_status_display()}"

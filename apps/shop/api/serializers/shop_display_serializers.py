@@ -1,7 +1,8 @@
 from rest_framework import serializers
-from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
+from apps.shop.models import EventProduct, EventCart, EventProductOrder, ProductPayment
 from apps.shop.models.metadata_models import ProductSize
 
+from .payment_serializers import ProductPaymentSerializer, ProductPaymentMethodSerializer
 
 class EventProductDisplaySerializer(serializers.ModelSerializer):
     """
@@ -19,6 +20,9 @@ class EventProductDisplaySerializer(serializers.ModelSerializer):
         url = obj.primary_image_url
         if url and not url.startswith('http'):
             from django.conf import settings
+            # Check if URL already starts with media path to avoid duplication
+            if url.startswith('/media/') or url.startswith('media/'):
+                return url if url.startswith('/') else f"/{url}"
             return f"{settings.MEDIA_URL}{url.lstrip('/')}"
         return url
 
@@ -122,11 +126,31 @@ class EventCartMinimalSerializer(serializers.ModelSerializer):
     # user_email = serializers.EmailField(source="user.primary_email", read_only=True)
     # event_name = serializers.CharField(source="event.name", read_only=True)
     orders = EventProductOrderMinimalSerializer(many=True, read_only=True)
+    payment_method = serializers.SerializerMethodField()
+    # product_payments = ProductPaymentSerializer(read_only=True, many=True)
     order_count = serializers.SerializerMethodField()
 
     def get_order_count(self, obj):
         """Get total number of orders in cart"""
         return obj.orders.count()
+    
+    def get_payment_method(self, obj):
+        """Get associated payment methods"""
+        payment = ProductPayment.objects.filter(cart=obj).first()
+        if not payment:
+            return None
+
+        method = payment.method
+        if not method:
+            return None
+        data:dict = ProductPaymentMethodSerializer(method).data
+        # get reference number and instructions  
+        data.update({
+            "bank_transfer_instructions": payment.get_bank_transfer_instructions(),
+            "bank_reference": payment.bank_reference,
+            "payment_reference_id": payment.payment_reference_id,
+        })
+        return data
 
     class Meta:
         model = EventCart
@@ -134,7 +158,7 @@ class EventCartMinimalSerializer(serializers.ModelSerializer):
             "uuid",
             "order_reference_id", "total", "shipping_cost", 
             "created", "approved", "submitted", "active", 
-            "orders", "order_count"
+            "orders", "order_count", "payment_method"
         ]
 
 
@@ -151,6 +175,9 @@ class EventProductLightSerializer(serializers.ModelSerializer):
         url = obj.primary_image_url
         if url and not url.startswith('http'):
             from django.conf import settings
+            # Check if URL already starts with media path to avoid duplication
+            if url.startswith('/media/') or url.startswith('media/'):
+                return url if url.startswith('/') else f"/{url}"
             return f"{settings.MEDIA_URL}{url.lstrip('/')}"
         return url
 

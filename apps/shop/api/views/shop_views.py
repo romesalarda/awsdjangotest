@@ -4,14 +4,18 @@ from rest_framework.decorators import action
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.db import transaction, models
 from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
 from apps.shop.models.metadata_models import ProductSize
+from apps.shop.models.payments import ProductPaymentMethod, ProductPayment
 from apps.shop.api.serializers.shop_serializers import (
     EventProductSerializer,
     EventCartSerializer,
     EventProductOrderSerializer,
 )
 from apps.shop.api.serializers.shop_metadata_serializers import ProductSizeSerializer
+from apps.shop.api.serializers.payment_serializers import ProductPaymentMethodSerializer
 
 class EventProductViewSet(viewsets.ModelViewSet):
     '''
@@ -31,8 +35,10 @@ class EventProductViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.is_superuser:
             return self.queryset
-        # For now, allow all authenticated users to see all products
-        # You can modify this to filter by user's events or roles
+        # TODO: show events by event        
+        
+        
+        
         return self.queryset
     
     def perform_create(self, serializer):
@@ -85,7 +91,18 @@ class EventCartViewSet(viewsets.ModelViewSet):
         '''
         cart: EventCart = self.get_object()
         
+        # Security check: ensure user can modify this cart
+        self.check_object_permissions(request, cart)
+        if not (cart.user == request.user or request.user.is_superuser or getattr(request.user, 'is_encoder', False)):
+            raise exceptions.PermissionDenied("You can only modify your own carts.")
+        
+        if cart.approved or cart.submitted:
+            raise serializers.ValidationError("Cannot modify an approved or submitted cart.")
+        
         products = request.data.get("products", [])
+        
+        if not products:
+            raise serializers.ValidationError("No products provided to add to cart.")
         # {product_id: ..., quantity: ..., size: ...}
         
         for product in products:
@@ -103,6 +120,8 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 size_object = ProductSize.objects.filter(size=size, product=product_object).first()
                 if not size_object:
                     raise serializers.ValidationError(f"Size {size} not available for product {product_object.title}")
+            else:
+                size_object = None
             # create an order but ensure it does not already exist for this product in the cart
             order, created = EventProductOrder.objects.get_or_create(
                 product=product_object,
@@ -134,7 +153,18 @@ class EventCartViewSet(viewsets.ModelViewSet):
         '''
         cart: EventCart = self.get_object()
         
+        # Security check: ensure user can modify this cart
+        self.check_object_permissions(request, cart)
+        if not (cart.user == request.user or request.user.is_superuser or getattr(request.user, 'is_encoder', False)):
+            raise exceptions.PermissionDenied("You can only modify your own carts.")
+        
+        if cart.approved or cart.submitted:
+            raise serializers.ValidationError("Cannot modify an approved or submitted cart.")
+        
         products = request.data.get("products", [])
+        
+        if not products:
+            raise serializers.ValidationError("No products provided to remove from cart.")
         for prod_id in products:
             product = get_object_or_404(EventProduct, uuid=prod_id)
             cart.products.remove(product)
@@ -149,19 +179,112 @@ class EventCartViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_name='checkout', url_path='checkout')
     def checkout_cart(self, request, *args, **kwargs):
         '''
-        Retrieve a summary of the cart for checkout.
+        Process cart checkout with payment method validation and payment tracking.
+        Expected payload: {
+            "payment_method_id": 1,
+            "amount": 12550  // Amount in pence, optional - will be validated against cart total
+        }
         '''
         cart: EventCart = self.get_object()
         
+        # Security check: ensure user owns this cart or has admin permissions
         self.check_object_permissions(request, cart)
+        if not (cart.user == request.user or request.user.is_superuser or getattr(request.user, 'is_encoder', False)):
+            raise exceptions.PermissionDenied("You can only checkout your own carts.")
+        
         if cart.approved or cart.submitted:
             raise serializers.ValidationError("Cannot checkout an approved or submitted cart.")
+        
+        if not cart.orders.exists():
+            raise serializers.ValidationError("Cannot checkout an empty cart.")
+            
+        # Get and validate payment method
+        payment_method_id = request.data.get('payment_method_id')
+        if not payment_method_id:
+            raise serializers.ValidationError("Payment method is required for checkout.")
+            
+        try:
+            payment_method = ProductPaymentMethod.objects.get(
+                id=payment_method_id,
+                is_active=True
+            )
+        except ProductPaymentMethod.DoesNotExist:
+            raise serializers.ValidationError("Invalid or inactive payment method.")
+        
+        # Validate payment method is available for this event
+        if payment_method.event and payment_method.event != cart.event:
+            raise serializers.ValidationError(
+                f"Payment method '{payment_method.get_method_display()}' is not available for this event."
+            )
+        
+        # Calculate and validate cart total
+        calculated_total = 0
+        for order in cart.orders.all():
+            if not order.product.in_stock:
+                raise serializers.ValidationError(
+                    f"Product '{order.product.title}' is no longer in stock."
+                )
+            calculated_total += (order.price_at_purchase or order.product.price) * order.quantity
+        
+        # Convert to pence for consistency
+        calculated_total_pence = int(calculated_total * 100)
+        
+        # Validate provided amount if given
+        provided_amount = request.data.get('amount')
+        if provided_amount is not None:
+            if provided_amount != calculated_total_pence:
+                raise serializers.ValidationError(
+                    f"Provided amount ({provided_amount} pence) does not match cart total ({calculated_total_pence} pence)."
+                )
+        
+        # Use atomic transaction for checkout process
+        with transaction.atomic():
+            # Create payment record
+            payment = ProductPayment.objects.create(
+                user=cart.user,
+                cart=cart,
+                method=payment_method,
+                amount=calculated_total_pence,
+                currency=getattr(cart.event, 'currency', 'gbp'),
+                status=ProductPayment.PaymentStatus.PENDING
+            )
+            
+            # Update cart status
+            cart.submitted = True
+            cart.active = False
+            cart.total = calculated_total  # Ensure total is correctly set
+            cart.save()
+            
+            # For non-Stripe payments, they might need manual approval
+            if payment_method.method == ProductPaymentMethod.MethodType.STRIPE:
+                # Stripe payments will be handled by webhook/frontend
+                payment_status = "Payment intent created - complete payment on frontend"
+            else:
+                payment_status = f"Payment recorded - please follow {payment_method.get_method_display()} instructions"
+        
+        # Get detailed instructions for bank transfers
+        instructions = payment_method.instructions
+        if payment_method.method == ProductPaymentMethod.MethodType.BANK_TRANSFER:
+            bank_instructions = payment.get_bank_transfer_instructions()
+            if bank_instructions:
+                instructions = bank_instructions
 
-        cart.submitted = True
-        cart.active = False
-        cart.save()
         serialized = self.get_serializer(cart)
-        return Response({"status": "cart checkout", "cart": serialized.data}, status=200)
+        return Response({
+            "status": "cart checkout successful", 
+            "cart": serialized.data,
+            "payment": {
+                "id": payment.id,
+                "reference_id": payment.payment_reference_id,
+                "bank_reference": payment.bank_reference,
+                "method": payment_method.get_method_display(),
+                "amount": calculated_total_pence,
+                "currency": payment.currency,
+                "status": payment.get_status_display(),
+                "instructions": instructions
+            },
+            "message": payment_status
+        }, status=200)
 
     @action(detail=True, methods=['patch'], url_name='update', url_path='update-order')
     def update_cart(self, request, *args, **kwargs):
@@ -239,7 +362,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 raise serializers.ValidationError(
                     f"Quantity {quantity} exceeds maximum order quantity of {product_object.maximum_order_quantity} for product {product_object.title}"
                 )
-            
+            order.price_at_purchase = product_object.price
             if order:
                 # Update quantity if changed
                 if order.quantity != quantity:
@@ -298,6 +421,31 @@ class EventCartViewSet(viewsets.ModelViewSet):
         cart.save()
         serialized = self.get_serializer(cart)
         return Response({"status": "cart cleared", "cart": serialized.data}, status=200)
+    
+    @action(detail=True, methods=['get'], url_name='payment-methods', url_path='payment-methods')
+    def get_payment_methods(self, request, *args, **kwargs):
+        '''
+        Get available payment methods for this cart's event.
+        '''
+        cart: EventCart = self.get_object()
+        
+        # Security check: ensure user can view this cart
+        self.check_object_permissions(request, cart)
+        if not (cart.user == request.user or request.user.is_superuser or getattr(request.user, 'is_encoder', False)):
+            raise exceptions.PermissionDenied("You can only view your own cart's payment methods.")
+        
+        # Get payment methods for this event (or global ones)
+        payment_methods = ProductPaymentMethod.objects.filter(
+            is_active=True
+        ).filter(
+            models.Q(event=cart.event) | models.Q(event__isnull=True)
+        ).order_by('method')
+        
+        serializer = ProductPaymentMethodSerializer(payment_methods, many=True)
+        return Response({
+            "payment_methods": serializer.data,
+            "event": cart.event.name if cart.event else "No event"
+        }, status=200)
     
 
 

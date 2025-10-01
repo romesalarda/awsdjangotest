@@ -3,9 +3,27 @@ from apps.shop.models.payments import ProductPaymentMethod, ProductPaymentPackag
 from apps.shop.models.shop_models import EventProduct, EventCart
 
 class ProductPaymentMethodSerializer(serializers.ModelSerializer):
+    """Serializer for ProductPaymentMethod with security validations."""
+    
     class Meta:
         model = ProductPaymentMethod
         fields = "__all__"
+        read_only_fields = ["created_at", "updated_at"]
+        
+    def validate(self, attrs):
+        """Validate payment method data for security."""
+        # Ensure sensitive payment details are properly handled
+        method = attrs.get('method')
+        
+        if method == ProductPaymentMethod.MethodType.BANK_TRANSFER:
+            required_fields = ['account_name', 'account_number']
+            for field in required_fields:
+                if not attrs.get(field):
+                    raise serializers.ValidationError(
+                        f"{field.replace('_', ' ').title()} is required for bank transfer payments."
+                    )
+        
+        return attrs
 
 class ProductPaymentPackageSerializer(serializers.ModelSerializer):
     """
@@ -161,26 +179,75 @@ class ProductPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductPayment
         fields = [
-            "id", "payment_reference_id", "user", "user_email", "cart", "cart_id", 
+            "id", "payment_reference_id", "bank_reference", "user", "user_email", "cart", "cart_id", 
             "package", "package_name", "method", "method_display", "stripe_payment_intent", 
             "amount", "amount_display", "currency", "status", "status_display", 
             "approved", "paid_at", "created_at", "updated_at"
         ]
-        read_only_fields = ["id", "payment_reference_id", "user_email", "cart_id", 
+        read_only_fields = ["id", "payment_reference_id", "bank_reference", "user_email", "cart_id", 
                            "method_display", "status_display", "package_name", "amount_display", 
                            "created_at", "updated_at"]
                            
     def get_amount_display(self, obj):
         return f"{obj.amount / 100:.2f} {obj.currency.upper()}"
     
+    def validate_amount(self, value):
+        """Validate payment amount is positive and reasonable."""
+        if value <= 0:
+            raise serializers.ValidationError("Payment amount must be positive.")
+        if value > 100000000:  # £1,000,000 in pence
+            raise serializers.ValidationError("Payment amount exceeds maximum allowed.")
+        return value
+    
+    def validate(self, attrs):
+        """Validate payment data for security and consistency."""
+        cart = attrs.get('cart')
+        method = attrs.get('method')
+        amount = attrs.get('amount')
+        
+        # If cart is provided, validate method is available for the cart's event
+        if cart and method:
+            if method.event and method.event != cart.event:
+                raise serializers.ValidationError(
+                    "Payment method is not available for this cart's event."
+                )
+            
+            # Validate amount matches cart total (within reason)
+            if amount and cart.total:
+                cart_total_pence = int(cart.total * 100)
+                if abs(amount - cart_total_pence) > 100:  # Allow 1 pence difference for rounding
+                    raise serializers.ValidationError(
+                        f"Payment amount ({amount} pence) does not match cart total ({cart_total_pence} pence)."
+                    )
+        
+        return super().validate(attrs)
+    
     def create(self, validated_data):
         # Set user from request context if not provided
         if not validated_data.get('user') and 'request' in self.context:
             validated_data['user'] = self.context['request'].user
+        
+        # Ensure cart belongs to the user (security check)
+        cart = validated_data.get('cart')
+        user = validated_data.get('user')
+        if cart and user and cart.user != user:
+            request_user = self.context.get('request', {}).user if 'request' in self.context else None
+            if not (request_user and (request_user.is_superuser or getattr(request_user, 'is_encoder', False))):
+                raise serializers.ValidationError("Cannot create payment for another user's cart.")
             
         return super().create(validated_data)
     
     def update(self, instance, validated_data):
+        # Security check: only allow certain status changes
+        request_user = self.context.get('request', {}).user if 'request' in self.context else None
+        
+        if 'status' in validated_data:
+            # Only admins can manually change payment status
+            if not (request_user and (request_user.is_superuser or getattr(request_user, 'is_encoder', False))):
+                # Regular users can only cancel pending payments
+                if instance.status != ProductPayment.PaymentStatus.PENDING or validated_data['status'] != ProductPayment.PaymentStatus.FAILED:
+                    raise serializers.ValidationError("You don't have permission to change this payment status.")
+        
         # Handle status changes and approval
         if 'status' in validated_data and validated_data['status'] == ProductPayment.PaymentStatus.SUCCEEDED:
             if not instance.paid_at:

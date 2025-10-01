@@ -216,6 +216,8 @@ class EventViewSet(viewsets.ModelViewSet):
         carts = EventCart.objects.filter(user=user, event=event)
         cart_serializer = EventCartMinimalSerializer(carts, many=True)
         data["merch"] = cart_serializer.data        
+        
+        
          #! resources
         resources = event_data.pop("resources", [])
         data["resources"] = resources
@@ -258,7 +260,6 @@ class EventViewSet(viewsets.ModelViewSet):
         question.pop("event", None)
         return question
     
-    # TODO: create a view that returns events that the user is involved in
     @action(detail=False, methods=['get'], url_name="my-events", url_path="my-events")
     def my_events(self, request):
         '''
@@ -560,6 +561,21 @@ class EventViewSet(viewsets.ModelViewSet):
         serializer = EventProductSerializer(products, many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['get'], url_name="payment-methods", url_path="payment-methods")
+    def product_payment_methods(self, request, pk=None):
+        '''
+        Retrieve a list of product payment methods for a specific event.
+        '''
+        event = self.get_object()
+        payment_methods = event.product_payment_methods.all()
+        page = self.paginate_queryset(payment_methods)
+        if page is not None:
+            serializer = EventPaymentMethodSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = EventPaymentMethodSerializer(payment_methods, many=True)
+        return Response(serializer.data)
+
 class EventServiceTeamMemberViewSet(viewsets.ModelViewSet):
     '''
     API endpoint for managing event service team members.
@@ -646,7 +662,6 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
     
     #TODO: add role to a service team member AND NOT a participant
     #TODO: cancel booking
-    
     
     @action(detail=True, methods=['post'], url_name="mark-attended", url_path="mark-attended")
     def mark_attended(self, request, event_pax_id=None):
