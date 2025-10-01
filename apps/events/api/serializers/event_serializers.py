@@ -1210,19 +1210,29 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                 
                 if payment_method:
                     status = (
-                        EventPayment.PaymentStatus.PENDING if payment_method.MethodType == EventPaymentMethod.MethodType.BANK_TRANSFER 
+                        EventPayment.PaymentStatus.PENDING if payment_method.method == EventPaymentMethod.MethodType.BANK_TRANSFER 
                         else EventPayment.PaymentStatus.SUCCEEDED
                     )
                     # if bank transfer, then we do not mark as paid until admin verifies payment
-                    EventPayment.objects.create(
-                        user=participant,
-                        event=event,
-                        package=payment_package,
-                        method=payment_method,
-                        amount=payment_package.price if payment_package else 0,
-                        currency=payment_package.currency if payment_package else "gbp",
-                        status=status
-                    )
+                else:
+                    status = EventPayment.PaymentStatus.SUCCEEDED if payment_package.price == 0 else EventPayment.PaymentStatus.PENDING
+                    # no need for payment method if the package is free, so we mark as paid if the package is free
+                
+                print(payment_package.price)
+                print(payment_method)
+                print("Creating payment with status:", status)
+                    
+                EventPayment.objects.create(
+                    user=participant,
+                    event=event,
+                    package=payment_package,
+                    method=payment_method,
+                    amount=payment_package.price if payment_package else 0,
+                    currency=payment_package.currency if payment_package else "gbp",
+                    status=status
+                )
+                
+                
             else:
                 raise serializers.ValidationError({"payment_package": _("Payment package is required.")})
             

@@ -53,6 +53,7 @@ class EventViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return Event.objects.all()       
         # returns events that are specific to the user, created_by, supervisor, participant, service team member
+        
         if user.is_authenticated and user.is_encoder:
             return Event.objects.filter(
                 models.Q(created_by=user),
@@ -108,9 +109,10 @@ class EventViewSet(viewsets.ModelViewSet):
                 {'error': _('Authentication credentials were not provided.')},
                 status=status.HTTP_401_UNAUTHORIZED
             )
+        print("User:", user)
         self.check_object_permissions(request, self.get_object())
         self.check_permissions(request)
-        
+        # print("Permissions checked")
         #! handle event details first
         event = self.get_object()
         serializer = EventSerializer(event)
@@ -660,7 +662,17 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         # only return event code
         request = super().create(request, *args, **kwargs)
         data = request.data
-        return Response({"event_user_id": data["event_user_id"]}, status=request.status_code)
+        # TODO: also return if they are allowed to check in or not based on event status and participant status
+
+        data = request.data
+        is_paid = all(p['status'] == 'SUCCEEDED' for p in data['event_payments'])
+        payment_method = data['event_payments'][0]['method_display'] if data['event_payments'] else 'No payment method'
+        needs_verification = any(not p['verified'] for p in data['event_payments'])
+        return Response(
+            {"event_user_id": data["event_user_id"], 
+             "is_paid": is_paid, "payment_method": payment_method, 
+             "needs_verification": needs_verification
+             }, status=request.status_code)
 
 class EventTalkViewSet(viewsets.ModelViewSet):
     '''

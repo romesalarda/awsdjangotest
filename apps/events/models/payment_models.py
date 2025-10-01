@@ -198,7 +198,6 @@ class EventPayment(models.Model):
     def save(self, *args, **kwargs):
         if self.event_payment_tracking_number is None:
             self.event_payment_tracking_number = f"{self.event.event_code}-PAY-{uuid.uuid4()}".upper()
-            self.save()
         return super().save(*args, **kwargs)
 
     class Meta:
