@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.shortcuts import get_list_or_404
 from django.db import transaction
 from django.db.models import Q
+from django.core.exceptions import ValidationError
 
 import pprint
 
@@ -955,7 +956,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
     Full detail Event participant serializer - for event organizers/admins
     '''
     event = serializers.CharField(source="event.event_code")
-    user_details = SimplifiedCommunityUserSerializer(source="user")
+    user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     participant_type_display = serializers.CharField(
         source="get_participant_type_display", read_only=True
@@ -1203,7 +1204,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             # payment - register the type of payment used
             if payment_method: # optional if the event is free
                 payment_method.save()
-                
+            # TODO if no payment package should auto default to bank transfer in order to create an object in the database
             if payment_package:
                 payment_package.save()
                 
@@ -1326,7 +1327,7 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
     
     Example API object:
     {
-        "participant": "123e4567-e89b-12d3-a456-426614174000",  // EventParticipant UUID
+        "participant": "CNF25ANCRD-123456",  // EventParticipant confirmation number OR UUID
         "event": "456e7890-e89b-12d3-a456-426614174001",       // Event UUID
         "question_subject": "Dietary Requirements Change",
         "question": "I need to change my dietary requirements from vegetarian to vegan. Is this possible?",
@@ -1359,6 +1360,9 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
     questions_type_display = serializers.CharField(source="get_questions_type_display", read_only=True)
     priority_display = serializers.CharField(source="get_priority_display", read_only=True)
     
+    # Custom field to accept either UUID or confirmation number
+    participant = serializers.CharField(write_only=True, help_text="EventParticipant UUID or confirmation number (event_pax_id)")
+    
     class Meta:
         model = ParticipantQuestion
         fields = [
@@ -1385,11 +1389,35 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
             }
         return None
     
+    def to_representation(self, instance):
+        """Include participant UUID in response for reference"""
+        rep = super().to_representation(instance)
+        if instance.participant:
+            rep['participant'] = str(instance.participant.id)  # Return the actual UUID for reference
+        return rep
+    
     def create(self, validated_data):
-        # Set event from participant if not provided
-        if not validated_data.get('event') and validated_data.get('participant'):
-            validated_data['event'] = validated_data['participant'].event
+        # Handle participant lookup - accept either UUID or confirmation number
+        participant_identifier = validated_data.pop('participant', None)
+        if participant_identifier:
+            try:
+                # First try to find by UUID (if it's a valid UUID format)
+                participant = EventParticipant.objects.get(id=participant_identifier)
+            except (EventParticipant.DoesNotExist, ValueError, ValidationError):
+                # If UUID lookup fails, try by confirmation number (event_pax_id)
+                try:
+                    participant = EventParticipant.objects.get(event_pax_id=participant_identifier)
+                except EventParticipant.DoesNotExist:
+                    raise serializers.ValidationError({
+                        "participant": f"EventParticipant not found with identifier: {participant_identifier}"
+                    })
             
+            validated_data['participant'] = participant
+            
+            # Set event from participant if not provided
+            if not validated_data.get('event'):
+                validated_data['event'] = participant.event
+        
         return super().create(validated_data)
     
     def update(self, instance, validated_data):

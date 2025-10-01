@@ -70,16 +70,16 @@ class EventViewSet(viewsets.ModelViewSet):
         if user.is_authenticated:
             participant = EventParticipant.objects.filter(event=instance, user=user).first()
             
-            if not participant and not user.has_perm('events.view_event'):
-                return Response(
-                    {'error': _('You do not have permission to view this event.')},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            elif participant and not participant.event.is_public:
-                return Response(
-                    {'error': _('You do not have permission to view this event.')}, 
-                    status=status.HTTP_403_FORBIDDEN
-                    )
+            # if not participant and not user.has_perm('events.view_event'):
+            #     return Response(
+            #         {'error': _('You do not have permission to view this event.')},
+            #         status=status.HTTP_403_FORBIDDEN
+            #     )
+            # elif participant and not participant.event.is_public:
+            #     return Response(
+            #         {'error': _('You do not have permission to view this event.')}, 
+            #         status=status.HTTP_403_FORBIDDEN
+            #         )
             data['is_participant'] = bool(participant)
         return Response(data)
         

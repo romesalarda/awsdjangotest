@@ -692,6 +692,15 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                 
                 for condition_data in medical_conditions_data:
                     condition_id = condition_data.get('id')
+                    severity = condition_data.get('severity')
+                    severity = severity.strip().upper() if severity else None
+
+                    if severity and severity not in dict(UserMedicalCondition.Severity.choices).keys():
+                        raise serializers.ValidationError({
+                            'severity': _('Invalid severity level.')
+                        })
+
+                    condition_data['severity'] = severity
                     if condition_id and condition_id in existing_conditions:
                         # Update existing UserMedicalCondition
                         condition_name = condition_data.pop('condition_name')

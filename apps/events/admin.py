@@ -152,7 +152,7 @@ class EventAdmin(admin.ModelAdmin):
         )}),
         (_('Event Details'), {'fields': (
             'description', 'sentence_description', 'theme', 'anchor_verse', 'number_of_pax', 'important_information', 
-            'registration_deadline'
+            'registration_deadline', 'what_to_bring'
         )}),
         (_('Supervision'), {'fields': (
             'supervising_youth_heads', 'supervising_CFC_coordinators'
