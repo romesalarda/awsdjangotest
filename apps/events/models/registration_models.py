@@ -89,6 +89,14 @@ class ParticipantQuestion(models.Model):
     )
     admin_notes = models.TextField(blank=True, null=True, help_text="Internal notes for admins")
     answer = models.TextField(blank=True, null=True, help_text="Answer provided by admin")
+    answered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="answered_participant_questions",
+        help_text="Admin user who answered the question"
+    )
     
     class QuestionType(models.TextChoices):
         GENERAL = "GENERAL", _("General")

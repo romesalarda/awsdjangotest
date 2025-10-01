@@ -314,6 +314,7 @@ class EventSerializer(serializers.ModelSerializer):
     )
     
     organisers = serializers.SerializerMethodField(read_only=True)
+    has_merch = serializers.SerializerMethodField(read_only=True, default=False)
 
     def to_internal_value(self, data):
         # Handle nested data structures sent from frontend
@@ -403,7 +404,8 @@ class EventSerializer(serializers.ModelSerializer):
             "supervisor_ids",
             "supervising_CFC_coordinators",
             "cfc_coordinator_ids",
-        ]
+            "has_merch",
+            ]
         read_only_fields = [
             "id",
             "duration_days",
@@ -412,12 +414,16 @@ class EventSerializer(serializers.ModelSerializer):
             "cfc_coordinator",
             "resources",
             "memo",
+            "has_merch",
         ]
 
     def get_duration_days(self, obj):
         if obj.start_date and obj.end_date:
             return (obj.end_date - obj.start_date).days + 1
         return None
+    
+    def get_has_merch(self, obj):
+        return obj.products.exists()
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
@@ -1196,15 +1202,11 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                         updated_user.user_allergies.add(new_allergy.instance)
                         changes["allergies_added"].append(allergy_name)
                         
-            # TODO Shaina - show statistics based on certain area, size, colour, basically all attributes. 
             payment_method: EventPaymentMethod = validated_data.pop('payment_methods', None)
             payment_package: EventPaymentPackage = validated_data.pop('payment_packages', None)
             participant = EventParticipant.objects.create(event=event, user=updated_user, **validated_data)
 
             # payment - register the type of payment used
-            if payment_method: # optional if the event is free
-                payment_method.save()
-            # TODO if no payment package should auto default to bank transfer in order to create an object in the database
             if payment_package:
                 payment_package.save()
                 
@@ -1372,6 +1374,7 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
     
     # Custom field to accept either UUID or confirmation number
     participant = serializers.CharField(write_only=True, help_text="EventParticipant UUID or confirmation number (event_pax_id)")
+    answered_by = serializers.CharField(source="answered_by.first_name", read_only=True)
     
     class Meta:
         model = ParticipantQuestion
@@ -1380,7 +1383,7 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
             "question_subject", "question", "questions_type", "questions_type_display",
             "priority", "priority_display", "status", "status_display",
             "submitted_at", "updated_at", "responded_at",
-            "answer", "admin_notes"
+            "answer", "admin_notes", "answered_by"
         ]
         read_only_fields = [
             "id", "participant_details", "event_name", "status_display",
