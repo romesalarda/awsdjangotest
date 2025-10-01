@@ -27,6 +27,7 @@ class EventViewSet(viewsets.ModelViewSet):
     '''
     Viewset for CRUD operations with all types of events in the community
     '''
+    
     queryset = Event.objects.all()
     serializer_class = EventSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -168,9 +169,7 @@ class EventViewSet(viewsets.ModelViewSet):
         method_id = payment_details.pop("method", None)
         payment_details.pop("amount", None)
         payment_details.pop("participant_user_email", None)
-        
-        print(payment_details)
-        
+                
         if method_id and not payment_details.get("verified", False):
             payment_details["method_info"] = EventPaymentMethod.objects.filter(id=method_id).values().first()
         else:

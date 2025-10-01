@@ -59,12 +59,12 @@ class UserAllergy(models.Model):
 
     class Severity(models.TextChoices):
         MILD = "MILD", _("Mild")
-        MODERATE = "MOD", _("Moderate")
-        SEVERE = "SEV", _("Severe")
-        CRITICAL = "CRT", _("Critical")
+        MODERATE = "MODERATE", _("Moderate")
+        SEVERE = "SEVERE", _("Severe")
+        CRITICAL = "CRITICAL", _("Critical")
 
     severity = models.CharField(
-        max_length=5,
+        max_length=8,
         choices=Severity.choices,
         default=Severity.MILD
     )

@@ -147,6 +147,18 @@ class SimpleAllergySerializer(serializers.ModelSerializer):
         validated_data['allergy'] = allergy
         return super().create(validated_data)
     
+    def update(self, instance, validated_data):
+        allergy_data = validated_data.pop('allergy', {})
+        allergy_name = allergy_data.get('name')
+        user = validated_data.pop('user', self.context.get('user'))
+        if not user:
+            raise serializers.ValidationError("User is required to update a UserAllergy.")
+        allergy, created = Allergy.objects.get_or_create(name=allergy_name)
+        if UserAllergy.objects.filter(user=user, allergy=allergy).exclude(id=instance.id).exists():
+            raise serializers.ValidationError("This allergy is already linked to the user.")
+        validated_data['user'] = user
+        validated_data['allergy'] = allergy
+        return super().update(instance, validated_data)
 
 
 class SimpleMedicalConditionSerializer(serializers.ModelSerializer):
@@ -173,6 +185,20 @@ class SimpleMedicalConditionSerializer(serializers.ModelSerializer):
         user_medical_condition = UserMedicalCondition.objects.create(condition=condition, user=user, **validated_data)
         return user_medical_condition
     
+    def update(self, instance, validated_data):
+        condition_data = validated_data.pop('condition', {})
+        condition_name = condition_data.get('name')
+        user = validated_data.pop('user', self.context.get('user'))
+        if not user:
+            raise serializers.ValidationError("User is required to update a UserMedicalCondition.")
+        condition, created = MedicalCondition.objects.get_or_create(name=condition_name)
+        if UserMedicalCondition.objects.filter(user=user, condition=condition).exclude(id=instance.id).exists():
+            raise serializers.ValidationError("This medical condition is already linked to the user.")
+        validated_data['user'] = user
+        validated_data['condition'] = condition
+        return super().update(instance, validated_data)
+
+
 class SimpleEmergencyContactSerializer(serializers.ModelSerializer):
     '''
     Simplified USER serializer for emergency contacts.
@@ -188,7 +214,7 @@ class SimpleEmergencyContactSerializer(serializers.ModelSerializer):
             "id", "first_name", "last_name", "phone_number",
             "contact_relationship", "contact_relationship_display", "is_primary"
         ]
-        
+    
 # main serialiser
 
 class CommunityUserSerializer(serializers.ModelSerializer):
@@ -359,13 +385,6 @@ class CommunityUserSerializer(serializers.ModelSerializer):
         medical_conditions_data = validated_data.pop('medical_conditions_data', [])
         roles_data = validated_data.pop('roles_data', [])
         
-        # Check for duplicate users (optional - you may want to remove this if users can have same names)
-        # if CommunityUser.objects.filter(
-        #     first_name=validated_data.get('first_name'),
-        #     last_name=validated_data.get('last_name'),
-        # ).exists():
-        #     raise serializers.ValidationError("A user with the same first name and last name already exists.")
-
         with transaction.atomic():
             # Create the main user
             user = CommunityUser.objects.create(**validated_data)
@@ -575,7 +594,6 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             for key, value in safeguarding_data.items():
                 validated_data[key] = value
         
-        print("FINAL VALIDATED DATA AFTER NESTED EXTRACTION:", validated_data)
         # Extract nested relationship data
         password = validated_data.pop('password', None)
         emergency_contacts_data = validated_data.pop('emergency_contacts_data', None)
@@ -595,12 +613,19 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             
             # Handle Emergency Contacts - CRUD operations
             if emergency_contacts_data is not None:
-                existing_contacts = {contact.id: contact for contact in instance.community_user_emergency_contacts.all()}
+                existing_contacts = {str(contact.id): contact for contact in instance.community_user_emergency_contacts.all()}
                 processed_ids = set()
                 
                 for contact_data in emergency_contacts_data:
-                    contact_id = contact_data.get('id')
-                    
+                    contact_id = contact_data.get('id')          
+                    relationship = contact_data.get('contact_relationship')
+                    relationship = relationship.strip().upper() if relationship else None
+                    # Validate relationship choice
+                    if relationship and relationship not in dict(EmergencyContact.ContactRelationshipType.choices).keys():
+                        raise serializers.ValidationError({
+                            "error": f"Invalid contact relationship: {relationship} for contact {contact_data.get('first_name', '')} {contact_data.get('last_name', '')}."
+                        })
+                              
                     if contact_id and contact_id in existing_contacts:
                         # Update existing emergency contact
                         contact_serializer = EmergencyContactSerializer(
@@ -623,7 +648,6 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                 for contact_id, contact in existing_contacts.items():
                     if contact_id not in processed_ids:
                         contact.delete()
-            print("EMERGENCY CONTACTS HANDLED")
             # Handle Allergies - CRUD operations on UserAllergy through model
             if allergies_data is not None:
                 existing_allergies = {str(allergy.id): allergy for allergy in instance.user_allergies.all()}
@@ -631,15 +655,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                 for allergy_data in allergies_data:
                     allergy_id = allergy_data.get('id')
                     
-                    print(allergy_id, [str(a) for a in existing_allergies.keys()])
-                    print("is allergy_id in existing_allergies?", allergy_id in [str(a) for a in existing_allergies.keys()])
-                    # TODO: 
-                    # The `.update()` method does not support writable dotted-source fields by default.
-                    # Write an explicit `.update()` method for serializer `apps.users.api.serializers.SimpleAllergySerializer`, 
-                    # or set `read_only=True` on dotted-source serializer fields.
-
                     if allergy_id and (allergy_id in [str(a) for a in existing_allergies.keys()]):
-                        print("updating existing allergy with ID:", allergy_id)
                         # Update existing UserAllergy
                         allergy_name = allergy_data.pop('allergy_name')
                         allergy_data['name'] = allergy_name
@@ -653,7 +669,6 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                             allergy_serializer.save()
                             processed_ids.add(allergy_id)
                     else:
-                        print("creating new allergy")
                         # Create new UserAllergy
                         allergy_name = allergy_data.pop('allergy_name')
                         allergy_data['name'] = allergy_name
@@ -670,21 +685,17 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                 for allergy_id, allergy in existing_allergies.items():
                     if allergy_id not in processed_ids:
                         allergy.delete()
-            print("ALLERGIES HANDLED")
             # Handle Medical Conditions - CRUD operations on UserMedicalCondition through model
             if medical_conditions_data is not None:
-                existing_conditions = {condition.id: condition for condition in instance.user_medical_conditions.all()}
+                existing_conditions = {str(condition.id): condition for condition in instance.user_medical_conditions.all()}
                 processed_ids = set()
                 
                 for condition_data in medical_conditions_data:
                     condition_id = condition_data.get('id')
-                    print("PROCESSING CONDITION DATA:", condition_data)
                     if condition_id and condition_id in existing_conditions:
                         # Update existing UserMedicalCondition
                         condition_name = condition_data.pop('condition_name')
                         condition_data['name'] = condition_name
-                        
-                        print(condition_data)
                         condition_serializer = SimpleMedicalConditionSerializer(
                             existing_conditions[condition_id],
                             data=condition_data,
@@ -712,10 +723,9 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                 for condition_id, condition in existing_conditions.items():
                     if condition_id not in processed_ids:
                         condition.delete()
-            print("MEDICAL CONDITIONS HANDLED")
             # Handle Community Roles - CRUD operations on UserCommunityRole through model
             if roles_data is not None:
-                existing_roles = {role.id: role for role in instance.role_links.all()}
+                existing_roles = {str(role.id): role for role in instance.role_links.all()}
                 processed_ids = set()
                 
                 for role_data in roles_data:
