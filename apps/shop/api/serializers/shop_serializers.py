@@ -82,19 +82,15 @@ class EventProductSerializer(serializers.ModelSerializer):
     def get_imageUrl(self, obj):
         """Get the primary image URL"""
         url = obj.primary_image_url
-        print(f"DEBUG - Getting imageUrl for {obj.title}: raw_url={url}")
         
         if url and not url.startswith('http'):
             from django.conf import settings
             # Check if URL already starts with media path to avoid duplication
             if url.startswith('/media/') or url.startswith('media/'):
-                print(f"DEBUG - URL already has media path: {url}")
                 return url if url.startswith('/') else f"/{url}"
             # Make URL absolute if it's relative
             absolute_url = f"{settings.MEDIA_URL}{url.lstrip('/')}"
-            print(f"DEBUG - Made absolute URL: {absolute_url}")
             return absolute_url
-        print(f"DEBUG - Returning URL as-is: {url}")
         return url
     
     def get_sizes(self, obj):
@@ -150,12 +146,12 @@ class EventProductSerializer(serializers.ModelSerializer):
                 except ValueError:
                     material_ids = []
         
-        print(f"DEBUG - Creating product with:")
-        print(f"  - Images: {len(image_uploads)} files")
-        print(f"  - Sizes: {size_list} (parsed from {size_list_raw})")
-        print(f"  - Categories: {category_ids} (parsed from {category_ids_raw})")
-        print(f"  - Materials: {material_ids} (parsed from {material_ids_raw})")
-        print(f"  - Colors: {validated_data.get('colors', [])}")
+        # print(f"DEBUG - Creating product with:")
+        # print(f"  - Images: {len(image_uploads)} files")
+        # print(f"  - Sizes: {size_list} (parsed from {size_list_raw})")
+        # print(f"  - Categories: {category_ids} (parsed from {category_ids_raw})")
+        # print(f"  - Materials: {material_ids} (parsed from {material_ids_raw})")
+        # print(f"  - Colors: {validated_data.get('colors', [])}")
         
         # Ensure colors is a list and parse if it's a JSON string
         colors = validated_data.get('colors', [])
@@ -199,7 +195,6 @@ class EventProductSerializer(serializers.ModelSerializer):
         
         for size_name in size_list:
             size_key = size_name.strip().upper().replace(' ', '_')
-            print(f"DEBUG - Processing size: '{size_name}' -> '{size_key}'")
             
             # Handle special cases
             if size_key in ['ONE_SIZE', 'ONESIZE', 'ONE SIZE']:
@@ -220,30 +215,30 @@ class EventProductSerializer(serializers.ModelSerializer):
         if material_ids:
             product.materials.set(material_ids)
         
-        print(f"DEBUG - Product created with:")
-        print(f"  - {product.images.count()} images")
-        print(f"  - {product.product_sizes.count()} sizes")
-        print(f"  - {product.categories.count()} categories")
-        print(f"  - {product.materials.count()} materials")
-        print(f"  - Colors: {product.colors}")
-        print(f"  - Product sizes: {[s.size for s in product.product_sizes.all()]}")
+        # print(f"DEBUG - Product created with:")
+        # print(f"  - {product.images.count()} images")
+        # print(f"  - {product.product_sizes.count()} sizes")
+        # print(f"  - {product.categories.count()} categories")
+        # print(f"  - {product.materials.count()} materials")
+        # print(f"  - Colors: {product.colors}")
+        # print(f"  - Product sizes: {[s.size for s in product.product_sizes.all()]}")
             
         return product
     
     def update(self, instance, validated_data):
         # Extract related data
         import json
-        print(f"DEBUG UPDATE - Instance: {instance.title} (ID: {instance.uuid})")
-        print(f"DEBUG UPDATE - Validated data keys: {list(validated_data.keys())}")
-        print(f"DEBUG UPDATE - Validated data: {validated_data}")
-        
+        # print(f"DEBUG UPDATE - Instance: {instance.title} (ID: {instance.uuid})")
+        # print(f"DEBUG UPDATE - Validated data keys: {list(validated_data.keys())}")
+        # print(f"DEBUG UPDATE - Validated data: {validated_data}")
+
         image_uploads = validated_data.pop('image_uploads', None)
         size_list_raw = validated_data.pop('size_list', None)
         category_ids_raw = validated_data.pop('category_ids', None)
         material_ids_raw = validated_data.pop('material_ids', None)
-        
-        print(f"DEBUG UPDATE - Extracted data: images={len(image_uploads) if image_uploads else 0}, sizes={size_list_raw}, categories={category_ids_raw}, materials={material_ids_raw}")
-        
+
+        # print(f"DEBUG UPDATE - Extracted data: images={len(image_uploads) if image_uploads else 0}, sizes={size_list_raw}, categories={category_ids_raw}, materials={material_ids_raw}")
+
         # Parse JSON strings
         size_list = None
         if size_list_raw is not None:
@@ -300,7 +295,7 @@ class EventProductSerializer(serializers.ModelSerializer):
             # IMPORTANT: Delete existing sizes first to prevent duplicates
             existing_sizes_count = product.product_sizes.count()
             product.product_sizes.all().delete()
-            print(f"DEBUG UPDATE - Deleted {existing_sizes_count} existing sizes")
+            # print(f"DEBUG UPDATE - Deleted {existing_sizes_count} existing sizes")
             
             size_mapping = {
                 # Backend enum values (exact matches)
@@ -320,7 +315,7 @@ class EventProductSerializer(serializers.ModelSerializer):
                 'XXL': ProductSize.Sizes.EXTRA_LARGE,
                 'EXTRA_LARGE': ProductSize.Sizes.EXTRA_LARGE,
             }
-            
+
             print(f"DEBUG UPDATE - Creating {len(size_list)} new sizes: {size_list}")
             for size_name in size_list:
                 size_key = size_name.strip().upper().replace(' ', '_')
@@ -344,16 +339,16 @@ class EventProductSerializer(serializers.ModelSerializer):
         if material_ids is not None:
             product.materials.set(material_ids)
             
-        print(f"DEBUG UPDATE RESULT - Product updated:")
-        print(f"  - Title: {product.title}")
-        print(f"  - Description: {product.description}")
-        print(f"  - Price: {product.price}")
-        print(f"  - Stock: {product.stock}")
-        print(f"  - Images: {product.images.count()}")
-        print(f"  - Sizes: {product.product_sizes.count()}")
-        print(f"  - Categories: {product.categories.count()}")
-        print(f"  - Materials: {product.materials.count()}")
-        print(f"  - Colors: {product.colors}")
+        # print(f"DEBUG UPDATE RESULT - Product updated:")
+        # print(f"  - Title: {product.title}")
+        # print(f"  - Description: {product.description}")
+        # print(f"  - Price: {product.price}")
+        # print(f"  - Stock: {product.stock}")
+        # print(f"  - Images: {product.images.count()}")
+        # print(f"  - Sizes: {product.product_sizes.count()}")
+        # print(f"  - Categories: {product.categories.count()}")
+        # print(f"  - Materials: {product.materials.count()}")
+        # print(f"  - Colors: {product.colors}")
             
         return product
 
@@ -417,7 +412,6 @@ class EventProductOrderSerializer(serializers.ModelSerializer):
         
     def get_imageUrl(self, obj):
         images = ProductImageSerializer(obj.product.images, many=True).data
-        print(images)
         if images and len(images) > 0:
             return images[0].get('image_url')
         return None
@@ -495,6 +489,7 @@ class EventCartSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source="user.primary_email", read_only=True)
     event_name = serializers.CharField(source="event.name", read_only=True)
     orders = EventProductOrderSerializer(many=True, read_only=True)
+    bank_reference = serializers.SerializerMethodField()
     
     # Write-only fields for creating orders
     product_orders = serializers.ListField(
@@ -503,13 +498,22 @@ class EventCartSerializer(serializers.ModelSerializer):
         required=False,
         help_text="List of product order dicts to create with this cart"
     )
+    
+    def get_bank_reference(self, obj):
+        # get associated payment model
+        payment = obj.product_payments.first()
+        if not payment:
+            return None
+        return payment.bank_reference
+            
+            
 
     class Meta:
         model = EventCart
         fields = [
             "uuid", "user", "user_email", "event", "event_name", "order_reference_id",
             "total", "shipping_cost", "created", "updated", "approved", "submitted", 
-            "active", "notes", "shipping_address", "orders", "product_orders"
+            "active", "notes", "shipping_address", "orders", "product_orders", "bank_reference"
         ]
         
         read_only_fields = ["uuid", "user", "user_email", "event_name", "order_reference_id", "created", "updated"]
