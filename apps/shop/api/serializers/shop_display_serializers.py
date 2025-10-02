@@ -3,6 +3,7 @@ from apps.shop.models import EventProduct, EventCart, EventProductOrder, Product
 from apps.shop.models.metadata_models import ProductSize
 
 from .payment_serializers import ProductPaymentSerializer, ProductPaymentMethodSerializer
+from .shop_metadata_serializers import ProductImageSerializer
 
 class EventProductDisplaySerializer(serializers.ModelSerializer):
     """
@@ -106,6 +107,7 @@ class EventProductOrderMinimalSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     size_name = serializers.CharField(source="size.size", read_only=True)
     price_modifier = serializers.DecimalField(source="size.price_modifier", max_digits=10, decimal_places=2, read_only=True)
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = EventProductOrder
@@ -113,8 +115,17 @@ class EventProductOrderMinimalSerializer(serializers.ModelSerializer):
             "id", "order_reference_id", "product", "product_title",
             "quantity", "price_at_purchase", "discount_applied", 
             "status", "status_display", "size_name", "price_modifier",
-            "uses_size", "changeable"
+            "uses_size", "changeable", "image_url"
         ]
+        
+    def get_image_url(self, obj):
+        """Get the product's primary image URL"""
+        if obj.product:
+            images = ProductImageSerializer(obj.product.images, many=True).data
+            if images and len(images) > 0:
+                return images[0].get('image_url')
+            
+        return None
 
 
 class EventCartMinimalSerializer(serializers.ModelSerializer):

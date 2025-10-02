@@ -834,10 +834,13 @@ class EventSerializer(serializers.ModelSerializer):
                         processed_ids.add(new_resource.id)
                 
                 # Remove resources that weren't in the update
+                # But don't delete resources that are referenced by the memo field
                 for resource_id, resource in existing_resources.items():
                     if resource_id not in processed_ids:
                         instance.resources.remove(resource)
-                        resource.delete()
+                        # Only delete the resource if it's not referenced by the memo field
+                        if instance.memo != resource:
+                            resource.delete()
 
             # Memo
             if memo_data:
