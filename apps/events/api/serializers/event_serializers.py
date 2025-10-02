@@ -120,6 +120,7 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
             "anchor_verse",
             "areas_involved",
             "main_venue",
+            "registration_open"
         )
         
     def get_main_venue(self, obj):
