@@ -1299,12 +1299,13 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         return participant
 
     # TODO: update method, but generally use the user serializer to update user information as each guest
+    
+    
     # has their own user account
 
 class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
     """
-    Flat, minimal participant info for table/list views. 
-    DO NOT use for detailed views to create or update participants.
+    Restrictive serializer for listing participants with minimal information
     """
     event = serializers.CharField(source="event.event_code", read_only=True)
     first_name = serializers.CharField(source="user.first_name", read_only=True)
@@ -1326,6 +1327,70 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
             "registration_date",
         ]
         read_only_fields = fields
+
+class ListEventParticipantSerializer(serializers.ModelSerializer):
+    """
+    Used specifically for tables
+    """
+    event = serializers.CharField(source="event.event_code", read_only=True)
+    first_name = serializers.CharField(source="user.first_name", read_only=True)
+    last_name = serializers.CharField(source="user.last_name", read_only=True)
+    email = serializers.EmailField(source="user.primary_email", read_only=True)
+     
+    registration_date = serializers.DateTimeField(read_only=True)
+    area_from = serializers.SerializerMethodField()
+    merch_data = serializers.SerializerMethodField()
+    bank_reference = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EventParticipant
+        fields = [
+            "event_pax_id",
+            "event",  # UUID of event
+            "user",   # UUID of user
+            "first_name",
+            "last_name",
+            "email",
+            "participant_type",
+            "status",
+            "registration_date",
+            "area_from",
+            "merch_data",
+            "bank_reference",
+        ]
+        read_only_fields = fields
+
+    def get_merch_data(self, obj):
+        
+        carts = obj.user.carts.filter(event=obj.event)    
+        
+        merch_data = []
+        for cart in carts:
+            print(cart.orders.all())
+            cart_data = {
+                "cart_id": str(cart.uuid),
+                "total": cart.total,
+            }
+            reference = shop_models.ProductPayment.objects.filter(cart=cart).first()
+            cart_data["bank_reference"] = reference.bank_reference if reference else None
+            cart_data["number_of_items"] = cart.products.count()
+            merch_data.append(cart_data)
+        return merch_data
+    
+    def get_bank_reference(self, obj):
+        reference = EventPayment.objects.filter(user=obj, event=obj.event).first()
+        return reference.bank_reference if reference else None
+    
+    def get_area_from(self, obj):
+        try:
+            return {
+                "area": obj.user.area_from.area_name,
+                "chapter": obj.user.area_from.unit.chapter.chapter_name,
+                "cluster": obj.user.area_from.unit.chapter.cluster.cluster_id,
+                
+            }
+        except AttributeError:
+            return None
 
 
 class ParticipantManagementSerializer(serializers.ModelSerializer):
@@ -1674,6 +1739,8 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                     "chapter": chapter_info,
                     "cluster": cluster_info,
                 }
+            else:
+                return {"area": None, "chapter": None, "cluster": None}
         except AttributeError:
             pass
         return None

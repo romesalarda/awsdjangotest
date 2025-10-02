@@ -154,6 +154,7 @@ class EventPayment(models.Model):
         max_length=100, unique=True, verbose_name=_("payment tracking number"), help_text=_("Unique identifier for this payment (e.g., UUID or custom format)"),
         blank=True, null=True
         )
+    bank_reference = models.CharField(_("Payment Reference"), max_length=18, unique=True, blank=True, null=True) # required for tracking payment references
 
     package = models.ForeignKey(
         "EventPaymentPackage",
@@ -198,6 +199,10 @@ class EventPayment(models.Model):
     def save(self, *args, **kwargs):
         if self.event_payment_tracking_number is None:
             self.event_payment_tracking_number = f"{self.event.event_code}-PAY-{uuid.uuid4()}".upper()
+            
+        if not self.bank_reference:
+            self.bank_reference = f"{self.event.event_code[:5]}{str(uuid.uuid4())[:8].upper()}"
+            
         return super().save(*args, **kwargs)
 
     class Meta:

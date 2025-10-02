@@ -2,6 +2,8 @@ from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from functools import partial
+
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
@@ -11,13 +13,13 @@ from apps.events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
     EventTalk, EventWorkshop
 )
+
 from apps.events.api.serializers import *
 from apps.events.api.serializers.event_serializers import ParticipantManagementSerializer
 from apps.users.api.serializers import CommunityUserSerializer
 from apps.events.api.filters import EventFilter
 from apps.shop.api.serializers import EventProductSerializer, EventCartSerializer
 from apps.shop.models import EventCart
-from core.permissions import IsEncoderPermission
 from apps.shop.api.serializers import EventCartMinimalSerializer
 
 #! Remember that service team members are also participants but not all participants are service team members
@@ -302,13 +304,20 @@ class EventViewSet(viewsets.ModelViewSet):
         Retrieve a list of participants for a specific event.
         '''
         event = self.get_object()
+        simple = request.query_params.get('simple', 'true').lower() == 'true'
         participants = event.participants.all()
         page = self.paginate_queryset(participants)
-        if page is not None:
-            serializer = ParticipantManagementSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
         
-        serializer = ParticipantManagementSerializer(participants, many=True)
+        if page is not None:
+            if simple:
+                serializer = ListEventParticipantSerializer(page, many=True)
+            else:
+                serializer = ParticipantManagementSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        if simple:
+            serializer = ListEventParticipantSerializer(participants, many=True)
+        else:
+            serializer = ParticipantManagementSerializer(participants, many=True)
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'], url_name="register", url_path="register")

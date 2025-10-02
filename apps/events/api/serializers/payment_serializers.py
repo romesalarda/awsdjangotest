@@ -169,11 +169,11 @@ class EventPaymentSerializer(serializers.ModelSerializer):
             "id", "user", "participant_details", "participant_user_email", "event", "event_name", 
             "package", "package_name", "method", "method_display", "stripe_payment_intent", 
             "amount", "amount_display", "currency", "status", "status_display", 
-            "event_payment_tracking_number", "paid_at", "verified", "created_at", "updated_at"
+            "event_payment_tracking_number", "paid_at", "verified", "created_at", "updated_at", "bank_reference"
         ]
         read_only_fields = ("id", "participant_details", "participant_user_email", "event_name", 
                            "package_name", "method_display", "event_payment_tracking_number", 
-                           "created_at", "updated_at")
+                           "created_at", "updated_at", "bank_reference")
 
     def get_amount_display(self, obj):
         return f"{obj.amount / 100:.2f} {obj.currency.upper()}"
