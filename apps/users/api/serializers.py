@@ -847,11 +847,21 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
     data_of_birth = serializers.DateField(source='date_of_birth', required=False)
     gender = serializers.ChoiceField(choices=CommunityUser.GenderType.choices, required=False)
     ministry = serializers.ChoiceField(choices=ReducedMinistryType.choices, required=False)
+    area_from_display = serializers.SerializerMethodField()
 
     class Meta:
         model = CommunityUser
-        fields = ('first_name', 'last_name', 'ministry', 'gender', 'data_of_birth', 'member_id', 'username')
-        # member_id and password are excluded for safety
+        fields = ('first_name', 'last_name', 'ministry', 'gender', 'data_of_birth', 'member_id', 'username' ,            
+                  "profile_picture", "area_from_display", "primary_email")
+
+    def get_area_from_display(self, obj):
+        # return a list of related areas
+        if obj.area_from:
+            return {
+                "area": obj.area_from.area_name,
+                "chapter": obj.area_from.unit.chapter.chapter_name,
+                "cluster":obj.area_from.unit.chapter.cluster.cluster_id,
+            }
 
     def validate(self, attrs):
         # No required fields, so just return attrs

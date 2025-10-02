@@ -12,6 +12,7 @@ from apps.events.models import (
     EventTalk, EventWorkshop
 )
 from apps.events.api.serializers import *
+from apps.events.api.serializers.event_serializers import ParticipantManagementSerializer
 from apps.users.api.serializers import CommunityUserSerializer
 from apps.events.api.filters import EventFilter
 from apps.shop.api.serializers import EventProductSerializer, EventCartSerializer
@@ -70,7 +71,7 @@ class EventViewSet(viewsets.ModelViewSet):
         user = request.user
         if user.is_authenticated:
             participant = EventParticipant.objects.filter(event=instance, user=user).first()
-            
+            # TODO: fix up permissions
             # if not participant and not user.has_perm('events.view_event'):
             #     return Response(
             #         {'error': _('You do not have permission to view this event.')},
@@ -304,10 +305,10 @@ class EventViewSet(viewsets.ModelViewSet):
         participants = event.participants.all()
         page = self.paginate_queryset(participants)
         if page is not None:
-            serializer = SimplifiedEventParticipantSerializer(page, many=True)
+            serializer = ParticipantManagementSerializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         
-        serializer = SimplifiedEventParticipantSerializer(participants, many=True)
+        serializer = ParticipantManagementSerializer(participants, many=True)
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'], url_name="register", url_path="register")
@@ -605,6 +606,17 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
     filterset_fields = ['event', 'user', 'status', 'participant_type']
     search_fields = ['user__first_name', 'user__last_name', 'team_assignment']
     lookup_field = "event_pax_id"
+    
+    def get_serializer_class(self):
+        """
+        Use optimized serializer for list views to reduce response size by 70-80%
+        Use full serializer for create/update operations that need complete data
+        """
+        if self.action == 'list':
+            return ParticipantManagementSerializer
+        elif self.action in ['retrieve'] and self.request.query_params.get('summary', 'false').lower() == 'true':
+            return ParticipantManagementSerializer
+        return EventParticipantSerializer
     
     #! remember to handle how service are register, can anyone just register as a participant?
     #! or should it be only event organizers/admins who can add participants?

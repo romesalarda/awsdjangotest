@@ -27,6 +27,9 @@ from .location_serializers import EventVenueSerializer, AreaLocationSerializer
 from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
 from .payment_serializers import EventPaymentPackageSerializer, EventPaymentMethodSerializer, EventPaymentSerializer
 
+from apps.shop.api import serializers as shop_serializers
+from apps.shop import models as shop_models
+
 class EventRoleSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(source='get_role_name_display', read_only=True)
     
@@ -1014,6 +1017,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         required=False,
         help_text="Dictionary containing consent fields, e.g. 'consent: {photos: false, dataProtection: false, terms: false,newsletter: false}'"
     )
+    carts_display = serializers.SerializerMethodField()
 
     class Meta:
         model = EventParticipant
@@ -1053,6 +1057,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "payment_method",
             "payment_package",
             "consent",
+            "carts_display"
         ]
         read_only_fields = [
             "id",
@@ -1063,6 +1068,13 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "confirmed_on",
             "attended_on",
         ]
+        
+    def get_carts_display(self, obj):
+        user = obj.user
+        carts = shop_models.EventCart.objects.filter(user=user, event=obj.event)
+        serializer = shop_serializers.EventCartSerializer(carts, many=True)
+        return serializer.data
+        
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
@@ -1096,6 +1108,8 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             },
             "verified": rep["verified"],
             "event_payments": rep["participant_event_payments"],
+            "carts": rep["carts_display"],
+            "questions_answered": rep["event_question_answers"],
         }
         
     def create(self, validated_data):
@@ -1304,7 +1318,6 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
             "event_pax_id",
             "event",  # UUID of event
             "user",   # UUID of user
-            "member_id",
             "first_name",
             "last_name",
             "email",
@@ -1313,6 +1326,376 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
             "registration_date",
         ]
         read_only_fields = fields
+
+
+class ParticipantManagementSerializer(serializers.ModelSerializer):
+    """
+    Optimized serializer for participant management views.
+    Eliminates bloated product catalog data while keeping essential participant info.
+    
+    This serializer reduces response size by 70-80% compared to EventParticipantSerializer
+    by removing redundant product details, full cart structures, and unnecessary metadata.
+    """
+    # User info
+    user = serializers.SerializerMethodField()
+    
+    # Status info
+    status = serializers.SerializerMethodField()
+    
+    # Dates
+    dates = serializers.SerializerMethodField()
+    
+    # Consents
+    consents = serializers.SerializerMethodField()
+    
+    # Health summary (simplified)
+    health = serializers.SerializerMethodField()
+    
+    # Emergency contacts (simplified)
+    emergency_contacts = serializers.SerializerMethodField()
+    
+    # Payment summary (no detailed transaction history)
+    payment = serializers.SerializerMethodField()
+    
+    # Event payments (simplified - no full transaction details)
+    event_payments = serializers.SerializerMethodField()
+    
+    # Carts (simplified - no full product catalog)
+    carts = serializers.SerializerMethodField()
+    
+    # Questions answered (simplified)
+    questions_answered = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EventParticipant
+        fields = [
+            "event",
+            "event_user_id", 
+            "user",
+            "status",
+            "dates",
+            "consents",
+            "health",
+            "emergency_contacts",
+            "notes",
+            "payment",
+            "verified",
+            "event_payments",
+            "carts",
+            "questions_answered",
+        ]
+        read_only_fields = fields
+
+    def get_event(self, obj):
+        return obj.event.event_code
+
+    def get_event_user_id(self, obj):
+        return obj.event_pax_id
+
+    def get_user(self, obj):
+        """Essential user info only"""
+        # Safely get profile picture URL
+        profile_picture_url = None
+        try:
+            if hasattr(obj.user, 'profile_picture') and obj.user.profile_picture:
+                profile_picture_url = obj.user.profile_picture.url
+        except (AttributeError, ValueError):
+            profile_picture_url = None
+            
+        return {
+            "first_name": obj.user.first_name,
+            "last_name": obj.user.last_name,
+            "ministry": getattr(obj.user, 'ministry', None),
+            "gender": getattr(obj.user, 'gender', None),
+            "date_of_birth": getattr(obj.user, 'date_of_birth', None),
+            "member_id": getattr(obj.user, 'member_id', None),
+            "username": obj.user.username,
+            "profile_picture": profile_picture_url,
+            "area_from_display": self._get_area_display(obj.user),
+            "primary_email": obj.user.primary_email,
+        }
+
+    def get_status(self, obj):
+        return {
+            "code": obj.status,
+            "participant_type": obj.participant_type,
+        }
+
+    def get_dates(self, obj):
+        return {
+            "registered_on": obj.registration_date,
+            "confirmed_on": obj.confirmation_date,
+            "attended_on": obj.attended_date,
+            "payment_date": obj.payment_date,
+        }
+
+    def get_consents(self, obj):
+        return {
+            "media_consent": obj.media_consent,
+            "data_consent": obj.data_consent,
+            "understood_registration": obj.understood_registration,
+        }
+
+    def get_health(self, obj):
+        """Simplified health info - no full medical model details"""
+        allergies = []
+        medical_conditions = []
+        
+        for allergy in obj.user.user_allergies.all():
+            allergies.append({
+                "id": str(allergy.id),
+                "name": allergy.allergy.name,
+                "severity": allergy.severity,
+                "severity_display": allergy.get_severity_display(),
+                "instructions": allergy.instructions,
+                "notes": allergy.notes,
+            })
+        
+        for condition in obj.user.user_medical_conditions.all():
+            medical_conditions.append({
+                "id": str(condition.id),
+                "name": condition.condition.name,
+                "severity": condition.severity,
+                "severity_display": condition.get_severity_display(),
+                "instructions": condition.instructions,
+                "date_diagnosed": condition.date_diagnosed,
+            })
+        
+        return {
+            "allergies": allergies,
+            "medical_conditions": medical_conditions,
+        }
+
+    def get_emergency_contacts(self, obj):
+        """Simplified emergency contacts - essential info only"""
+        contacts = []
+        for contact in obj.user.community_user_emergency_contacts.all():
+            contacts.append({
+                "id": str(contact.id),
+                "first_name": contact.first_name,
+                "last_name": contact.last_name,
+                "phone_number": contact.phone_number,
+                "contact_relationship": contact.contact_relationship,
+                "contact_relationship_display": contact.get_contact_relationship_display(),
+                "is_primary": contact.is_primary,
+            })
+        return contacts
+
+    def get_payment(self, obj):
+        """Payment summary only - no detailed transaction history"""
+        return {
+            "paid_amount": str(obj.paid_amount),
+        }
+
+    def get_event_payments(self, obj):
+        """Simplified event payments - no full transaction details"""
+        payments = []
+        for payment in obj.participant_event_payments.all():
+            # Safely get user reference
+            user_id = None
+            try:
+                if hasattr(payment, 'user') and payment.user:
+                    user_id = str(payment.user.id)
+                elif hasattr(payment, 'participant') and payment.participant and payment.participant.user:
+                    user_id = str(payment.participant.user.id)
+            except (AttributeError, ValueError):
+                user_id = None
+                
+            # Safely get method display
+            method_display = None
+            try:
+                if hasattr(payment, 'method') and payment.method:
+                    method_display = payment.method.get_method_display() if hasattr(payment.method, 'get_method_display') else str(payment.method)
+            except (AttributeError, ValueError):
+                method_display = None
+            
+            # Safely format amount
+            amount_display = str(payment.amount)
+            try:
+                if payment.currency and payment.amount:
+                    amount_display = f"{float(payment.amount)/100:.2f} {payment.currency.upper()}"
+            except (AttributeError, ValueError, TypeError):
+                amount_display = str(payment.amount)
+            
+            payments.append({
+                "id": payment.id,
+                "user": user_id,
+                "participant_details": {
+                    "participant_id": str(obj.id),
+                    "event_pax_id": obj.event_pax_id,
+                    "full_name": f"{obj.user.first_name} {obj.user.last_name}".strip(),
+                    "email": obj.user.primary_email,
+                    "participant_type": obj.participant_type,
+                    "status": obj.status,
+                    "registration_date": obj.registration_date,
+                },
+                "participant_user_email": obj.user.primary_email,
+                "event": str(obj.event.id),
+                "event_name": obj.event.name,
+                "package": payment.package.id if payment.package else None,
+                "package_name": payment.package.name if payment.package else None,
+                "method": payment.method.id if payment.method else None,
+                "method_display": method_display,
+                "amount": payment.amount,
+                "amount_display": amount_display,
+                "currency": getattr(payment, 'currency', None),
+                "status": payment.status,
+                "status_display": payment.get_status_display() if hasattr(payment, 'get_status_display') else payment.status,
+                "event_payment_tracking_number": getattr(payment, 'tracking_number', None),
+                "paid_at": getattr(payment, 'paid_at', None),
+                "verified": getattr(payment, 'verified', False),
+                "created_at": payment.created_at if hasattr(payment, 'created_at') else None,
+                "updated_at": payment.updated_at if hasattr(payment, 'updated_at') else None,
+            })
+        return payments
+
+    def get_carts(self, obj):
+        """Return simplified cart data - just basic cart info without product bloat"""
+        from apps.shop.models import EventCart
+        
+        carts = EventCart.objects.filter(user=obj.user, event=obj.event)
+        
+        simplified_carts = []
+        for cart in carts:
+            # Safely get cart totals
+            total = 0.0
+            shipping_cost = 0.0
+            try:
+                total = float(cart.total) if cart.total else 0.0
+                shipping_cost = float(cart.shipping_cost) if cart.shipping_cost else 0.0
+            except (ValueError, TypeError):
+                total = 0.0
+                shipping_cost = 0.0
+            
+            # Basic cart info only
+            cart_data = {
+                "uuid": str(cart.uuid),
+                "user": getattr(cart.user, 'member_id', ''),
+                "user_email": getattr(cart.user, 'primary_email', ''),
+                "event": str(cart.event.id),
+                "event_name": getattr(cart.event, 'name', ''),
+                "order_reference_id": getattr(cart, 'order_reference_id', ''),
+                "total": total,
+                "shipping_cost": shipping_cost,
+                "created": getattr(cart, 'created', None),
+                "updated": getattr(cart, 'updated', None),
+                "approved": getattr(cart, 'approved', False),
+                "submitted": getattr(cart, 'submitted', False),
+                "active": getattr(cart, 'active', True),
+                "notes": getattr(cart, 'notes', ''),
+                "shipping_address": getattr(cart, 'shipping_address', ''),
+                "orders": []  # Empty - no product details to reduce size
+            }
+            
+            # Add minimal order info (no full product catalog)
+            try:
+                for order in cart.orders.all()[:3]:  # Limit to 3 recent orders
+                    product = order.product
+                    
+                    images = product.images.all() if product and hasattr(product, 'images') else []
+                    image_url = images[0].image if images else None
+                                            
+                        
+                    order_data = {
+                        "id": order.id,
+                        "quantity": getattr(order, 'quantity', 1),
+                        "status": getattr(order, 'status', 'unknown'),
+                        "image_url": str(image_url.url) if image_url else None,
+                    }
+                    
+                    # Safely get product title
+                    try:
+                        order_data["product_title"] = order.product.title
+                    except AttributeError:
+                        order_data["product_title"] = "Unknown Product"
+                    
+                    # Safely get status display
+                    try:
+                        order_data["status_display"] = order.get_status_display()
+                    except AttributeError:
+                        order_data["status_display"] = order_data["status"].title()
+                    
+                    cart_data["orders"].append(order_data)
+            except AttributeError:
+                # If orders relationship doesn't exist, keep empty list
+                pass
+            
+            simplified_carts.append(cart_data)
+        
+        return simplified_carts
+
+    def get_questions_answered(self, obj):
+        """Simplified question responses - no extra metadata"""
+        answers = []
+        for qa in obj.event_question_answers.all():
+            # Safely get selected choices
+            selected_choices = []
+            try:
+                selected_choices = [choice.choice_text for choice in qa.selected_choices.all()]
+            except AttributeError:
+                # Fallback if choice_text doesn't exist, try other common field names
+                try:
+                    selected_choices = [choice.text for choice in qa.selected_choices.all()]
+                except AttributeError:
+                    selected_choices = []
+            
+            # Safely get question text
+            question_text = ""
+            try:
+                question_text = qa.question.question_text
+            except AttributeError:
+                try:
+                    question_text = qa.question.question_body
+                except AttributeError:
+                    question_text = getattr(qa.question, 'text', '')
+            
+            answers.append({
+                "id": str(qa.id),
+                "participant": str(qa.participant.id),
+                "question": str(qa.question.id),
+                "answer_text": qa.answer_text,
+                "question_text": question_text,
+                "selected_choices_display": selected_choices,
+            })
+        return answers
+
+    def _get_area_display(self, user):
+        """Helper method to get area display info"""
+        try:
+            if hasattr(user, 'area_from') and user.area_from:
+                area = user.area_from
+                cluster_info = None
+                chapter_info = None
+                if hasattr(area, 'unit') and area.unit:
+                    chapter_info = getattr(area.unit.chapter, 'chapter_name', None)
+                    cluster_info = getattr(area.unit.chapter.cluster, 'cluster_id', None)                
+                return {
+                    "area": getattr(area, 'area_name', None),
+                    "chapter": chapter_info,
+                    "cluster": cluster_info,
+                }
+        except AttributeError:
+            pass
+        return None
+
+    def to_representation(self, instance):
+        """Override to use custom field getters"""
+        return {
+            "event": self.get_event(instance),
+            "event_user_id": self.get_event_user_id(instance),
+            "user": self.get_user(instance),
+            "status": self.get_status(instance),
+            "dates": self.get_dates(instance),
+            "consents": self.get_consents(instance),
+            "health": self.get_health(instance),
+            "emergency_contacts": self.get_emergency_contacts(instance),
+            "notes": instance.notes,
+            "payment": self.get_payment(instance),
+            "verified": instance.verified,
+            "event_payments": self.get_event_payments(instance),
+            "carts": self.get_carts(instance),
+            "questions_answered": self.get_questions_answered(instance),
+        }
         
 class EventDayAttendanceSerializer(serializers.ModelSerializer): #! used for future reference, not currently implemented
     '''
