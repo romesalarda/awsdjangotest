@@ -523,14 +523,14 @@ class EventSerializer(serializers.ModelSerializer):
         pprint.pprint(validated_data)
         
         with transaction.atomic():
+
             self.validate(validated_data)
             event = Event.objects.create(**validated_data)
             
             area_names = [area.lower() for area in area_names]
-
             # Areas
             if area_names:
-                print(AreaLocation.objects.filter(area_name__in=area_names).values_list('area_name', flat=True))
+                # print(AreaLocation.objects.filter(area_name__in=area_names).values_list('area_name', flat=True))
                 for area in area_names:
                     if not AreaLocation.objects.filter(area_name=area.lower()).exists():
                         raise serializers.ValidationError({"area_names": _(f"Area '{area}' does not exist.")})
@@ -722,6 +722,7 @@ class EventSerializer(serializers.ModelSerializer):
         - Datetime handling: Supports ISO format and HTML datetime-local format
         - Price conversion: Automatically converts string prices to integer pence
         """
+        print(validated_data)
         # similar to create, but update existing instance
         start_date = validated_data.get('start_date', timezone.now())
         validated_data['start_date'] = start_date
@@ -746,9 +747,9 @@ class EventSerializer(serializers.ModelSerializer):
             # Handle landing image file upload
             if landing_image_file:
                 instance.landing_image = landing_image_file
-
             # Areas
             if area_names:
+                area_names = [area.lower().strip() for area in area_names]
                 print(AreaLocation.objects.filter(area_name__in=area_names).values_list('area_name', flat=True))
                 for area in area_names:
                     if not AreaLocation.objects.filter(area_name=area.lower()).exists():
@@ -866,9 +867,9 @@ class EventSerializer(serializers.ModelSerializer):
                     # Map frontend field names to model field names
                     mapped_data = {
                         'event': instance.id,
-                        'name': package_data.get('package_name', ''),
+                        'name': package_data.get('name', ''),
                         'description': package_data.get('description', ''),
-                        'price': int(float(package_data.get('price', 0)) * 100),  # Convert pounds to pence
+                        'price': float(package_data.get('price', 0)),  # Convert pounds to pence
                         'currency': package_data.get('currency', 'GBP').lower(),
                         'capacity': package_data.get('capacity'),
                         'is_active': package_data.get('is_active', True),
@@ -1466,7 +1467,6 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                 profile_picture_url = obj.user.profile_picture.url
         except (AttributeError, ValueError):
             profile_picture_url = None
-            
         return {
             "first_name": obj.user.first_name,
             "last_name": obj.user.last_name,
@@ -1478,6 +1478,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             "profile_picture": profile_picture_url,
             "area_from_display": self._get_area_display(obj.user),
             "primary_email": obj.user.primary_email,
+            "phone": obj.user.phone_number,
         }
 
     def get_status(self, obj):
@@ -1611,6 +1612,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                 "verified": getattr(payment, 'verified', False),
                 "created_at": payment.created_at if hasattr(payment, 'created_at') else None,
                 "updated_at": payment.updated_at if hasattr(payment, 'updated_at') else None,
+                "bank_reference": getattr(payment, 'bank_reference', None),
             })
         return payments
 
@@ -1633,6 +1635,8 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                 shipping_cost = 0.0
             
             # Basic cart info only
+            product_payment = shop_models.ProductPayment.objects.filter(cart=cart).first()
+
             cart_data = {
                 "uuid": str(cart.uuid),
                 "user": getattr(cart.user, 'member_id', ''),
@@ -1649,7 +1653,8 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                 "active": getattr(cart, 'active', True),
                 "notes": getattr(cart, 'notes', ''),
                 "shipping_address": getattr(cart, 'shipping_address', ''),
-                "orders": []  # Empty - no product details to reduce size
+                "orders": [],  # Empty - no product details to reduce size
+                "bank_reference": getattr(product_payment, 'bank_reference', None)
             }
             
             # Add minimal order info (no full product catalog)
@@ -1665,7 +1670,9 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                         "id": order.id,
                         "quantity": getattr(order, 'quantity', 1),
                         "status": getattr(order, 'status', 'unknown'),
-                        "image_url": str(image_url.url) if image_url else None,
+                        "imageUrl": str(image_url.url) if image_url else None,
+                        "price": float(getattr(product, 'price', 0.0)) if getattr(product, 'price', None) else 0.0,
+                        "bank_reference": getattr(product_payment, 'bank_reference', None),
                     }
                     
                     # Safely get product title

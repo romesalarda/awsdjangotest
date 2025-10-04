@@ -1,8 +1,7 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-
-from functools import partial
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils.translation import gettext_lazy as _
@@ -19,7 +18,7 @@ from apps.events.api.serializers.event_serializers import ParticipantManagementS
 from apps.users.api.serializers import CommunityUserSerializer
 from apps.events.api.filters import EventFilter
 from apps.shop.api.serializers import EventProductSerializer, EventCartSerializer
-from apps.shop.models import EventCart
+from apps.shop.models import EventCart, ProductPayment
 from apps.shop.api.serializers import EventCartMinimalSerializer
 
 #! Remember that service team members are also participants but not all participants are service team members
@@ -702,13 +701,70 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
 
         data = request.data
         is_paid = all(p['status'] == 'SUCCEEDED' for p in data['event_payments'])
-        payment_method = data['event_payments'][0]['method_display'] if data['event_payments'] else 'No payment method'
+        payment_method = data['event_payments'][0]['method'] if data['event_payments'] else 'No payment method'
         needs_verification = any(not p['verified'] for p in data['event_payments'])
         return Response(
             {"event_user_id": data["event_user_id"], 
              "is_paid": is_paid, "payment_method": payment_method, 
              "needs_verification": needs_verification
              }, status=request.status_code)
+        
+    @action(detail=True, methods=['post'], url_name="confirm-payment", url_path="confirm-payment")
+    def confirm_registration_payment(self, request, event_pax_id=None):
+        '''
+        Confirm a participant's registration for an event. This must be done if they have paid
+        Only event organizers/admins can confirm registrations.
+        '''
+        # TODO: ensure only organisers can do this
+        participant = self.get_object()
+        if participant.status != EventParticipant.ParticipantStatus.REGISTERED:
+            return Response(
+                {'error': _('Only participants with REGISTERED status can be confirmed.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        
+        payment = get_object_or_404(EventPayment, user=participant)
+        payment.verified = True
+        payment.paid_at = timezone.now()
+        payment.status = EventPayment.PaymentStatus.SUCCEEDED
+        payment.save()
+        
+        serializer = self.get_serializer(participant)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'], url_name="confirm-merch-payment", url_path="confirm-merch-payment")
+    def confirm_merch_order_payment(self, request, event_pax_id=None):
+        '''
+        Confirm a participant's merchandise order payment for an event.
+        Only event organizers/admins can confirm payments.
+        '''
+        # TODO: ensure only organisers can do this
+        data = request.data
+        participant = get_object_or_404(EventParticipant, event_pax_id=event_pax_id)
+        cart = data.get('cart_id')
+        if not cart:
+            return Response(
+                {'error': _('Cart ID is required.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        cart_instance = get_object_or_404(EventCart, uuid=cart, user=participant.user)
+        if not cart_instance.submitted:
+            return Response(
+                {'error': _('Cart must be submitted before confirming payment.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        product_payment = get_object_or_404(ProductPayment, cart=cart_instance, user=participant.user)
+        product_payment.status = ProductPayment.PaymentStatus.SUCCEEDED
+        product_payment.approved = True
+        product_payment.paid_at = timezone.now()
+        product_payment.save()
+        
+        cart_instance.approved = True
+        cart_instance.save()
+
+        serializer = self.get_serializer(participant)
+        return Response(serializer.data)
 
 class EventTalkViewSet(viewsets.ModelViewSet):
     '''
