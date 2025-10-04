@@ -4,11 +4,12 @@ from apps.shop.models.shop_models import EventProduct, EventCart
 
 class ProductPaymentMethodSerializer(serializers.ModelSerializer):
     """Serializer for ProductPaymentMethod with security validations."""
+    method_display = serializers.CharField(source="get_method_display", read_only=True)
     
     class Meta:
         model = ProductPaymentMethod
         fields = "__all__"
-        read_only_fields = ["created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at", "method_display"]
         
     def validate(self, attrs):
         """Validate payment method data for security."""

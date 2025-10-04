@@ -20,6 +20,7 @@ from apps.events.api.filters import EventFilter
 from apps.shop.api.serializers import EventProductSerializer, EventCartSerializer
 from apps.shop.models import EventCart, ProductPayment
 from apps.shop.api.serializers import EventCartMinimalSerializer
+from apps.shop.api.serializers.payment_serializers import ProductPaymentMethodSerializer
 
 #! Remember that service team members are also participants but not all participants are service team members
 
@@ -304,8 +305,14 @@ class EventViewSet(viewsets.ModelViewSet):
         '''
         event = self.get_object()
         simple = request.query_params.get('simple', 'true').lower() == 'true'
+        
         participants = event.participants.all()
         page = self.paginate_queryset(participants)
+        
+        # TODO: handle search filter params, via identity  (name, phone, email), area (cluster, area, chapter), bank_reference, status, orders >= num
+        # TODO: registration date range filter, question query (more advanced later)
+        
+        
         
         if page is not None:
             if simple:
@@ -585,6 +592,63 @@ class EventViewSet(viewsets.ModelViewSet):
         serializer = EventPaymentMethodSerializer(payment_methods, many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['get', 'post'], url_name="product-payment-methods", url_path="product-payment-methods")
+    def product_payment_methods(self, request, pk=None):
+        '''
+        Retrieve and create merchandise payment methods for a specific event.
+        '''
+        if request.method == 'GET':
+            event = self.get_object()
+            payment_methods = event.product_payment_methods.filter(is_active=True)
+            page = self.paginate_queryset(payment_methods)
+            if page is not None:
+                serializer = ProductPaymentMethodSerializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+
+            serializer = ProductPaymentMethodSerializer(payment_methods, many=True)
+            return Response(serializer.data)
+        elif request.method == 'POST':
+            event = self.get_object()
+            self.check_object_permissions(request, event) 
+            self.check_permissions(request) 
+            serializer = ProductPaymentMethodSerializer(data=request.data, context={'event': event})
+            if serializer.is_valid():
+                serializer.save(event=event)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['put', 'patch', 'delete'], url_name="product-payment-method-detail", url_path="product-payment-methods/(?P<method_id>[^/.]+)")
+    def product_payment_method_detail(self, request, pk=None, method_id=None):
+        '''
+        Update or delete a specific merchandise payment method for an event.
+        '''
+        event = self.get_object()
+        self.check_object_permissions(request, event)
+        self.check_permissions(request)
+        
+        try:
+            payment_method = event.product_payment_methods.get(id=method_id)
+        except event.product_payment_methods.model.DoesNotExist:
+            return Response(
+                {'error': _('Payment method not found.')},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if request.method in ['PUT', 'PATCH']:
+            serializer = ProductPaymentMethodSerializer(
+                payment_method, 
+                data=request.data, 
+                partial=request.method == 'PATCH',
+                context={'event': event}
+            )
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        elif request.method == 'DELETE':
+            payment_method.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
 class EventServiceTeamMemberViewSet(viewsets.ModelViewSet):
     '''
     API endpoint for managing event service team members.
@@ -723,7 +787,6 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        
         payment = get_object_or_404(EventPayment, user=participant)
         payment.verified = True
         payment.paid_at = timezone.now()
@@ -765,7 +828,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(participant)
         return Response(serializer.data)
-
+    
 class EventTalkViewSet(viewsets.ModelViewSet):
     '''
     API endpoint for managing event talks.

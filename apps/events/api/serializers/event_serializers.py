@@ -1664,7 +1664,6 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                     
                     images = product.images.all() if product and hasattr(product, 'images') else []
                     image_url = images[0].image if images else None
-                                            
                         
                     order_data = {
                         "id": order.id,
@@ -1673,6 +1672,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                         "imageUrl": str(image_url.url) if image_url else None,
                         "price": float(getattr(product, 'price', 0.0)) if getattr(product, 'price', None) else 0.0,
                         "bank_reference": getattr(product_payment, 'bank_reference', None),
+                        "size": getattr(order.size, 'size', None),
                     }
                     
                     # Safely get product title
