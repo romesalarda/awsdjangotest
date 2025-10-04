@@ -18,7 +18,7 @@ from apps.events.api.serializers.event_serializers import ParticipantManagementS
 from apps.users.api.serializers import CommunityUserSerializer
 from apps.events.api.filters import EventFilter
 from apps.shop.api.serializers import EventProductSerializer, EventCartSerializer
-from apps.shop.models import EventCart, ProductPayment
+from apps.shop.models import EventCart, ProductPayment, EventProduct, EventProductOrder, ProductSize
 from apps.shop.api.serializers import EventCartMinimalSerializer
 from apps.shop.api.serializers.payment_serializers import ProductPaymentMethodSerializer
 
@@ -829,6 +829,310 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(participant)
         return Response(serializer.data)
     
+    @action(detail=True, methods=['post'], url_name="create-merch-cart", url_path="create-merch-cart")
+    def create_merch_cart(self, request, event_pax_id=None):
+        '''
+        Create a new merchandise cart for a participant with manual orders.
+        Only event organizers/admins can create carts for participants.
+        
+        Expected payload:
+        {
+            "user_id": "user-uuid",
+            "event_id": "event-uuid", 
+            "notes": "Optional cart notes",
+            "shipping_address": "Optional shipping address",
+            "orders": [
+                {
+                    "product_uuid": "product-uuid",
+                    "product_name": "Product Name",
+                    "quantity": 2,
+                    "price_at_purchase": 15.00,
+                    "size": "LG",
+                    "size_id": 154
+                }
+            ]
+        }
+        '''
+        
+        try:
+            data = request.data
+            participant = self.get_object()
+            
+            # Validate required fields
+            orders_data = data.get('orders', [])
+            if not orders_data:
+                return Response(
+                    {'error': _('At least one order is required.')},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate each order has required fields
+            for i, order_data in enumerate(orders_data):
+                required_fields = ['product_uuid', 'quantity', 'price_at_purchase']
+                missing_fields = [field for field in required_fields if field not in order_data]
+                if missing_fields:
+                    return Response(
+                        {'error': f'Order {i+1} missing required fields: {", ".join(missing_fields)}'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Create the cart
+            cart = EventCart.objects.create(
+                user=participant.user,
+                event=participant.event,
+                notes=data.get('notes', ''),
+                shipping_address=data.get('shipping_address', ''),
+                total=0,  # Will be calculated below
+                active=True,
+                submitted=False,
+                approved=False
+            )
+            
+            total_amount = 0
+            
+            # Create orders for each product
+            for order_data in orders_data:
+                try:
+                    # Get the product
+                    product = EventProduct.objects.get(
+                        uuid=order_data['product_uuid'], 
+                        event=participant.event
+                    )
+                    
+                    # Get size if specified
+                    size_instance = None
+                    if order_data.get('size_id'):
+                        size_instance = ProductSize.objects.get(
+                            id=order_data['size_id'],
+                            product=product
+                        )
+                    
+                    # Validate quantity
+                    quantity = int(order_data['quantity'])
+                    if quantity <= 0:
+                        raise ValueError("Quantity must be greater than 0")
+                    
+                    if quantity > product.maximum_order_quantity:
+                        raise ValueError(f"Quantity exceeds maximum order quantity of {product.maximum_order_quantity}")
+                    
+                    # Calculate price
+                    price_at_purchase = float(order_data['price_at_purchase'])
+                    if price_at_purchase < 0:
+                        raise ValueError("Price cannot be negative")
+                    
+                    # Create the order
+                    order = EventProductOrder.objects.create(
+                        product=product,
+                        cart=cart,
+                        quantity=quantity,
+                        price_at_purchase=price_at_purchase,
+                        size=size_instance,
+                        uses_size=size_instance is not None,
+                        status=EventProductOrder.Status.PENDING
+                    )
+                    
+                    # Add to total
+                    total_amount += price_at_purchase * quantity
+                    
+                except EventProduct.DoesNotExist:
+                    cart.delete()  # Cleanup
+                    return Response(
+                        {'error': f'Product with UUID {order_data.get("product_uuid")} not found.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                except ProductSize.DoesNotExist:
+                    cart.delete()  # Cleanup
+                    return Response(
+                        {'error': f'Size with ID {order_data.get("size_id")} not found for this product.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                except (ValueError, KeyError) as e:
+                    cart.delete()  # Cleanup
+                    return Response(
+                        {'error': f'Invalid order data: {str(e)}'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Update cart total
+            cart.total = total_amount
+            cart.save()
+            
+            # Return cart data
+            serializer = EventCartMinimalSerializer(cart)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to create cart: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['patch'], url_name="update-merch-order", url_path="update-merch-order/(?P<order_id>[^/.]+)")
+    def update_merch_order(self, request, event_pax_id=None, order_id=None):
+        '''
+        Update an individual merchandise order for a participant.
+        Only event organizers/admins can update orders.
+        
+        Expected payload:
+        {
+            "product_name": "Updated Product Name",
+            "size": "MD",
+            "quantity": 3,
+            "price_at_purchase": 20.00
+        }
+        '''
+        
+        try:
+            participant = self.get_object()
+            
+            # Get the order
+            try:
+                order = EventProductOrder.objects.get(
+                    id=order_id,
+                    cart__user=participant.user,
+                    cart__event=participant.event
+                )
+            except EventProductOrder.DoesNotExist:
+                return Response(
+                    {'error': _('Order not found.')},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if cart is already approved (can't modify approved carts)
+            if order.cart.approved:
+                return Response(
+                    {'error': _('Cannot modify orders in approved carts.')},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            data = request.data
+            
+            # Update fields if provided
+            if 'quantity' in data:
+                quantity = int(data['quantity'])
+                if quantity <= 0:
+                    return Response(
+                        {'error': _('Quantity must be greater than 0.')},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                if quantity > order.product.maximum_order_quantity:
+                    return Response(
+                        {'error': f'Quantity exceeds maximum order quantity of {order.product.maximum_order_quantity}.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                order.quantity = quantity
+            
+            if 'price_at_purchase' in data:
+                price = float(data['price_at_purchase'])
+                if price < 0:
+                    return Response(
+                        {'error': _('Price cannot be negative.')},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                order.price_at_purchase = price
+            
+            # Handle size updates
+            if 'size' in data:
+                size_value = data['size']
+                if size_value:
+                    try:
+                        size_instance = ProductSize.objects.get(
+                            size=size_value,
+                            product=order.product
+                        )
+                        order.size = size_instance
+                        order.uses_size = True
+                    except ProductSize.DoesNotExist:
+                        return Response(
+                            {'error': f'Size "{size_value}" not available for this product.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                else:
+                    order.size = None
+                    order.uses_size = False
+            
+            order.save()
+            
+            # Recalculate cart total
+            cart = order.cart
+            cart.total = sum(
+                (o.price_at_purchase or 0) * o.quantity 
+                for o in cart.orders.all()
+            )
+            cart.save()
+            
+            return Response(
+                {'message': _('Order updated successfully.')},
+                status=status.HTTP_200_OK
+            )
+            
+        except (ValueError, KeyError) as e:
+            return Response(
+                {'error': f'Invalid data: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to update order: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['patch'], url_name="cancel-merch-order", url_path="cancel-merch-order/(?P<order_id>[^/.]+)")
+    def cancel_merch_order(self, request, event_pax_id=None, order_id=None):
+        '''
+        Cancel an individual merchandise order for a participant.
+        Only event organizers/admins can cancel orders.
+        '''
+        
+        try:
+            participant = self.get_object()
+            
+            # Get the order
+            try:
+                order = EventProductOrder.objects.get(
+                    id=order_id,
+                    cart__user=participant.user,
+                    cart__event=participant.event
+                )
+            except EventProductOrder.DoesNotExist:
+                return Response(
+                    {'error': _('Order not found.')},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if cart is already approved (can't cancel from approved carts)
+            if order.cart.approved:
+                return Response(
+                    {'error': _('Cannot cancel orders in approved carts.')},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Update status to cancelled
+            order.status = EventProductOrder.Status.CANCELLED
+            order.save()
+            
+            # Recalculate cart total (excluding cancelled orders)
+            cart = order.cart
+            cart.total = sum(
+                (o.price_at_purchase or 0) * o.quantity 
+                for o in cart.orders.filter(status__in=[
+                    EventProductOrder.Status.PENDING,
+                    EventProductOrder.Status.PURCHASED
+                ])
+            )
+            cart.save()
+            
+            return Response(
+                {'message': _('Order cancelled successfully.')},
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to cancel order: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 class EventTalkViewSet(viewsets.ModelViewSet):
     '''
     API endpoint for managing event talks.
