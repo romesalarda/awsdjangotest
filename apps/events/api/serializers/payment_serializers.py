@@ -71,7 +71,7 @@ class EventPaymentPackageSerializer(serializers.ModelSerializer):
 
     def get_price_display(self, obj):
         # Price is stored in pence, so divide by 100 for display
-        return f"{obj.price / 100:.2f} {obj.currency.upper()}"
+        return f"{obj.price:.2f} {obj.currency.upper()}"
     
     def create(self, validated_data):
         from apps.events.models import EventResource

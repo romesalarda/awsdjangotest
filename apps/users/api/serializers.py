@@ -223,6 +223,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
     For a simplified version and restrictive permissions (e.g. for dropdowns, lists, etc), use SimplifiedCommunityUserSerializer.
     '''
     roles = SimplifiedUserCommunityRoleSerializer(source='role_links', many=True, read_only=True)
+    username = serializers.CharField(required=False)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     short_name = serializers.CharField(source='get_short_name', read_only=True)
     password = serializers.CharField(write_only=True, required=False, style={"input_type": "password"})
@@ -265,11 +266,16 @@ class CommunityUserSerializer(serializers.ModelSerializer):
         help_text="List of community role assignment dicts for creation/update"
     )  
     
+    area_full_display = serializers.CharField(source="area_from")
+    area_from_display = serializers.SerializerMethodField()
+    chapter = serializers.SerializerMethodField()
+    cluster = serializers.SerializerMethodField()
+        
     class Meta:
         model = CommunityUser
         fields = ('member_id','roles', 'username', 'full_name', 'short_name','password', 'first_name', 'last_name', 'middle_name', 'preferred_name',
                   'primary_email', 'secondary_email', 'phone_number', 'address_line_1', 'address_line_2', 'postcode', 'area_from',
-                  'emergency_contacts', 'alergies', 'medical_conditions', "is_encoder",
+                  'emergency_contacts', 'alergies', 'medical_conditions', "is_encoder", "date_of_birth", "chapter", "cluster", "area_from_display", "area_full_display",
                   # Write-only nested data fields
                   'emergency_contacts_data', 'allergies_data', 'medical_conditions_data', 'roles_data')
         extra_kwargs = {
@@ -277,6 +283,27 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             'member_id': {'read_only': True},
             'username': {'read_only': True},
         }
+        
+        
+    def get_area_from_display(self, user):
+        area_from = getattr(user, "area_from")
+        if area_from is None:
+            return 
+        return area_from.area_name
+    
+    def get_chapter(self, user):
+        area_from = getattr(user, "area_from")
+        if area_from is None:
+            return 
+        return area_from.unit.chapter.chapter_name
+    
+    def get_cluster(self, user):
+        area_from = getattr(user, "area_from")
+        if area_from is None:
+            return 
+        return area_from.unit.chapter.cluster.cluster_id
+
+
 
     def to_internal_value(self, data):
         # Handle nested data structures sent from frontend
@@ -379,6 +406,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         # Extract nested relationship data
+        print("attempting to create user")
         password = validated_data.pop('password', None)
         emergency_contacts_data = validated_data.pop('emergency_contacts_data', [])
         allergies_data = validated_data.pop('allergies_data', [])
@@ -808,6 +836,10 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                     "line2": rep.get("address_line_2"),
                     "postcode": rep.get("postcode"),
                     "area_from": rep.get("area_from"),
+                    "area_from_display": rep.get("area_from_display"),
+                    "area_full_display": rep.get("area_full_display"),
+                    "chapter": rep.get("chapter"),
+                    "cluster": rep.get("cluster")
                 },
             },
             "community": {
@@ -848,11 +880,13 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
     gender = serializers.ChoiceField(choices=CommunityUser.GenderType.choices, required=False)
     ministry = serializers.ChoiceField(choices=ReducedMinistryType.choices, required=False)
     area_from_display = serializers.SerializerMethodField()
+    username = serializers.CharField(required=False)
+    password = serializers.CharField(required=False, write_only=True, style={"input_type": "password"})
 
     class Meta:
         model = CommunityUser
         fields = ('first_name', 'last_name', 'ministry', 'gender', 'data_of_birth', 'member_id', 'username' ,            
-                  "profile_picture", "area_from_display", "primary_email")
+                  "profile_picture", "area_from_display", "primary_email", "password")
 
     def get_area_from_display(self, obj):
         # return a list of related areas
@@ -864,9 +898,20 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
             }
 
     def validate(self, attrs):
-        # No required fields, so just return attrs
+                
         return attrs
-
+    
+    def create(self, validated_data):
+        
+        password = validated_data.pop("password")
+        
+        instance = super().create(validated_data)
+        if password:
+            instance.set_password(password)
+            instance.save()
+        return instance
+        
+        
     def update(self, instance, validated_data):
         # Only update provided fields
         for attr, value in validated_data.items():

@@ -85,6 +85,8 @@ class EventViewSet(viewsets.ModelViewSet):
             #         status=status.HTTP_403_FORBIDDEN
             #         )
             data['is_participant'] = bool(participant)
+            data['participant_count'] = EventParticipant.objects.filter(event=instance).count()
+
         return Response(data)
         
     def perform_create(self, serializer):
@@ -181,6 +183,9 @@ class EventViewSet(viewsets.ModelViewSet):
             payment_details["method_info"] = None
             
         payment_details["payment_deadline"] = payment_deadline
+        # print()
+        
+        print(payment_details)
         
         # extra_questions = event_data.pop("extra_questions", [])
 
@@ -216,7 +221,7 @@ class EventViewSet(viewsets.ModelViewSet):
         data["user"] = user_data
         
         #! Handle merch
-        carts = EventCart.objects.filter(user=user, event=event)
+        carts = EventCart.objects.filter(user=user, event=event, active=False)
         cart_serializer = EventCartMinimalSerializer(carts, many=True)
         data["merch"] = cart_serializer.data        
         

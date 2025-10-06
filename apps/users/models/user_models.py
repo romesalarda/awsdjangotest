@@ -130,7 +130,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     ministry = models.CharField(
         max_length=3, 
         choices=MinistryType.choices,  
-        default=MinistryType.CFC,
+        default=MinistryType.YOUTH_GUEST,
         verbose_name=_("ministry")
     ) # TODO: change default to GUEST 
     
@@ -158,19 +158,20 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
 
     def save(self, *args, **kwargs):
         # Track if this is a new instance (needs member_id generation)
-        is_new_instance = self.pk is None
-        needs_member_id = not self.member_id and is_new_instance
+        # is_new_instance = self.pk is None
+        needs_member_id = not self.member_id
         
         # Ensure username is unique
-        if not self.username:
-            base_username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
-            self.username = base_username
-            
-            # Check for duplicates and append number if needed
-            counter = 1
-            while CommunityUser.objects.filter(username=self.username).exclude(pk=self.pk).exists():
-                self.username = f"{base_username}{counter}"
-                counter += 1
+    
+        # if not self.username:
+        base_username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
+        self.username = base_username
+        
+        # Check for duplicates and append number if needed
+        counter = 1
+        while CommunityUser.objects.filter(username=self.username).exclude(pk=self.pk).exists():
+            self.username = f"{base_username}{counter}"
+            counter += 1
                 
         # Calculate age from date of birth if provided
         if self.date_of_birth and not self.age:
@@ -181,9 +182,10 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         
         # First save to get the UUID if this is a new instance
         super().save(*args, **kwargs)
-        
+        print("requires new id? " + str(needs_member_id) + " new uuid generated :" + str(self.id))
         # Generate member ID after we have the UUID
         if needs_member_id:
+            print("building new id")
             # Generate member ID using the now-available UUID
             name_slug = slugify(
                 f"{self.first_name[:MAX_MEMBER_ID_FIRST_NAME]}{self.last_name[:MAX_MEMBER_ID_LAST_NAME]}"
