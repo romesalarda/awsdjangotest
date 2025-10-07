@@ -2,6 +2,7 @@ from rest_framework import viewsets, filters, permissions, response, status
 from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models.query import Q
+from django.shortcuts import get_object_or_404
 
 from apps.events.models import CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation
 from apps.events.api.serializers import *
@@ -73,7 +74,10 @@ class ChapterLocationViewSet(viewsets.ModelViewSet):
         ).first()
         if area and area.unit and area.unit.chapter:
             serializer = ChapterLocationSerializer(area.unit.chapter)
-            return response.Response(serializer.data)
+            data = serializer.data
+            data["area"] = area.area_name
+            data["related"] = self.get_simplified_helper_areas(area, ignore=[area.area_name])
+            return response.Response(data)
 
         # Try SearchAreaSupportLocation
         support = SearchAreaSupportLocation.objects.select_related('relative_area__unit__chapter').filter(
@@ -81,7 +85,10 @@ class ChapterLocationViewSet(viewsets.ModelViewSet):
         ).first()
         if support and support.relative_area and support.relative_area.unit and support.relative_area.unit.chapter:
             serializer = ChapterLocationSerializer(support.relative_area.unit.chapter)
-            return response.Response(serializer.data)
+            data = serializer.data
+            data["area"] = support.relative_area.area_name
+            data["related"] = self.get_simplified_helper_areas(support.relative_area, ignore=[support.name])
+            return response.Response(data)
 
         # Try EventVenue
         venue = EventVenue.objects.select_related('general_area__unit__chapter').filter(
@@ -92,6 +99,30 @@ class ChapterLocationViewSet(viewsets.ModelViewSet):
             return response.Response(serializer.data)
 
         return response.Response({"detail": "No chapter found for this location."}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['get'], url_name="areas-from-chapter", url_path="areas-from-chapter")
+    def get_areas_from_chapter(self, request):
+        chapter_name = request.query_params.get("chapter_name")
+        print(chapter_name)
+        chapter = get_object_or_404(ChapterLocation, 
+                          Q(chapter_name=chapter_name) | Q(chapter_code=chapter_name) 
+                          | Q(chapter_id=chapter_name) 
+                          )
+        areas = []
+        for units in chapter.units.all():
+            areas.extend(units.areas.all())
+        
+        areas_serialized = SimplifiedAreaLocationSerializer(areas, many=True)
+        
+        return response.Response(areas_serialized.data, status=status.HTTP_200_OK)
+    
+    @staticmethod
+    def get_simplified_helper_areas(area: AreaLocation, ignore=None):
+        if not ignore:
+            ignore = []
+        serialized = SearchAreaSupportLocationSerializer(area.relative_search_areas.all(), many=True)
+        return [s.get("name") for s in serialized.data if s.get("name") not in ignore]
+        
 
 class UnitLocationViewSet(viewsets.ModelViewSet):
     queryset = UnitLocation.objects.all().select_related(

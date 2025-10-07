@@ -7,7 +7,7 @@ from apps.events.models import (
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from django.shortcuts import get_list_or_404
+from django.shortcuts import get_list_or_404, get_object_or_404
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import ValidationError
@@ -100,12 +100,6 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     # only get the name of the area and not the full serializer
     areas_involved = serializers.SerializerMethodField(read_only=True)
     main_venue = serializers.SerializerMethodField(read_only=True)
-    # TODO: include package information, include whats included, registration deadline, event organiser
-    # TODO packages - nested serializer
-    # TODO: whats included - text
-    # TODO: registration deadline - datefield
-    # TODO: event organisers - serializer field
-
     class Meta:
         model = Event
         fields = (
@@ -409,6 +403,10 @@ class EventSerializer(serializers.ModelSerializer):
             "supervising_CFC_coordinators",
             "cfc_coordinator_ids",
             "has_merch",
+            "format_verifier", 
+            "required_existing_id",
+            "existing_id_name",
+            "existing_id_description"
             ]
         read_only_fields = [
             "id",
@@ -427,7 +425,8 @@ class EventSerializer(serializers.ModelSerializer):
         return None
     
     def get_has_merch(self, obj):
-        return obj.products.exists()
+        if isinstance(obj, Event):
+            return obj.products.exists()
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
@@ -483,6 +482,12 @@ class EventSerializer(serializers.ModelSerializer):
             "extra_questions": rep["extra_questions"],
             "payment_packages": rep["payment_packages"],
             "payment_methods": rep["payment_methods"],
+            "admin": {
+                "require_existing_id": rep["required_existing_id"],
+                "format_verifier": rep["format_verifier"],
+                "existing_id_name": rep["existing_id_name"],
+                "existing_id_description": rep["existing_id_description"]
+            }
         }
 
     def get_organisers(self, obj):
@@ -506,9 +511,7 @@ class EventSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"name": _("An event with this name already exists. Please choose a different name.")})
         
         return super().validate(attrs)
-    
-    # TODO: create update function
-    
+        
     def create(self, validated_data):
         start_date = validated_data.get('start_date', timezone.now())
         validated_data['start_date'] = start_date
@@ -710,19 +713,7 @@ class EventSerializer(serializers.ModelSerializer):
             "payment_packages_data": [...],  // Alternative field name
             "payment_methods_data": [...]    // Alternative field name
         }
-        
-        Key behaviors:
-        - Venues: CRUD operations - updates existing (with ID), creates new (no ID), deletes omitted
-        - Resources: CRUD operations - same pattern as venues
-        - Payment Packages: Full replacement - deletes all existing, creates new ones
-        - Payment Methods: CRUD operations - same pattern as venues
-        - Areas: Full replacement based on area_names array
-        - Supervisors: Full replacement based on provided IDs
-        - File uploads: Handles landing_image_file, resource image_file, and resource_file
-        - Datetime handling: Supports ISO format and HTML datetime-local format
-        - Price conversion: Automatically converts string prices to integer pence
         """
-        print(validated_data)
         # similar to create, but update existing instance
         start_date = validated_data.get('start_date', timezone.now())
         validated_data['start_date'] = start_date
@@ -732,6 +723,8 @@ class EventSerializer(serializers.ModelSerializer):
         resource_data = validated_data.pop('resource_data', [])
         memo_data = validated_data.pop('memo_data', {})
         supervisor_ids = validated_data.pop('supervisor_ids', [])
+        supervising_adults = validated_data.pop("supervising_CFC_coordinators")
+        supervising_youth = validated_data.pop("supervising_youth_heads")
         cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
         landing_image_file = validated_data.pop('landing_image_file', None)
         
@@ -742,6 +735,7 @@ class EventSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             self.validate(validated_data)
             for attr, value in validated_data.items():
+                print(attr, value)
                 setattr(instance, attr, value)
 
             # Handle landing image file upload
@@ -793,10 +787,10 @@ class EventSerializer(serializers.ModelSerializer):
                         venue.delete()
 
             # Supervisors
-            if supervisor_ids:
-                instance.supervising_youth_heads.set(supervisor_ids)
-            if cfc_coordinator_ids:
-                instance.supervising_CFC_coordinators.set(cfc_coordinator_ids)
+            if supervising_youth:
+                instance.supervising_youth_heads.set(supervising_youth)
+            if supervising_adults:
+                instance.supervising_CFC_coordinators.set(supervising_adults)
 
             # Resources - Handle CRUD operations
             if resource_data is not None:
@@ -971,7 +965,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
     Full detail Event participant serializer - for event organizers/admins
     '''
     event = serializers.CharField(source="event.event_code")
-    user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
+    user_details = SimplifiedCommunityUserSerializer(source="user", required=False)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     participant_type_display = serializers.CharField(
         source="get_participant_type_display", read_only=True
@@ -1112,13 +1106,12 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "carts": rep["carts_display"],
             "questions_answered": rep["event_question_answers"],
         }
-        
+                
     def create(self, validated_data):
         '''
         Create or update a participant's registration for an event. Also can provide extra user information 
         via this serializer to update their user profile with medical conditions, emergency contacts, allergies, etc.
-        '''
-        
+        '''        
         # User must be logged in to register for an event
         user = self.context['request'].user
         if not user.is_authenticated:
@@ -1129,7 +1122,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         medical_conditions_data = user_data.pop('user_medical_conditions', [])
         question_answers_data = validated_data.pop('event_question_answers', [])
 
-        pprint.pprint("user_data: " + str(validated_data))
+        pprint.pprint(user_data)
         
         event_data = validated_data.pop('event', None)
         event_code = event_data.get('event_code') if event_data else None
@@ -1150,13 +1143,18 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             "questions_answered": [],
         }
         
-        pprint.pprint(question_answers_data)
+        # pprint.pprint(question_answers_data)
 
         # uses full version serialiser, take user informatin and update the user record if they want to override their existing data
         with transaction.atomic():
+            area = user_data.pop("area", None)
             user_serializer = SimplifiedCommunityUserSerializer(user, data=user_data, partial=True) # used for restrictive updates
             user_serializer.is_valid(raise_exception=True)
             updated_user = user_serializer.save()
+            if area:
+                area = get_object_or_404(AreaLocation, area_name=area)
+                updated_user.area_from = area
+                updated_user.save()
 
             # Track user field changes
             for field, value in user_data.items():
@@ -1224,6 +1222,14 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                         
             payment_method: EventPaymentMethod = validated_data.pop('payment_methods', None)
             payment_package: EventPaymentPackage = validated_data.pop('payment_packages', None)
+            
+            event_pax_id = validated_data.pop("event_pax_id") # by default not allowed to be overriden so use as a secondary
+            
+            if not event.required_existing_id and event_pax_id:
+                raise serializers.ValidationError("event_pax_id cannot be provided for an event that requires a secondary ID")
+            
+            validated_data["secondary_reference_id"] = event_pax_id
+            
             participant = EventParticipant.objects.create(event=event, user=updated_user, **validated_data)
 
             # payment - register the type of payment used
@@ -1262,7 +1268,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             # consent data
             consent_data = validated_data.pop('consent', {})
             
-            pprint.pprint("consent_data: " + str(consent_data))
+            # pprint.pprint("consent_data: " + str(consent_data))
             if consent_data:
                 media_consent = consent_data.get('photos', None)
                 if media_consent is not None and isinstance(media_consent, bool):
@@ -1367,7 +1373,7 @@ class ListEventParticipantSerializer(serializers.ModelSerializer):
         
         merch_data = []
         for cart in carts:
-            print(cart.orders.all())
+            # print(cart.orders.all())
             cart_data = {
                 "cart_id": str(cart.uuid),
                 "total": cart.total,
@@ -1436,7 +1442,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
         model = EventParticipant
         fields = [
             "event",
-            "event_user_id", 
+            # "event_user_id", 
             "user",
             "status",
             "dates",

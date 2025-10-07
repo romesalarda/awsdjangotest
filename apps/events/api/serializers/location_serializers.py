@@ -50,6 +50,18 @@ class AreaLocationSerializer(serializers.ModelSerializer):
         model = AreaLocation
         fields = '__all__'
         read_only_fields = ('id', 'area_id')
+        
+class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
+    unit_name = serializers.CharField(source='unit.unit_name', read_only=True)
+    chapter_name = serializers.CharField(source='unit.chapter.chapter_name', read_only=True)
+    cluster_name = serializers.CharField(source='unit.chapter.cluster.cluster_id', read_only=True)
+    country_name = serializers.CharField(source='unit.chapter.cluster.world_location.country.name', read_only=True)
+    
+    class Meta:
+        model = AreaLocation
+        fields = ("unit_name", "chapter_name", "cluster_name", "country_name", "id", "area_id", "area_name" ,"area_code")
+        read_only_fields = ('id', 'area_id')
+
 
 # Nested serializers for hierarchical representation
 class NestedAreaLocationSerializer(serializers.ModelSerializer):

@@ -161,7 +161,7 @@ class EventAdmin(admin.ModelAdmin):
             'resources', 'memo', 'landing_image'
         )}),
         (_('Admin'), {'fields': (
-            'notes', 'is_public', 'registration_open'
+            'notes', 'is_public', 'registration_open', 'required_existing_id', 'format_verifier', 'existing_id_name', 'existing_id_description'
         )}),
     )
     

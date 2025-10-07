@@ -7,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 from apps.events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
@@ -24,7 +25,12 @@ from apps.shop.api.serializers.payment_serializers import ProductPaymentMethodSe
 
 #! Remember that service team members are also participants but not all participants are service team members
 
-# TODO: work on extra questions view, add extra description to each questions
+def test_safe_uuid(obj):
+    try:
+        obj = uuid.UUID(obj)
+        return True
+    except ValueError:
+        return False
 
 class EventViewSet(viewsets.ModelViewSet):
     '''
@@ -73,17 +79,6 @@ class EventViewSet(viewsets.ModelViewSet):
         user = request.user
         if user.is_authenticated:
             participant = EventParticipant.objects.filter(event=instance, user=user).first()
-            # TODO: fix up permissions
-            # if not participant and not user.has_perm('events.view_event'):
-            #     return Response(
-            #         {'error': _('You do not have permission to view this event.')},
-            #         status=status.HTTP_403_FORBIDDEN
-            #     )
-            # elif participant and not participant.event.is_public:
-            #     return Response(
-            #         {'error': _('You do not have permission to view this event.')}, 
-            #         status=status.HTTP_403_FORBIDDEN
-            #         )
             data['is_participant'] = bool(participant)
             data['participant_count'] = EventParticipant.objects.filter(event=instance).count()
 
@@ -308,17 +303,72 @@ class EventViewSet(viewsets.ModelViewSet):
         '''
         Retrieve a list of participants for a specific event.
         '''
+        # TODO: handle date ranges and filtering by if they user has answered a specific question and not the answer to said question as that has already been implemented
         event = self.get_object()
         simple = request.query_params.get('simple', 'true').lower() == 'true'
         
-        participants = event.participants.all()
-        page = self.paginate_queryset(participants)
+        query_params = []
+        identity = request.query_params.get("identity")
+        if identity:
+            identity = identity.upper()
+            query_params.append(
+                (Q(user__first_name=identity) | Q(user__last_name=identity) | Q(user__primary_email=identity)) | Q(user__phone_number=identity)
+            )
         
-        # TODO: handle search filter params, via identity  (name, phone, email), area (cluster, area, chapter), bank_reference, status, orders >= num
-        # TODO: registration date range filter, question query (more advanced later)
-        
-        
-        
+        area = request.query_params.get("area")
+        if area:
+            query_params.append(
+                (Q(user__area_from__area_name=area) | Q(user__area_from__area_code=area) | 
+                 Q(user__area_from__unit__chapter__chapter_name=area.capitalize())) 
+            )
+            
+        bank_reference = request.query_params.get("bank_reference")
+        if bank_reference:
+            bank_reference = bank_reference.upper()
+            query_params.append(
+                (Q(event__event_payments__bank_reference=bank_reference) | 
+                 Q(user__product_payments__bank_reference=bank_reference))
+            )
+            
+        status = request.query_params.get("status")
+        if status:
+            status = status.upper()
+            query_params.append(
+                (Q(status=status))
+            )
+            
+        unverified_payments = request.query_params.get("outstanding_payments", False)
+        if unverified_payments:
+            query_params.append(
+                Q(participant_event_payments__status=EventPayment.PaymentStatus.PENDING) |
+                Q(participant_event_payments__verified=False) | 
+                Q(user__carts__approved=False)
+            )
+            
+        questions = request.query_params.get("questions_match")
+        if questions:
+            question_split = questions.split(",")
+            for key_pair in question_split:
+                try:
+                    question_id, answer = key_pair.split("=")
+                    answer = answer.strip()
+                    
+                    if test_safe_uuid(answer):
+                        query_params.append(
+                                Q(event_question_answers__question=uuid.UUID(question_id), event_question_answers__selected_choices=answer)
+                            )
+                    else:
+                        query_params.append(
+                            Q(event_question_answers__question=uuid.UUID(question_id), event_question_answers__answer_text=answer)
+                            )
+                except TypeError:
+                    raise serializers.ValidationError("could not parse query correctly")
+        try:
+            participants = event.participants.filter(*query_params).distinct() # TODO: check select or prefetch related  
+        except (ValueError, ValidationError) as e:
+            raise serializers.ValidationError("invalid question match format in query" + str(e))
+
+        page = self.paginate_queryset(participants)        
         if page is not None:
             if simple:
                 serializer = ListEventParticipantSerializer(page, many=True)

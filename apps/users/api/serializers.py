@@ -266,14 +266,14 @@ class CommunityUserSerializer(serializers.ModelSerializer):
         help_text="List of community role assignment dicts for creation/update"
     )  
     
-    area_full_display = serializers.CharField(source="area_from")
+    area_full_display = serializers.CharField(source="area_from", read_only=True)
     area_from_display = serializers.SerializerMethodField()
     chapter = serializers.SerializerMethodField()
     cluster = serializers.SerializerMethodField()
         
     class Meta:
         model = CommunityUser
-        fields = ('member_id','roles', 'username', 'full_name', 'short_name','password', 'first_name', 'last_name', 'middle_name', 'preferred_name',
+        fields = ('member_id','roles', 'id', 'username', 'full_name', 'short_name','password', 'first_name', 'last_name', 'middle_name', 'preferred_name',
                   'primary_email', 'secondary_email', 'phone_number', 'address_line_1', 'address_line_2', 'postcode', 'area_from',
                   'emergency_contacts', 'alergies', 'medical_conditions', "is_encoder", "date_of_birth", "chapter", "cluster", "area_from_display", "area_full_display",
                   # Write-only nested data fields
@@ -609,6 +609,12 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                 address_data = contact_data.pop('address')
                 for key, value in address_data.items():
                     contact_data[key] = value
+            if 'area' in contact_data:
+                area_data = contact_data.pop("area")
+                ### format of {"area": "Frimley"}        
+                # TODO: to do here
+                    
+            
             for key, value in contact_data.items():
                 validated_data[key] = value
         
@@ -811,6 +817,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
 
         return {
             "identity": {
+                "id":rep["id"],
                 "member_id": rep["member_id"],
                 "username": rep["username"],
                 "name": {
@@ -876,17 +883,19 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
     '''
     first_name = serializers.CharField(required=False)
     last_name = serializers.CharField(required=False)
-    data_of_birth = serializers.DateField(source='date_of_birth', required=False)
+    date_of_birth = serializers.DateField(required=False)
     gender = serializers.ChoiceField(choices=CommunityUser.GenderType.choices, required=False)
     ministry = serializers.ChoiceField(choices=ReducedMinistryType.choices, required=False)
     area_from_display = serializers.SerializerMethodField()
+    area = serializers.CharField(write_only=True)
     username = serializers.CharField(required=False)
     password = serializers.CharField(required=False, write_only=True, style={"input_type": "password"})
+    primary_email = serializers.EmailField(required=False)
 
     class Meta:
         model = CommunityUser
-        fields = ('first_name', 'last_name', 'ministry', 'gender', 'data_of_birth', 'member_id', 'username' ,            
-                  "profile_picture", "area_from_display", "primary_email", "password")
+        fields = ('first_name', 'last_name', 'ministry', 'gender', 'date_of_birth', 'member_id', 'username' ,            
+                  "profile_picture", "area_from_display", "primary_email", "password", "area", "phone_number")
 
     def get_area_from_display(self, obj):
         # return a list of related areas
@@ -902,7 +911,6 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
         return attrs
     
     def create(self, validated_data):
-        
         password = validated_data.pop("password")
         
         instance = super().create(validated_data)

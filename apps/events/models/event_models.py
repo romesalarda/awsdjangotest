@@ -177,6 +177,12 @@ class Event(models.Model):
     status = models.CharField(_("event status"), max_length=20, choices=EventStatus.choices, default=EventStatus.PLANNING)  
     
     auto_approve_participants = models.BooleanField(verbose_name=_("auto approve participants"), default=False)
+    # to integrate with OGD system    
+    required_existing_id = models.BooleanField(default=False, help_text=_("Upon registration, the user must enter a specific ID that is linked to another system E.g. OGD"))
+    format_verifier = models.CharField(max_length=100, blank=True, null=True, help_text=_("For requiring existing id, this can be used to match a given format I.e. %%%%-%%%%-%%%%"))
+    existing_id_name = models.CharField(max_length=100, blank=True, null=True, help_text=_("existing name for this id E.g. Members-ID"))
+    existing_id_description = models.TextField(max_length=500, blank=True, null=True)
+    
     
     def save(self, *args, **kwargs):
         if not self.event_code:
@@ -305,8 +311,12 @@ class EventParticipant(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # unique participant ID for the event - basically their reference number
     # event code + unique uuid of this participant object
-    event_pax_id = models.CharField(verbose_name=_("Participant ID"), blank=True, null=True)
-    
+    event_pax_id = models.CharField(verbose_name=_("Participant ID"), blank=True, null=True, unique=True)
+    secondary_reference_id = models.CharField(
+        verbose_name=_("backup reference id"), 
+        blank=True, null=True, 
+        help_text=_("acts as a secondary id option and is good for backwards compatibility for exisiting database references"))
+
     event = models.ForeignKey("Event", on_delete=models.CASCADE, related_name="participants")
     
     # if the user already exists in the database, then default to use this 
@@ -357,12 +367,10 @@ class EventParticipant(models.Model):
         return f"{self.user} - {self.event} ({self.get_status_display()})"
 
     def save(self, *args, **kwargs):
-        # TODO: if this is a premature save (i.e. no id yet), then save first and then update the event_pax_id
         if not self.id:
-            super().save(*args, **kwargs)  # Save first to get an ID
+            super().save(*args, **kwargs)
             
         if not self.event_pax_id:
-            # Save first to get an ID
             self.event_pax_id = f"{self.event.event_code}-{self.id}".upper()
             while EventParticipant.objects.filter(event_pax_id=self.event_pax_id).exists():
                 self.id = uuid.uuid4()
