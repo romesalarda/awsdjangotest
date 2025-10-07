@@ -22,34 +22,35 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     search_fields = ['first_name', 'last_name', 'email', 'member_id', 'username']
     ordering_fields = ['last_name', 'first_name', 'date_of_birth', 'uploaded_at']
     ordering = ['last_name', 'first_name']
-    permission_classes = [] # TODO: must change to authenticated only + add object permissions
+    permission_classes = [permissions.IsAuthenticated] 
     lookup_field = "member_id"
     
-    # TODO: on account creation, ensure the correct fields are added
-    
+    # TODO: double check read permissions - only logged in user can see the data about themselves and NO ONE else. Superusers can see everything - override Retrieve method
+        
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], url_name="self", url_path="me")
     def get_self(self, request):
+        '''
+        Get full user details about the current logged in user
+        '''
+        self.check_permissions(request)        
         serializer = CommunityUserSerializer(request.user)
         return response.Response(serializer.data)
     
     
     def get_serializer_class(self):
+        # signed in users can only view full data about themselves
         if getattr(self, 'swagger_fake_view', False):
             return SimplifiedCommunityUserSerializer
         
         user = self.request.user
         if not user.is_authenticated or not user.is_superuser:
-            # anonymous users only see simplified, #! remember that if they are not a superuser/encoder then cannot view ANY user data
             return SimplifiedCommunityUserSerializer
 
-        # if it's a detail view (retrieve/update) check if it's "me"
         if self.action in ['retrieve', 'update', 'partial_update']:
             obj = self.get_object()
             if obj == user or user.is_superuser:
-                return CommunityUserSerializer  # full serializer for self
+                return CommunityUserSerializer 
             return SimplifiedCommunityUserSerializer
-
-        # TODO: ensure members cannot see ANY user data except their own
         return CommunityUserSerializer
 
     @action(detail=True, methods=['get'])

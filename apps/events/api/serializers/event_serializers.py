@@ -523,7 +523,7 @@ class EventSerializer(serializers.ModelSerializer):
         supervisor_ids = validated_data.pop('supervisor_ids', [])
         cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
         
-        pprint.pprint(validated_data)
+        pprint.pprint("Event serializer 'EventSerializer.create' validated data", validated_data)
         
         with transaction.atomic():
 
@@ -533,7 +533,6 @@ class EventSerializer(serializers.ModelSerializer):
             area_names = [area.lower() for area in area_names]
             # Areas
             if area_names:
-                # print(AreaLocation.objects.filter(area_name__in=area_names).values_list('area_name', flat=True))
                 for area in area_names:
                     if not AreaLocation.objects.filter(area_name=area.lower()).exists():
                         raise serializers.ValidationError({"area_names": _(f"Area '{area}' does not exist.")})
@@ -735,7 +734,6 @@ class EventSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             self.validate(validated_data)
             for attr, value in validated_data.items():
-                print(attr, value)
                 setattr(instance, attr, value)
 
             # Handle landing image file upload
@@ -744,7 +742,6 @@ class EventSerializer(serializers.ModelSerializer):
             # Areas
             if area_names:
                 area_names = [area.lower().strip() for area in area_names]
-                print(AreaLocation.objects.filter(area_name__in=area_names).values_list('area_name', flat=True))
                 for area in area_names:
                     if not AreaLocation.objects.filter(area_name=area.lower()).exists():
                         raise serializers.ValidationError({"area_names": _(f"Area '{area}' does not exist.")})
@@ -759,7 +756,6 @@ class EventSerializer(serializers.ModelSerializer):
                 processed_ids = set()
                 
                 for venue_item in venue_data:
-                    print(venue_item)
                     venue_id = venue_item.get('id')
                     
                     if venue_id and venue_id in existing_venues:
@@ -1244,12 +1240,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                     # if bank transfer, then we do not mark as paid until admin verifies payment
                 else:
                     status = EventPayment.PaymentStatus.SUCCEEDED if payment_package.price == 0 else EventPayment.PaymentStatus.PENDING
-                    # no need for payment method if the package is free, so we mark as paid if the package is free
-                
-                print(payment_package.price)
-                print(payment_method)
-                print("Creating payment with status:", status)
-                    
+                    # no need for payment method if the package is free, so we mark as paid if the package is free                    
                 EventPayment.objects.create(
                     user=participant,
                     event=event,
@@ -1302,13 +1293,10 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                 
             
 
-            pprint.pprint(changes) # ! DEBUG ONLY
+            pprint.pprint(changes)
         return participant
 
-    # TODO: update method, but generally use the user serializer to update user information as each guest
-    
-    
-    # has their own user account
+    #? A little note for the update method, most likely users will need to submit change requests to admins so they can verifiy changes manually    
 
 class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
     """
@@ -1373,7 +1361,7 @@ class ListEventParticipantSerializer(serializers.ModelSerializer):
         
         merch_data = []
         for cart in carts:
-            # print(cart.orders.all())
+            
             cart_data = {
                 "cart_id": str(cart.uuid),
                 "total": cart.total,

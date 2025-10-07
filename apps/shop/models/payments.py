@@ -7,7 +7,7 @@ class ProductPaymentMethod(models.Model):
     """
     Payment method/configuration available for product purchases.
     """
-    # TODO: migrate this
+    # TODO-FUTMIG: migrate this
     # id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     class MethodType(models.TextChoices):

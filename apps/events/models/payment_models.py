@@ -12,7 +12,8 @@ class EventPaymentMethod(models.Model):
     Payment method/configuration available for an event.
     """
     
-    # TODO: migrate from integer id to uuid field?
+    # TODO-FUTMIG: migrate from integer id to uuid field?
+    # id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     class MethodType(models.TextChoices):
         STRIPE = "STRIPE", _("Stripe")
@@ -80,7 +81,8 @@ class EventPaymentPackage(models.Model):
     Example: £50 VIP (includes food + merch), £10 General Admission
     """
     
-    # TODO: migrate from integer id to uuid field?
+    # TODO-FUTMIG: migrate from integer id to uuid field?
+    # id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
 
     event = models.ForeignKey(
@@ -140,7 +142,8 @@ class EventPayment(models.Model):
     Tracks a user's payment for an event
     """
     
-    # TODO: maybe migrate uuid for payments to be a uuid field instead of integer id?
+    # TODO-FUTMIG: maybe migrate uuid for payments to be a uuid field instead of integer id?
+    # id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     class PaymentStatus(models.TextChoices):
         PENDING = "PENDING", _("Pending")

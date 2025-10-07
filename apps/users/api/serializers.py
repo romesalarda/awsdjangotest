@@ -473,130 +473,9 @@ class CommunityUserSerializer(serializers.ModelSerializer):
         return user
     
     def update(self, instance, validated_data):
-        
-        # print("UPDATE METHOD CALLED WITH DATA:", validated_data)
-        """
-        Update an existing CommunityUser instance with comprehensive nested relationship handling.
-        
-        This method handles complex updates including emergency contacts, allergies, medical conditions,
-        and community roles. It supports both creating new related objects and updating existing ones.
-        
-        Example API request payload:
-        {
-            "identity": {
-                "first_name": "Updated John",
-                "last_name": "Updated Smith",
-                "middle_name": "Updated Middle",
-                "preferred_name": "Johnny Updated",
-                "gender": "MALE",
-                "date_of_birth": "1995-05-15",
-                "marital_status": "SINGLE"
-            },
-            "contact": {
-                "primary_email": "updated.john@example.com",
-                "secondary_email": "updated.john.alt@example.com", 
-                "phone_number": "+44 7700 900000",
-                "address": {
-                    "address_line_1": "Updated 123 Main Street",
-                    "address_line_2": "Updated Apt 4B",
-                    "postcode": "SW1A 1AA"
-                }
-            },
-            "community": {
-                "ministry": "YFC",
-                "is_encoder": false,
-                "roles": [
-                    {
-                        "role_id": "existing-role-uuid",  // Include ID to update existing
-                        "start_date": "2025-01-01",
-                        "end_date": "2025-12-31",
-                        "is_active": true,
-                        "notes": "Updated role assignment"
-                    },
-                    {
-                        // No ID = new role assignment
-                        "role_id": "new-role-uuid",
-                        "start_date": "2025-06-01",
-                        "is_active": true
-                    }
-                ]
-            },
-            "safeguarding": {
-                "emergency_contacts": [
-                    {
-                        "id": "existing-contact-uuid",  // Include ID to update existing
-                        "first_name": "Updated Jane",
-                        "last_name": "Updated Smith",
-                        "phone_number": "+44 7700 900001",
-                        "contact_relationship": "MOTHER",
-                        "is_primary": true
-                    },
-                    {
-                        // No ID = new emergency contact
-                        "first_name": "New Contact",
-                        "last_name": "Person",
-                        "phone_number": "+44 7700 900002",
-                        "contact_relationship": "FRIEND",
-                        "is_primary": false
-                    }
-                ],
-                "allergies": [
-                    {
-                        "id": "existing-allergy-link-uuid",  // UserAllergy ID to update existing
-                        "allergy_name": "Peanuts",  // or allergy_id for existing allergy
-                        "severity": "SEVERE",
-                        "instructions": "Updated carry EpiPen at all times",
-                        "notes": "Updated severe reaction"
-                    },
-                    {
-                        // No ID = new allergy link
-                        "allergy_name": "Shellfish",  // Creates new allergy if doesn't exist
-                        "severity": "MODERATE",
-                        "instructions": "Avoid all shellfish"
-                    }
-                ],
-                "medical_conditions": [
-                    {
-                        "id": "existing-condition-link-uuid",  // UserMedicalCondition ID
-                        "condition_name": "Asthma", // or condition_id for existing condition
-                        "severity": "MODERATE",
-                        "instructions": "Updated inhaler instructions",
-                        "date_diagnosed": "2020-01-01"
-                    },
-                    {
-                        // No ID = new medical condition link
-                        "condition_name": "Type 1 Diabetes",
-                        "severity": "SEVERE",
-                        "instructions": "Monitor blood sugar regularly",
-                        "date_diagnosed": "2021-06-15"
-                    }
-                ]
-            },
-            "password": "new_secure_password123"  // Optional password update
-        }
-        
-        Alternative flat format (legacy support):
-        {
-            "first_name": "Updated John",
-            "last_name": "Updated Smith",
-            "primary_email": "updated.john@example.com",
-            "emergency_contacts_data": [...],  // Alternative field name
-            "allergies_data": [...],           // Alternative field name  
-            "medical_conditions_data": [...],  // Alternative field name
-            "roles_data": [...]                // Alternative field name
-        }
-        
-        Key behaviors:
-        - Emergency Contacts: CRUD operations - updates existing (with ID), creates new (no ID), deletes omitted
-        - Allergies: CRUD operations on UserAllergy through model - same pattern
-        - Medical Conditions: CRUD operations on UserMedicalCondition through model - same pattern
-        - Community Roles: CRUD operations on UserCommunityRole through model - same pattern
-        - Basic fields: Direct updates on the user instance
-        - Password: Properly hashed using set_password() method
-        - Validation: Ensures data integrity for all nested relationships
-        """
-        
-        # Handle nested data structures sent from frontend
+        # TODO: refactor entire update method as it is not compatible with the current serializer, it follows the representation and not the method fields
+        # refer to create as it has correct, need to check as well if any methods rely on this but realistically it would only be for profile updates 
+        raise serializers.ValidationError("Community user update method called which is no longer supported")
         if 'identity' in validated_data:
             identity_data = validated_data.pop('identity')
             for key, value in identity_data.items():
@@ -611,8 +490,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                     contact_data[key] = value
             if 'area' in contact_data:
                 area_data = contact_data.pop("area")
-                ### format of {"area": "Frimley"}        
-                # TODO: to do here
+                # TODO: update where the user resides - format of {"area": "Frimley"}  
                     
             
             for key, value in contact_data.items():

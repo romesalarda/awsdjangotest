@@ -132,7 +132,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         choices=MinistryType.choices,  
         default=MinistryType.YOUTH_GUEST,
         verbose_name=_("ministry")
-    ) # TODO: change default to GUEST 
+    ) 
     
     user_uploaded_at = models.DateTimeField(
         auto_now_add=True,

@@ -10,13 +10,11 @@ import uuid
 
 MAX_LENGTH_EVENT_NAME_CODE = 5
 
-# TODO: add model for event organisers E.g. cfcyfcuk.nationalevents@gmail.com or cfcyfcuk.southeast@gmail.com
-
 class EventResource(models.Model):
     '''
     represents a resource e.g. a link to a further google form or a memo
     '''
-    class ResourceType (models.TextChoices): # TODO add this as a field
+    class ResourceType (models.TextChoices):
         LINK = "LINK", _("Link")
         PDF = "PDF", _("pdf")
         FILE = "FILE", _("File")
@@ -104,7 +102,7 @@ class Event(models.Model):
         help_text=_("Short code for the event name, used in generating the event code E.g. for ANCHORED event, use ANCRD")
         ) # ANCRD
     
-    start_date = models.DateTimeField(_("event start date"), blank=True, null=True) # TODO: make this required 
+    start_date = models.DateTimeField(_("event start date"), blank=True, null=True) # TODO: make this required - serializer end anyway
     end_date = models.DateTimeField(_("event end date"), blank=True, null=True) 
     
     # Location information

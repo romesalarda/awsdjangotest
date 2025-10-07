@@ -31,14 +31,10 @@ class EventProductViewSet(viewsets.ModelViewSet):
     ordering = ["title"]
     
     def get_queryset(self):
-        """Filter products based on user permissions"""
+        # TODO: add filters to show products via search queries
         user = self.request.user
-        if user.is_superuser:
-            return self.queryset
-        # TODO: show events by event        
-        
-        
-        
+        # if user.is_superuser:
+        #     return self.queryset
         return self.queryset
     
     def perform_create(self, serializer):

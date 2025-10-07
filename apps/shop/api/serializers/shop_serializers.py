@@ -396,7 +396,6 @@ class EventProductOrderSerializer(serializers.ModelSerializer):
     cart_user_email = serializers.EmailField(source="cart.user.primary_email", read_only=True)
     size = ProductSizeSerializer(read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
-    # TODO: set up landing image field for product
     imageUrl = serializers.SerializerMethodField()
 
     class Meta:
@@ -411,6 +410,7 @@ class EventProductOrderSerializer(serializers.ModelSerializer):
                            "cart_uuid", "cart_user_email", "added", "time_added", "status_display"]
         
     def get_imageUrl(self, obj):
+        # only gets the first image it sees out of multiple
         images = ProductImageSerializer(obj.product.images, many=True).data
         if images and len(images) > 0:
             return images[0].get('image_url')

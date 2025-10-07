@@ -169,7 +169,7 @@ class EventProductOrder(models.Model):
     '''
     Product order within an event cart.
     '''
-    # TODO: switch integer id to uuid?
+    # TODO-FUTMIG: switch integer id to uuid
     
     order_reference_id = models.CharField(_("Order ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking order references
     product = models.ForeignKey(EventProduct, on_delete=models.CASCADE, related_name="orders")
@@ -199,7 +199,6 @@ class EventProductOrder(models.Model):
         choices=Status.choices,
         default=Status.PENDING
     )
-    # TODO: add field to check if the product can be changed. maybe add a new model to submit change requests?
     changeable = models.BooleanField(default=True, help_text=_("Flags if the product order can be changed"))
     
     change_requested = models.BooleanField(default=False, help_text=_("Flags if a change has been requested for this order"))

@@ -799,7 +799,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(participant)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
-    #TODO: add role to a service team member AND NOT a participant
+    #TODO: add role to a service team member AND NOT a participant - low priority
     #TODO: cancel booking
     
     @action(detail=True, methods=['post'], url_name="mark-attended", url_path="mark-attended")
@@ -813,20 +813,15 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     def create(self, request, *args, **kwargs):
-        # only return event code
         request = super().create(request, *args, **kwargs)
         data = request.data
-        # TODO: also return if they are allowed to check in or not based on event status and participant status
-
-        data = request.data
-        is_paid = all(p['status'] == 'SUCCEEDED' for p in data['event_payments'])
-        payment_method = data['event_payments'][0]['method'] if data['event_payments'] else 'No payment method'
-        needs_verification = any(not p['verified'] for p in data['event_payments'])
         return Response(
-            {"event_user_id": data["event_user_id"], 
-             "is_paid": is_paid, "payment_method": payment_method, 
-             "needs_verification": needs_verification
-             }, status=request.status_code)
+            {   
+             "event_user_id": data["event_user_id"], 
+             "is_paid": all(p['status'] == 'SUCCEEDED' for p in data['event_payments']), 
+             "payment_method": data['event_payments'][0]['method'] if data['event_payments'] else 'No payment method', 
+             "needs_verification": any(not p['verified'] for p in data['event_payments'])
+            }, status=request.status_code)
         
     @action(detail=True, methods=['post'], url_name="confirm-payment", url_path="confirm-payment")
     def confirm_registration_payment(self, request, event_pax_id=None):
