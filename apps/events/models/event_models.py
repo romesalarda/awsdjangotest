@@ -512,9 +512,16 @@ class EventDayAttendance (models.Model):
 
     @property
     def duration(self):
-        if self.check_in_time and self.check_out_time:
-            return self.check_out_time - self.check_in_time
+        # if self.check_in_time and self.check_out_time:
+            # return self.check_out_time - self.check_in_time
         return None
+    
+    @property
+    def is_finished(self):
+        '''
+        this attendance object is declared as "finished" if the user has checked out
+        '''
+        return self.check_in_time is not None & self.check_out_time is not None
     
     def save(self, *args, **kwargs):
         if self.day_date is None and self.check_in_time:

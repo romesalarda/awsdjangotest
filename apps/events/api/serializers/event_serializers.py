@@ -302,7 +302,7 @@ class EventSerializer(serializers.ModelSerializer):
         child=serializers.DictField(),
         write_only=True,
         required=False,
-        help_text="List of payment package dicts for creation/update"
+        help_text="List of payment package dicts for creation/update. Supports 'available_from', 'available_until', and 'deadline' (legacy) fields for date availability."
     )
     payment_methods_data = serializers.ListField(
         child=serializers.DictField(),
@@ -659,20 +659,23 @@ class EventSerializer(serializers.ModelSerializer):
             ],
             "payment_packages": [
                 {
-                    "package_name": "Early Bird Special",
+                    "name": "Early Bird Special",
                     "description": "Special pricing for early registrations",
                     "price": "25.00",  // String format, converted to pence
                     "currency": "GBP",
                     "capacity": 100,
-                    "deadline": "2025-06-30T23:59:59",  // ISO format or HTML datetime-local
+                    "available_from": "2025-05-01T00:00:00",  // ISO format or HTML datetime-local
+                    "available_until": "2025-06-30T23:59:59",  // ISO format or HTML datetime-local
+                    "deadline": "2025-06-30T23:59:59",  // Legacy support - maps to available_until
                     "is_active": true
                 },
                 {
-                    "package_name": "Standard Registration",
+                    "name": "Standard Registration",
                     "description": "Regular conference registration",
                     "price": "35.00",
                     "currency": "GBP",
                     "capacity": 300,
+                    "available_from": "2025-07-01T00:00:00",
                     "is_active": true
                 }
             ],
@@ -722,8 +725,8 @@ class EventSerializer(serializers.ModelSerializer):
         resource_data = validated_data.pop('resource_data', [])
         memo_data = validated_data.pop('memo_data', {})
         supervisor_ids = validated_data.pop('supervisor_ids', [])
-        supervising_adults = validated_data.pop("supervising_CFC_coordinators")
-        supervising_youth = validated_data.pop("supervising_youth_heads")
+        supervising_adults = validated_data.pop("supervising_CFC_coordinators", [])
+        supervising_youth = validated_data.pop("supervising_youth_heads", [])
         cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
         landing_image_file = validated_data.pop('landing_image_file', None)
         
@@ -865,20 +868,45 @@ class EventSerializer(serializers.ModelSerializer):
                         'is_active': package_data.get('is_active', True),
                     }
                     
-                    # Handle datetime conversion for deadline
-                    deadline = package_data.get('deadline')
-                    if deadline and deadline.strip():
+                    # Handle datetime conversion for available_from
+                    available_from = package_data.get('available_from')
+                    if available_from and available_from.strip():
                         try:                            
                             # Handle HTML datetime-local format (YYYY-MM-DDTHH:MM)
-                            if isinstance(deadline, str):
-                                deadline = deadline.strip()
+                            if isinstance(available_from, str):
+                                available_from = available_from.strip()
                                 
                                 # Add seconds if missing (HTML datetime-local format)
-                                if 'T' in deadline and len(deadline) == 16:
-                                    deadline += ':00'
+                                if 'T' in available_from and len(available_from) == 16:
+                                    available_from += ':00'
                                 
                                 # Parse the datetime
-                                parsed_datetime = parse_datetime(deadline)
+                                parsed_datetime = parse_datetime(available_from)
+                                if parsed_datetime:
+                                    # Make timezone aware if naive
+                                    if timezone.is_naive(parsed_datetime):
+                                        parsed_datetime = timezone.make_aware(parsed_datetime)
+                                    mapped_data['available_from'] = parsed_datetime
+                                    
+                        except (ValueError, TypeError) as e:
+                            # Log the error for debugging
+                            print(f"Error parsing available_from '{available_from}': {e}")
+                            # Skip invalid datetime - don't set the field
+                    
+                    # Handle datetime conversion for available_until (deadline for backward compatibility)
+                    available_until = package_data.get('available_until') or package_data.get('deadline')
+                    if available_until and available_until.strip():
+                        try:                            
+                            # Handle HTML datetime-local format (YYYY-MM-DDTHH:MM)
+                            if isinstance(available_until, str):
+                                available_until = available_until.strip()
+                                
+                                # Add seconds if missing (HTML datetime-local format)
+                                if 'T' in available_until and len(available_until) == 16:
+                                    available_until += ':00'
+                                
+                                # Parse the datetime
+                                parsed_datetime = parse_datetime(available_until)
                                 if parsed_datetime:
                                     # Make timezone aware if naive
                                     if timezone.is_naive(parsed_datetime):
@@ -887,7 +915,7 @@ class EventSerializer(serializers.ModelSerializer):
                                     
                         except (ValueError, TypeError) as e:
                             # Log the error for debugging
-                            print(f"Error parsing deadline '{deadline}': {e}")
+                            print(f"Error parsing available_until '{available_until}': {e}")
                             # Skip invalid datetime - don't set the field
                     
                     package_serializer = EventPaymentPackageSerializer(data=mapped_data)

@@ -744,9 +744,6 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         elif self.action in ['retrieve'] and self.request.query_params.get('summary', 'false').lower() == 'true':
             return ParticipantManagementSerializer
         return EventParticipantSerializer
-    
-    #! remember to handle how service are register, can anyone just register as a participant?
-    #! or should it be only event organizers/admins who can add participants?
         
     @action(detail=False, methods=['post'], url_name="register", url_path="register")
     def register(self, request):
@@ -802,16 +799,88 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
     #TODO: add role to a service team member AND NOT a participant - low priority
     #TODO: cancel booking
     
-    @action(detail=True, methods=['post'], url_name="mark-attended", url_path="mark-attended")
-    def mark_attended(self, request, event_pax_id=None):
-        # TODO: only allow event organizers/admins to mark attendance
-        participant = self.get_object()
-        participant.status = EventParticipant.ParticipantStatus.ATTENDED
-        participant.attended_date = timezone.now()
-        participant.save()
-        serializer = self.get_serializer(participant)
-        return Response(serializer.data)
+    @action(detail=True, methods=['post'], url_name="check-in", url_path="check-in")
+    def check_in(self, request, event_pax_id=None):
+        '''
+        Check in a participant to the event. Returns {participant: date, is_checked_in: bool}
+        '''
+        data = request.data
+        
+        try:
+            event_uuid = data.get("event_uuid")
+            event_uuid = uuid.UUID(event_uuid)
+        except (ValueError, TypeError):
+            raise serializers.ValidationError({"error": "invalid or missing event UUID"})
+        
+        participant = get_object_or_404(
+            EventParticipant,
+            Q(event_pax_id = event_pax_id) | Q(secondary_reference_id = event_pax_id),
+            event=event_uuid
+        )
+        
+        event: Event = participant.event   
+        check_in_datetime = timezone.now()
+        
+
+        if check_in_datetime < event.start_date:
+            raise serializers.ValidationError("cannot check in participant as the event has not yet started")
+        
+        if participant.status != EventParticipant.ParticipantStatus.ATTENDED:
+            participant.status = EventParticipant.ParticipantStatus.ATTENDED
+            participant.attended_date = timezone.now()
+            participant.save()
+        
+        is_checked_in = EventDayAttendance.objects.filter(
+            event=participant.event, 
+            user=participant.user,
+            day_date = check_in_datetime.date(),
+            check_out_time=None,
+        ).exists()
+        if not is_checked_in:
+            EventDayAttendance.objects.create(
+                event = participant.event,
+                user = participant.user,
+                check_in_time =check_in_datetime.time(),
+                day_date = check_in_datetime.date(),
+                day_id = data.get("day_id", 1)
+            )        
+        serializer = ParticipantManagementSerializer(participant)
+        return Response({
+            "participant": serializer.data,
+            "already_checked_in": is_checked_in
+        })
     
+    @action(detail=True, methods=['post'], url_name="check-out", url_path="check-out")
+    def check_out(self, request, event_pax_id=None):
+        '''
+        Check out a participant from the event.
+        '''
+        participant = get_object_or_404(
+            EventParticipant,
+            Q(event_pax_id = event_pax_id) | Q(secondary_reference_id = event_pax_id)
+        )
+        
+        event: Event = participant.event   
+        check_out_datetime = timezone.now()
+                
+        checked_in = EventDayAttendance.objects.filter(
+            event=participant.event, 
+            user=participant.user,
+            day_date = check_out_datetime.date(),
+            check_out_time=None
+        )
+        if checked_in.exists():
+            first = checked_in.first()
+            first.check_out_time = check_out_datetime.time()
+            first.save()
+        else:
+            raise serializers.ValidationError("cannot checkout this user as they are not checked in")
+        
+        # add async django channels
+        
+        serializer = ParticipantManagementSerializer(participant)
+        return Response(serializer.data)
+        
     def create(self, request, *args, **kwargs):
         request = super().create(request, *args, **kwargs)
         data = request.data
