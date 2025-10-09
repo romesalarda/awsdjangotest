@@ -15,7 +15,7 @@ from django.core.exceptions import ValidationError
 import pprint
 
 from apps.events.models import (
-    EventDayAttendance, QuestionAnswer,
+    EventDayAttendance, QuestionAnswer, ParticipantQuestion,
     EventServiceTeamMember, EventPaymentMethod, EventPaymentPackage, EventPayment
     )
 from apps.users.api.serializers import (
@@ -1924,3 +1924,104 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
                 instance.responded_at = timezone.now()
                 
         return super().update(instance, validated_data)
+
+
+class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
+    """
+    Simplified serializer for EventParticipant - minimal data for basic operations
+    """
+    user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    participant_type_display = serializers.CharField(source="get_participant_type_display", read_only=True)
+
+    class Meta:
+        model = EventParticipant
+        fields = [
+            "id",
+            "event_pax_id",
+            "user_details", 
+            "status",
+            "status_display",
+            "participant_type",
+            "participant_type_display",
+            "registration_date",
+            "verified"
+        ]
+        read_only_fields = fields
+
+
+class ListEventParticipantSerializer(serializers.ModelSerializer):
+    """
+    Optimized serializer for listing participants - minimal data for list views
+    """
+    user = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    participant_type_display = serializers.CharField(source="get_participant_type_display", read_only=True)
+
+    class Meta:
+        model = EventParticipant
+        fields = [
+            "id",
+            "event_pax_id", 
+            "user",
+            "status",
+            "status_display",
+            "participant_type",
+            "participant_type_display",
+            "registration_date",
+            "verified"
+        ]
+        read_only_fields = fields
+
+    def get_user(self, obj):
+        """Essential user info only for list views"""
+        return {
+            "id": str(obj.user.id),
+            "first_name": obj.user.first_name,
+            "last_name": obj.user.last_name,
+            "email": obj.user.primary_email,
+            "member_id": getattr(obj.user, 'member_id', None),
+        }
+
+
+class EventDayAttendanceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for EventDayAttendance model
+    """
+    user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
+    event_code = serializers.CharField(source="event.event_code", read_only=True)
+    duration = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EventDayAttendance
+        fields = [
+            "id",
+            "event",
+            "event_code",
+            "user",
+            "user_details",
+            "day_date",
+            "day_id",
+            "check_in_time",
+            "check_out_time",
+            "duration",
+            "stale"
+        ]
+        read_only_fields = ["id", "duration", "event_code", "user_details"]
+
+    def get_duration(self, obj):
+        """Calculate duration between check-in and check-out"""
+        if obj.check_in_time and obj.check_out_time:
+            # Convert time to datetime for calculation
+            from datetime import datetime, date
+            check_in_dt = datetime.combine(date.today(), obj.check_in_time)
+            check_out_dt = datetime.combine(date.today(), obj.check_out_time)
+            
+            # Handle case where check-out is next day
+            if check_out_dt < check_in_dt:
+                from datetime import timedelta
+                check_out_dt += timedelta(days=1)
+            
+            duration = check_out_dt - check_in_dt
+            return str(duration)
+        return None

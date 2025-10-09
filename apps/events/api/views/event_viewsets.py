@@ -1,7 +1,10 @@
+import uuid
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db.models import Q
+from rest_framework import serializers
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils.translation import gettext_lazy as _
@@ -22,6 +25,7 @@ from apps.shop.api.serializers import EventProductSerializer, EventCartSerialize
 from apps.shop.models import EventCart, ProductPayment, EventProduct, EventProductOrder, ProductSize
 from apps.shop.api.serializers import EventCartMinimalSerializer
 from apps.shop.api.serializers.payment_serializers import ProductPaymentMethodSerializer
+from apps.events.websocket_utils import websocket_notifier, serialize_participant_for_websocket, get_event_supervisors
 
 #! Remember that service team members are also participants but not all participants are service team members
 
@@ -438,6 +442,26 @@ class EventViewSet(viewsets.ModelViewSet):
             status=EventParticipant.ParticipantStatus.REGISTERED,
             participant_type=participant_type
         )
+        
+        # Broadcast WebSocket update for new participant registration
+        try:
+            participant_data = serialize_participant_for_websocket(participant)
+            websocket_notifier.notify_participant_registered(
+                event_id=str(event.id),
+                participant_data=participant_data
+            )
+            
+            # Notify dashboard users about participant count change
+            supervisor_ids = get_event_supervisors(event)
+            websocket_notifier.notify_event_update(
+                user_ids=supervisor_ids,
+                event_id=str(event.id),
+                update_type='participant_registered',
+                data={'participant_id': str(participant.id)}
+            )
+        except Exception as e:
+            # Log the error but don't fail the registration process
+            print(f"WebSocket notification error during registration: {e}")
         
         serializer = SimplifiedEventParticipantSerializer(participant)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -888,7 +912,39 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 check_in_time =check_in_datetime.time(),
                 day_date = check_in_datetime.date(),
                 day_id = data.get("day_id", 1)
-            )        
+            )
+            
+            # Broadcast WebSocket update for check-in
+            try:
+                print(f"🔔 CHECK-IN API - Starting WebSocket notification for participant: {participant.user.first_name} {participant.user.last_name}")
+                print(f"🔔 CHECK-IN API - Event: {participant.event.name} (ID: {participant.event.id})")
+                
+                participant_data = serialize_participant_for_websocket(participant)
+                print(f"📊 CHECK-IN API - Serialized participant data for: {participant_data.get('user', {}).get('first_name', 'Unknown')}")
+                print(f"📊 CHECK-IN API - Checked in status: {participant_data.get('checked_in', False)}")
+                
+                websocket_notifier.notify_checkin_update(
+                    event_id=str(participant.event.id),
+                    participant_data=participant_data,
+                    action='checkin'
+                )
+                
+                # Notify dashboard users about participant count change
+                supervisor_ids = get_event_supervisors(participant.event)
+                websocket_notifier.notify_event_update(
+                    user_ids=supervisor_ids,
+                    event_id=str(participant.event.id),
+                    update_type='participant_checked_in',
+                    data={'participant_id': str(participant.id)}
+                )
+                print(f"✅ CHECK-IN API - WebSocket notification sent successfully!")
+                
+            except Exception as e:
+                # Log the error but don't fail the check-in process
+                print(f"❌ CHECK-IN API - WebSocket notification error: {e}")
+                import traceback
+                print(f"❌ CHECK-IN API - Full traceback: {traceback.format_exc()}")
+            
         serializer = ParticipantManagementSerializer(participant)
         return Response({
             "participant": serializer.data,
@@ -925,10 +981,39 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
             first = checked_in.first()
             first.check_out_time = check_out_datetime.time()
             first.save()
+            
+            # Broadcast WebSocket update for check-out
+            try:
+                print(f"🔔 CHECK-OUT API - Starting WebSocket notification for participant: {participant.user.first_name} {participant.user.last_name}")
+                print(f"🔔 CHECK-OUT API - Event: {participant.event.name} (ID: {participant.event.id})")
+                
+                participant_data = serialize_participant_for_websocket(participant)
+                print(f"📊 CHECK-OUT API - Serialized participant data for: {participant_data.get('user', {}).get('first_name', 'Unknown')}")
+                print(f"📊 CHECK-OUT API - Checked in status: {participant_data.get('checked_in', False)}")
+                
+                websocket_notifier.notify_checkin_update(
+                    event_id=str(participant.event.id),
+                    participant_data=participant_data,
+                    action='checkout'
+                )
+                
+                # Notify dashboard users about participant count change
+                supervisor_ids = get_event_supervisors(participant.event)
+                websocket_notifier.notify_event_update(
+                    user_ids=supervisor_ids,
+                    event_id=str(participant.event.id),
+                    update_type='participant_checked_out',
+                    data={'participant_id': str(participant.id)}
+                )
+                print(f"✅ CHECK-OUT API - WebSocket notification sent successfully!")
+                
+            except Exception as e:
+                # Log the error but don't fail the check-out process
+                print(f"❌ CHECK-OUT API - WebSocket notification error: {e}")
+                import traceback
+                print(f"❌ CHECK-OUT API - Full traceback: {traceback.format_exc()}")
         else:
             raise serializers.ValidationError("cannot checkout this user as they are not checked in")
-        
-        # add async django channels
         
         serializer = ParticipantManagementSerializer(participant)
         return Response(serializer.data)

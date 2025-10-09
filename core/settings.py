@@ -99,7 +99,7 @@ THIRD_PARTY_APPS = [
     'drf_yasg',
     'django_filters',
     'corsheaders',
-
+    'channels',
 ]
 
 LOCAL_APPS = [
@@ -141,6 +141,25 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "core.wsgi.application"
+ASGI_APPLICATION = "core.asgi.application"
+
+# Channel layer configuration for Django Channels
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
+
+# For development without Redis, use in-memory channel layer (not recommended for production)
+if DEBUG:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer"
+        }
+    }
 
 SECURITY_HEADERS = {
     'Cross-Origin-Opener-Policy': 'unsafe-none',  # TEMPORARY for HTTP

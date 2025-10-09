@@ -45,3 +45,6 @@ typing_extensions==4.12.2
 tzdata==2025.1
 uritemplate==4.1.1
 urllib3==2.3.0
+channels==4.0.0
+channels-redis==4.2.0
+redis==5.0.1
