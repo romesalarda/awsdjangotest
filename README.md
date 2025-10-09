@@ -248,3 +248,7 @@ docker-compose run --rm web python manage.py migrate --noinput
 
 
 Other projects -> To help with SEO, to either learn SSR? or learn how to improve SEO in SPA (single page applications)
+
+
+to run daphne server 
+daphne -v 2 -b 0.0.0.0 -p 8000 core.asgi:application

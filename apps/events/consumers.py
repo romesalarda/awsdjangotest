@@ -187,12 +187,80 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
             
             participants_list = []
             for participant in participants:
-                # Get latest attendance record for today - need to use EventDayAttendance model directly
-                latest_attendance = EventDayAttendance.objects.filter(
+                # Get all attendance records for this participant (all days)
+                all_attendance = EventDayAttendance.objects.filter(
                     event=participant.event,
-                    user=participant.user,
-                    day_date=participant.event.start_date.date() if participant.event.start_date else None
-                ).first()
+                    user=participant.user
+                ).order_by('-day_date', '-check_in_time')
+                
+                print(f"👥 Participant: {participant.user.first_name} {participant.user.last_name} (ID: {participant.user.id})")
+                print(f"📅 Found {all_attendance.count()} attendance records")
+                
+                # Determine current status based on latest attendance
+                current_status = 'not-checked-in'  # Default
+                latest_check_in_time = None
+                latest_check_out_time = None
+                
+                if all_attendance.exists():
+                    latest_attendance = all_attendance.first()
+                    latest_check_in_time = latest_attendance.check_in_time
+                    latest_check_out_time = latest_attendance.check_out_time
+                    
+                    if latest_check_in_time and latest_check_out_time:
+                        current_status = 'checked-out'
+                    elif latest_check_in_time:
+                        current_status = 'checked-in'
+                
+                # Serialize all attendance records
+                attendance_records = []
+                for attendance in all_attendance:
+                    attendance_records.append({
+                        'id': str(attendance.id),
+                        'day_date': attendance.day_date.isoformat() if attendance.day_date else None,
+                        'check_in_time': attendance.check_in_time.isoformat() if attendance.check_in_time else None,
+                        'check_out_time': attendance.check_out_time.isoformat() if attendance.check_out_time else None,
+                        'day_id': attendance.day_id,
+                    })
+                
+                # Get product orders for this participant through cart->user relationship
+                from apps.shop.models import EventProductOrder, EventCart
+                
+                # Debug: Check if user has any carts for this event
+                user_carts = EventCart.objects.filter(user=participant.user, event=participant.event)
+                print(f"🛒 User {participant.user.first_name} has {user_carts.count()} carts for event {participant.event.id}")
+                
+                product_orders = EventProductOrder.objects.filter(
+                    cart__user=participant.user,
+                    cart__event=participant.event
+                ).select_related('product', 'size', 'cart').order_by('-added')
+                
+                print(f"🛒 Found {product_orders.count()} product orders for participant {participant.user.first_name}")
+                if product_orders.exists():
+                    print(f"🛒 First product order: {product_orders.first().product.title if product_orders.first().product else 'No Product'}")
+                else:
+                    print(f"🛒 No product orders found for user {participant.user.id} in event {participant.event.id}")
+                
+                product_orders_data = []
+                for order in product_orders:
+                    order_info = {
+                        'id': str(order.id),
+                        'order_reference_id': order.order_reference_id,
+                        'product_name': order.product.title if order.product else None,
+                        'size': order.size.size if order.size else None,
+                        'quantity': order.quantity,
+                        'price_at_purchase': order.price_at_purchase if order.price_at_purchase else 0,
+                        'discount_applied': order.discount_applied if order.discount_applied else 0,
+                        'status': order.status,
+                        'changeable': order.changeable,
+                        'change_requested': order.change_requested,
+                        'change_reason': order.change_reason,
+                        'added': order.added.isoformat() if order.added else None,
+                    }
+                    product_orders_data.append(order_info)
+                
+                print(f"🛒 Final product orders data for {participant.user.first_name}: {len(product_orders_data)} orders")
+                if product_orders_data:
+                    print(f"🛒 Sample order: {product_orders_data[0]}")
                 
                 participant_data = {
                     'id': str(participant.id),
@@ -206,9 +274,12 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                     'status': participant.status,
                     'participant_type': participant.participant_type,
                     'registration_date': participant.registration_date.isoformat() if participant.registration_date else None,
-                    'checked_in': latest_attendance.check_in_time is not None if latest_attendance else False,
-                    'check_in_time': latest_attendance.check_in_time.isoformat() if latest_attendance and latest_attendance.check_in_time else None,
-                    'check_out_time': latest_attendance.check_out_time.isoformat() if latest_attendance and latest_attendance.check_out_time else None,
+                    'checked_in': current_status == 'checked-in',
+                    'check_status': current_status,  # New field for 3-status system
+                    'check_in_time': latest_check_in_time.isoformat() if latest_check_in_time else None,
+                    'check_out_time': latest_check_out_time.isoformat() if latest_check_out_time else None,
+                    'attendance_records': attendance_records,  # All attendance history
+                    'product_orders': product_orders_data,  # Product orders
                 }
                 participants_list.append(participant_data)
             
