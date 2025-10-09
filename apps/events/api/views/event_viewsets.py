@@ -302,6 +302,8 @@ class EventViewSet(viewsets.ModelViewSet):
     def participants(self, request, pk=None):
         '''
         Retrieve a list of participants for a specific event.
+        
+        Filter by area use ?area=chapter/area/cluster_<id> | for bank reference use ?bank_reference= | ?outstanding_payments=true/false
         '''
         # TODO: handle date ranges and filtering by if they user has answered a specific question and not the answer to said question as that has already been implemented
         event = self.get_object()
@@ -317,10 +319,15 @@ class EventViewSet(viewsets.ModelViewSet):
         
         area = request.query_params.get("area")
         if area:
-            query_params.append(
-                (Q(user__area_from__area_name=area) | Q(user__area_from__area_code=area) | 
-                 Q(user__area_from__unit__chapter__chapter_name=area.capitalize())) 
-            )
+            if area.startswith("cluster_"):
+                cluster_id = area[-1].upper()
+                print(cluster_id)
+                query_params.append(Q(user__area_from__unit__chapter__cluster__cluster_id=cluster_id))
+            else:
+                query_params.append(
+                    (Q(user__area_from__area_name=area) | Q(user__area_from__area_code=area) | 
+                    Q(user__area_from__unit__chapter__chapter_name=area.capitalize())) 
+                )
             
         bank_reference = request.query_params.get("bank_reference")
         if bank_reference:
@@ -703,6 +710,43 @@ class EventViewSet(viewsets.ModelViewSet):
         elif request.method == 'DELETE':
             payment_method.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
+    
+    @action(detail=True, methods=["GET"], url_name="check-in-users", url_path="check-in-users")
+    def get_check_in_users(self, request, pk=None):
+        '''
+        To filter by cluster use ?area=cluster_d
+        '''
+        query_params = []
+        
+        area = request.query_params.get("area")
+        if area:
+            if area.startswith("cluster_"):
+                cluster_id = area[-1].upper()
+                print(cluster_id)
+                query_params.append(Q(user__area_from__unit__chapter__cluster__cluster_id=cluster_id))
+            else:
+                query_params.append(
+                    (Q(user__area_from__area_name=area) | Q(user__area_from__area_code=area) | 
+                    Q(user__area_from__unit__chapter__chapter_name=area.capitalize())) 
+                )
+        participants = EventParticipant.objects.filter(
+            (Q(user__event_attendance__stale=True) | Q(user__event_attendance=None)),
+            event=pk,
+            *query_params,
+        ).distinct()
+        
+        return Response([
+            {
+                "full_name": f"{p.user.first_name} {p.user.last_name}",
+                "picture": p.user.profile_picture.url if p.user.profile_picture else None,
+                "area:": p.user.area_from.area_name if p.user.area_from else None,
+                "chapter": p.user.area_from.unit.chapter.chapter_name if p.user.area_from else None,
+                "cluster": p.user.area_from.unit.chapter.cluster.cluster_id if p.user.area_from else None
+                
+                
+            } for p in participants.all()
+        ])
+        
 
 class EventServiceTeamMemberViewSet(viewsets.ModelViewSet):
     '''
@@ -797,13 +841,14 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
     #TODO: add role to a service team member AND NOT a participant - low priority
-    #TODO: cancel booking
+    #TODO: cancel booking        
     
     @action(detail=True, methods=['post'], url_name="check-in", url_path="check-in")
     def check_in(self, request, event_pax_id=None):
         '''
         Check in a participant to the event. Returns {participant: date, is_checked_in: bool}
         '''
+        # TODO: ensure only service team are allowed to check in
         data = request.data
         
         try:
@@ -855,12 +900,19 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         '''
         Check out a participant from the event.
         '''
+        # TODO: ensure only service team are allowed to check in
+        data = request.data
+        try:
+            event_uuid = data.get("event_uuid")
+            event_uuid = uuid.UUID(event_uuid)
+        except (ValueError, TypeError):
+            raise serializers.ValidationError({"error": "invalid or missing event UUID"})
+
         participant = get_object_or_404(
             EventParticipant,
-            Q(event_pax_id = event_pax_id) | Q(secondary_reference_id = event_pax_id)
+            Q(event_pax_id = event_pax_id) | Q(secondary_reference_id = event_pax_id),
+            event=event_uuid
         )
-        
-        event: Event = participant.event   
         check_out_datetime = timezone.now()
                 
         checked_in = EventDayAttendance.objects.filter(

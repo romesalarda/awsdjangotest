@@ -500,6 +500,7 @@ class EventDayAttendance (models.Model):
     
     check_in_time = models.TimeField(_("check-in time"), blank=True, null=True)
     check_out_time = models.TimeField(_("check-out time"), blank=True, null=True)
+    stale = models.BooleanField(editable=False, default=False, help_text=_("marks this attendance object as stale and can no longer be updated"))
     
     class Meta:
         verbose_name = _("Event Day Attendance")
@@ -521,7 +522,7 @@ class EventDayAttendance (models.Model):
         '''
         this attendance object is declared as "finished" if the user has checked out
         '''
-        return self.check_in_time is not None & self.check_out_time is not None
+        return (self.check_in_time is not None) & (self.check_out_time is not None)
     
     def save(self, *args, **kwargs):
         if self.day_date is None and self.check_in_time:
@@ -529,6 +530,8 @@ class EventDayAttendance (models.Model):
             event_start_date = self.event.start_date.date() if self.event.start_date else None
             if event_start_date:
                 self.day_date = event_start_date + timedelta(days=self.day_id - 1)
-                
+            
+        if self.is_finished:
+            self.stale = True
                 
         return super().save(*args, **kwargs)
