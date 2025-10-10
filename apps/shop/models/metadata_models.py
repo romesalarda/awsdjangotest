@@ -60,7 +60,7 @@ class ProductSize (models.Model):
         choices=Sizes.choices,
         default=Sizes.MEDIUM
     )
-    price_modifier = models.FloatField(_("Price Modifier (£)"), default=0 , help_text="Additional cost for this size, e.g. larger sizes may cost more.")
+    price_modifier = models.DecimalField(_("Price Modifier (£)"), max_digits=10, decimal_places=2, default=0.00 , help_text="Additional cost for this size, e.g. larger sizes may cost more.")
     class Meta:
         verbose_name_plural = "Product sizes"
 

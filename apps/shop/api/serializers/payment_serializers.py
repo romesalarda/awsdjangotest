@@ -34,7 +34,7 @@ class ProductPaymentPackageSerializer(serializers.ModelSerializer):
     {
         "name": "Merchandise Bundle",
         "description": "T-shirt, hoodie, and conference bag combo",
-        "price": 7500,  // Price in pence (£75.00)
+        "price": 75.00,  // Price in pounds (£75.00)
         "event": "456e7890-e89b-12d3-a456-426614174001",  // Event UUID
         "currency": "gbp",
         "products": ["789e0123-e89b-12d3-a456-426614174002", "012e3456-e89b-12d3-a456-426614174003"],
@@ -148,7 +148,7 @@ class ProductPaymentSerializer(serializers.ModelSerializer):
         "cart": "345e6789-e89b-12d3-a456-426614174004",  // EventCart UUID
         "package": 2,  // ProductPaymentPackage ID (optional)
         "method": 1,   // ProductPaymentMethod ID
-        "amount": 12550,  // Amount in pence (£125.50)
+        "amount": 125.50,  // Amount in pounds (£125.50)
         "currency": "gbp",
         "status": "PENDING",
         "stripe_payment_intent": "pi_9876543210",
@@ -190,13 +190,13 @@ class ProductPaymentSerializer(serializers.ModelSerializer):
                            "created_at", "updated_at"]
                            
     def get_amount_display(self, obj):
-        return f"{obj.amount / 100:.2f} {obj.currency.upper()}"
+        return f"{obj.amount:.2f} {obj.currency.upper()}"
     
     def validate_amount(self, value):
         """Validate payment amount is positive and reasonable."""
         if value <= 0:
             raise serializers.ValidationError("Payment amount must be positive.")
-        if value > 100000000:  # £1,000,000 in pence
+        if value > 1000000:  # £1,000,000 in pounds
             raise serializers.ValidationError("Payment amount exceeds maximum allowed.")
         return value
     
@@ -215,10 +215,10 @@ class ProductPaymentSerializer(serializers.ModelSerializer):
             
             # Validate amount matches cart total (within reason)
             if amount and cart.total:
-                cart_total_pence = int(cart.total * 100)
-                if abs(amount - cart_total_pence) > 100:  # Allow 1 pence difference for rounding
+                cart_total_decimal = cart.total
+                if abs(amount - cart_total_decimal) > 0.01:  # Allow 1 penny difference for rounding
                     raise serializers.ValidationError(
-                        f"Payment amount ({amount} pence) does not match cart total ({cart_total_pence} pence)."
+                        f"Payment amount (£{amount:.2f}) does not match cart total (£{cart_total_decimal:.2f})."
                     )
         
         return super().validate(attrs)

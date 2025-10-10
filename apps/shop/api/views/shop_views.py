@@ -178,7 +178,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
         Process cart checkout with payment method validation and payment tracking.
         Expected payload: {
             "payment_method_id": 1,
-            "amount": 12550  // Amount in pence, optional - will be validated against cart total
+            "amount": 125.50  // Amount in pounds, optional - will be validated against cart total
         }
         '''
         cart: EventCart = self.get_object()
@@ -222,15 +222,15 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 )
             calculated_total += (order.price_at_purchase or order.product.price) * order.quantity
         
-        # Convert to pence for consistency
-        calculated_total_pence = int(calculated_total * 100)
+        # Keep total in decimal format (pounds)
+        calculated_total_decimal = calculated_total
         
         # Validate provided amount if given
         provided_amount = request.data.get('amount')
         if provided_amount is not None:
-            if provided_amount != calculated_total_pence:
+            if provided_amount != calculated_total_decimal:
                 raise serializers.ValidationError(
-                    f"Provided amount ({provided_amount} pence) does not match cart total ({calculated_total_pence} pence)."
+                    f"Provided amount (£{provided_amount:.2f}) does not match cart total (£{calculated_total_decimal:.2f})."
                 )
         
         # Use atomic transaction for checkout process
@@ -240,7 +240,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 user=cart.user,
                 cart=cart,
                 method=payment_method,
-                amount=calculated_total_pence,
+                amount=calculated_total_decimal,
                 currency=getattr(cart.event, 'currency', 'gbp'),
                 status=ProductPayment.PaymentStatus.PENDING
             )
@@ -274,7 +274,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 "reference_id": payment.payment_reference_id,
                 "bank_reference": payment.bank_reference,
                 "method": payment_method.get_method_display(),
-                "amount": calculated_total_pence,
+                "amount": calculated_total_decimal,
                 "currency": payment.currency,
                 "status": payment.get_status_display(),
                 "instructions": instructions

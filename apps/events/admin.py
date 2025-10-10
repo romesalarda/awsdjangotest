@@ -341,7 +341,7 @@ class EventPaymentAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
 
     def amount_display(self, obj):
-        return f"{obj.amount / 100:.2f} {obj.currency.upper()}"
+        return f"{obj.amount:.2f} {obj.currency.upper()}"
 
     amount_display.short_description = "Amount"
 

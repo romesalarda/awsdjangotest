@@ -63,9 +63,11 @@ class ProductPaymentPackage(models.Model):
     """
     name = models.CharField(max_length=100, verbose_name=_("package name"))
     description = models.TextField(blank=True, null=True, verbose_name=_("package description"))
-    price = models.IntegerField(
-        verbose_name=_("price (in pence)"),
-        help_text=_("Store in smallest currency unit (e.g., pence for GBP, cents for USD)"),
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name=_("price"),
+        help_text=_("Price in pounds (e.g., 25.00 for £25.00)"),
     )
     event = models.ForeignKey(
         'events.Event',
@@ -86,7 +88,7 @@ class ProductPaymentPackage(models.Model):
         verbose_name_plural = _("Product Payment Packages")
 
     def __str__(self):
-        return f"{self.name} - {self.price / 100:.2f} {self.currency.upper()}"
+        return f"{self.name} - {self.price} {self.currency.upper()}"
 
 class ProductPayment(models.Model):
     """
@@ -119,7 +121,11 @@ class ProductPayment(models.Model):
         verbose_name=_("payment method"),
     )
     stripe_payment_intent = models.CharField(max_length=255, unique=True, blank=True, null=True)
-    amount = models.IntegerField(help_text=_("Amount in pence"))
+    amount = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        help_text=_("Amount in pounds (e.g., 30.00 for £30.00)")
+    )
     currency = models.CharField(max_length=10, default="gbp")
     status = models.CharField(
         max_length=50,
@@ -152,7 +158,7 @@ class ProductPayment(models.Model):
         # Use the short bank reference for transfers
         reference = self.bank_reference or self.payment_reference_id
         instructions.append(f"**Transfer Reference: {reference}**")
-        instructions.append(f"Amount: £{self.amount / 100:.2f}")
+        instructions.append(f"Amount: £{self.amount:.2f}")
         instructions.append("")
         
         if self.method.account_name:

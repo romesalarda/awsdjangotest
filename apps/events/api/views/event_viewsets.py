@@ -14,7 +14,7 @@ from django.core.exceptions import ValidationError
 
 from apps.events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
-    EventTalk, EventWorkshop
+    EventTalk, EventWorkshop, EventPayment
 )
 
 from apps.events.api.serializers import *
@@ -43,6 +43,7 @@ class EventViewSet(viewsets.ModelViewSet):
     
     queryset = Event.objects.all()
     serializer_class = EventSerializer
+    lookup_field = 'id'  # Use UUID id field for lookups
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = EventFilter
     # filterset_fields = ['event_type', 'area_type', 'specific_area', 'name']
@@ -63,17 +64,26 @@ class EventViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
+        print(f"🔧 DEBUG get_queryset - user: {user}, is_superuser: {user.is_superuser}, is_encoder: {getattr(user, 'is_encoder', False)}")
+        
         if user.is_superuser:
-            return Event.objects.all()       
-        # returns events that are specific to the user, created_by, supervisor, participant, service team member
+            queryset = Event.objects.all()
+            print(f"🔧 DEBUG get_queryset - superuser queryset count: {queryset.count()}")
+            return queryset
         
         if user.is_authenticated and user.is_encoder:
-            return Event.objects.filter(
-                models.Q(created_by=user),
-                is_public=True
+            # Encoder users can access events they created OR public events
+            queryset = Event.objects.filter(
+                Q(created_by=user) | Q(is_public=True)
             ).distinct()
-        # for normal authenticated users, only show public events
-        return Event.objects.filter(is_public=True)
+            print(f"🔧 DEBUG get_queryset - encoder queryset count: {queryset.count()}")
+            # print(f"🔧 DEBUG get_queryset - encoder queryset SQL: {queryset.query}")
+            return queryset
+        
+        # For normal authenticated users, only show public events
+        queryset = Event.objects.filter(is_public=True)
+        print(f"🔧 DEBUG get_queryset - regular user queryset count: {queryset.count()}")
+        return queryset
     
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -303,56 +313,175 @@ class EventViewSet(viewsets.ModelViewSet):
     
     # participant related actions
     @action(detail=True, methods=['get'])
-    def participants(self, request, pk=None):
+    def participants(self, request, pk=None, id=None):
         '''
         Retrieve a list of participants for a specific event.
         
-        Filter by area use ?area=chapter/area/cluster_<id> | for bank reference use ?bank_reference= | ?outstanding_payments=true/false
+        Supports filtering and ordering:
+        - ?area=chapter/area/cluster_<id> (filter by area, chapter, or cluster)
+        - ?bank_reference= (filter by bank reference in payments)
+        - ?outstanding_payments=true/false (filter by payment status)
+        - ?identity= (filter by name, email, or phone)
+        - ?status= (filter by participant status)
+        - ?order_by=recent_updates (order by most recent activity)
+        - ?search= (general search across multiple fields)
         '''
-        # TODO: handle date ranges and filtering by if they user has answered a specific question and not the answer to said question as that has already been implemented
-        event = self.get_object()
+        # Handle both pk and id parameters from DRF routing
+        event_lookup = id if id is not None else pk
+        print(f"🚀 Using event lookup: {event_lookup} (pk={pk}, id={id})")
+        print(f"� PARTICIPANTS METHOD CALLED - pk: {pk}, query_params: {dict(request.query_params)}")
+        print(f"�🔍 DEBUG participants - pk parameter: {pk}")
+        print(f"🔍 DEBUG participants - request user: {request.user}")
+        print(f"🔍 DEBUG participants - user is_superuser: {request.user.is_superuser}")
+        print(f"🔍 DEBUG participants - user is_encoder: {getattr(request.user, 'is_encoder', False)}")
+        
+
+        queryset = self.get_queryset()
+        print(f"🔍 DEBUG participants - queryset count: {queryset.count()}")
+        # print(f"🔍 DEBUG participants - queryset SQL: {queryset.query}")
+        
+        # Debug: Check the raw Event count vs queryset count
+        all_events_count = Event.objects.all().count()
+        print(f"🔍 DEBUG participants - total events in DB: {all_events_count}")
+        
+        # Debug: Check if there are duplicate events with the same id
+        if event_lookup:
+            matching_events = queryset.filter(id=event_lookup)
+            print(f"🔍 Events matching id '{event_lookup}': {matching_events.count()}")
+            
+            # Also check all events with this ID in the entire database
+            all_matching = Event.objects.filter(id=event_lookup)
+            print(f"🔍 ALL events in DB with id '{event_lookup}': {all_matching.count()}")
+            
+            if matching_events.count() > 1:
+                print(f"⚠️ WARNING: Multiple events found with id '{event_lookup}' in filtered queryset")
+                for i, event in enumerate(matching_events):
+                    print(f"   - Event {i+1}: {event.name} (id: {event.id})")
+                    
+            if all_matching.count() > 1:
+                print(f"⚠️ WARNING: Multiple events found with id '{event_lookup}' in ENTIRE database")
+                for i, event in enumerate(all_matching):
+                    print(f"   - DB Event {i+1}: {event.name} (id: {event.id})")
+        print("⚠️ Query parameters:", dict(request.query_params))
+        # Get event object directly instead of using self.get_object() which seems to have issues with query params
+        try:
+            print(f"🔍 DEBUG participants - About to get event directly using event_lookup: {event_lookup}")
+            event = queryset.get(id=event_lookup)
+            print(f"🔍 DEBUG participants - Successfully retrieved event: {event.name} (id: {event.id})")
+        except Event.MultipleObjectsReturned as e:
+            # Handle the case where multiple events are returned
+            print(f"❌ ERROR: Multiple events returned for id '{event_lookup}': {str(e)}")
+            matching_events = queryset.filter(id=event_lookup)
+            print(f"   Total matching events in queryset: {matching_events.count()}")
+            for i, evt in enumerate(matching_events):
+                print(f"   Event {i+1}: {evt.name} (id: {evt.id})")
+            # Use the first event as a fallback
+            event = matching_events.first()
+            print(f"   Using first event: {event.name} (id: {event.id})")
+        except Event.DoesNotExist as e:
+            print(f"❌ ERROR: Event not found for id '{event_lookup}': {str(e)}")
+            return Response({'error': 'Event not found'}, status=404)
+        except Exception as unexpected_error:
+            print(f"❌ UNEXPECTED ERROR in get_object(): {unexpected_error}")
+            print(f"❌ Error type: {type(unexpected_error)}")
+            import traceback
+            traceback.print_exc()
+            return Response({'error': f'Unexpected error: {str(unexpected_error)}'}, status=500)
+        
         simple = request.query_params.get('simple', 'true').lower() == 'true'
+        order_by = request.query_params.get('order_by', 'registration_date')
         
         query_params = []
-        identity = request.query_params.get("identity")
-        if identity:
-            identity = identity.upper()
+        
+        # Enhanced search functionality
+        search = request.query_params.get("search")
+        if search:
+            search_upper = search.upper()
             query_params.append(
-                (Q(user__first_name=identity) | Q(user__last_name=identity) | Q(user__primary_email=identity)) | Q(user__phone_number=identity)
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search) |
+                Q(user__primary_email__icontains=search) |
+                Q(user__phone_number__icontains=search) |
+                Q(event_pax_id__icontains=search_upper) |
+                Q(participant_event_payments__bank_reference__icontains=search_upper) |
+                Q(user__product_payments__bank_reference__icontains=search_upper)
             )
         
+        # Identity filter (exact or partial match)
+        identity = request.query_params.get("identity")
+        if identity:
+            identity_upper = identity.upper()
+            query_params.append(
+                Q(user__first_name__icontains=identity) |
+                Q(user__last_name__icontains=identity) |
+                Q(user__primary_email__icontains=identity) |
+                Q(user__phone_number__icontains=identity) |
+                Q(event_pax_id__icontains=identity_upper)
+            )
+        
+        # Area filtering
         area = request.query_params.get("area")
-        if area:
-            if area.startswith("cluster_"):
-                cluster_id = area[-1].upper()
-                print(cluster_id)
-                query_params.append(Q(user__area_from__unit__chapter__cluster__cluster_id=cluster_id))
-            else:
-                query_params.append(
-                    (Q(user__area_from__area_name=area) | Q(user__area_from__area_code=area) | 
-                    Q(user__area_from__unit__chapter__chapter_name=area.capitalize())) 
-                )
+        if area and area.strip():
+            query_params.append(
+                Q(user__area_from__area_name__icontains=area) |
+                Q(user__area_from__area_code__icontains=area)
+            )
             
+        # Chapter filtering  
+        chapter = request.query_params.get("chapter")
+        if chapter and chapter.strip():
+            print(f"🔍 DEBUG participants - Applying chapter filter: '{chapter}'")
+            query_params.append(Q(user__area_from__unit__chapter__chapter_name__icontains=chapter))
+            
+        # Cluster filtering
+        cluster = request.query_params.get("cluster")
+        if cluster and cluster.strip():
+            print(f"🔍 DEBUG participants - Applying cluster filter: '{cluster}'")
+            query_params.append(Q(user__area_from__unit__chapter__cluster__cluster_name__icontains=cluster))
+            
+        # Bank reference filter (for both event and product payments)
         bank_reference = request.query_params.get("bank_reference")
         if bank_reference:
-            bank_reference = bank_reference.upper()
+            bank_reference_upper = bank_reference.upper()
             query_params.append(
-                (Q(event__event_payments__bank_reference=bank_reference) | 
-                 Q(user__product_payments__bank_reference=bank_reference))
+                Q(participant_event_payments__bank_reference__icontains=bank_reference_upper) |
+                Q(user__product_payments__bank_reference__icontains=bank_reference_upper)
             )
             
+        # Status filter
         status = request.query_params.get("status")
         if status:
-            status = status.upper()
-            query_params.append(
-                (Q(status=status))
-            )
+            status_upper = status.upper()
+            # Handle status filtering - check if it's a direct field or needs special handling
+            if status_upper in ['REGISTERED', 'CONFIRMED', 'CANCELLED']:
+                query_params.append(Q(status__iexact=status_upper))
+            elif status_upper == 'CHECKED_IN':
+                # Special case for checked in participants based on attendance
+                from apps.events.models import EventDayAttendance
+                from datetime import date
+                today = date.today()
+                query_params.append(
+                    Q(user__event_attendance__day_date=today) &
+                    Q(user__event_attendance__check_in_time__isnull=False) &
+                    Q(user__event_attendance__check_out_time__isnull=True)
+                )
+            elif status_upper == 'NOT_CHECKED_IN':
+                # Participants without check-in today
+                from apps.events.models import EventDayAttendance
+                from datetime import date
+                today = date.today()
+                query_params.append(
+                    ~Q(user__event_attendance__day_date=today, 
+                       user__event_attendance__check_in_time__isnull=False)
+                )
             
-        unverified_payments = request.query_params.get("outstanding_payments", False)
-        if unverified_payments:
+        # Outstanding payments filter
+        unverified_payments = request.query_params.get("outstanding_payments")
+        if unverified_payments and unverified_payments.lower() == 'true':
             query_params.append(
                 Q(participant_event_payments__status=EventPayment.PaymentStatus.PENDING) |
-                Q(participant_event_payments__verified=False) | 
+                Q(participant_event_payments__verified=False) |
+                Q(user__product_payments__approved=False) |
                 Q(user__carts__approved=False)
             )
             
@@ -375,22 +504,144 @@ class EventViewSet(viewsets.ModelViewSet):
                 except TypeError:
                     raise serializers.ValidationError("could not parse query correctly")
         try:
-            participants = event.participants.filter(*query_params).distinct() # TODO: check select or prefetch related  
+            # Base queryset with optimized joins
+            participants = event.participants.select_related(
+                'user', 'user__area_from', 'user__area_from__unit__chapter', 
+                'user__area_from__unit__chapter__cluster'
+            ).prefetch_related(
+                'participant_event_payments', 'user__product_payments', 
+                'user__carts', 'event_question_answers'
+            )
+            
+            print(f"🔍 DEBUG participants - Base queryset count: {participants.count()}")
+            
+            # Apply filters
+            if query_params:
+                print(f"🔍 DEBUG participants - Applying {len(query_params)} filter(s)")
+                for i, q in enumerate(query_params):
+                    print(f"   Filter {i+1}: {q}")
+                
+                participants = participants.filter(*query_params).distinct()
+                print(f"🔍 DEBUG participants - Filtered queryset count: {participants.count()}")
+                # print(f"🔍 DEBUG participants - SQL Query: {participants.query}")
+            else:
+                print(f"🔍 DEBUG participants - No filters applied")
+            
+            # Apply ordering
+            if order_by == 'recent_updates':
+                # Order by most recent activity (payments, registrations) - simplified to avoid cross-model issues
+                from django.db.models import Max, DateTimeField
+                from django.db.models.functions import Coalesce
+                
+                # Simplified approach - avoid cross-model annotations that might cause select_related issues
+                participants = participants.annotate(
+                    last_payment_date=Max('participant_event_payments__created_at'),
+                    # Use registration_date as baseline for comparison
+                    activity_score=Coalesce('last_payment_date', 'registration_date', output_field=DateTimeField())
+                ).order_by(
+                    # Order by most recent payments/registrations
+                    '-activity_score',
+                    # Finally by registration date as fallback
+                    '-registration_date'
+                )
+            elif order_by == 'name':
+                participants = participants.order_by('user__first_name', 'user__last_name')
+            elif order_by == 'registration_date':
+                participants = participants.order_by('-registration_date')
+            else:
+                # Default ordering
+                participants = participants.order_by('-registration_date')
+                
         except (ValueError, ValidationError) as e:
-            raise serializers.ValidationError("invalid question match format in query" + str(e))
+            print(f"❌ ERROR in participants filtering: {e}")
+            raise serializers.ValidationError("Invalid query parameters: " + str(e))
+        except Exception as e:
+            print(f"❌ UNEXPECTED ERROR in participants filtering: {e}")
+            print(f"❌ Error type: {type(e)}")
+            import traceback
+            traceback.print_exc()
+            raise serializers.ValidationError("Error processing participants: " + str(e))
 
+        # Get available filter options for dropdowns (from all participants, not filtered ones)
+        try:
+            all_participants = event.participants.select_related(
+                'user', 'user__area_from', 'user__area_from__unit__chapter', 
+                'user__area_from__unit__chapter__cluster'
+            ).distinct()
+            
+            # Extract unique areas, chapters, and clusters for filter dropdowns
+            areas = set()
+            chapters = set()
+            clusters = set()
+            
+            print(f"🔍 Processing {all_participants.count()} participants for filter options")
+            
+            for participant in all_participants:
+                try:
+                    user = participant.user
+                    if user and hasattr(user, 'area_from') and user.area_from:
+                        area_from = user.area_from
+                        
+                        # Area name
+                        if hasattr(area_from, 'area_name') and area_from.area_name:
+                            areas.add(area_from.area_name)
+                            
+                        # Chapter name (via unit.chapter)
+                        if hasattr(area_from, 'unit') and area_from.unit:
+                            unit = area_from.unit
+                            if hasattr(unit, 'chapter') and unit.chapter:
+                                chapter = unit.chapter
+                                if hasattr(chapter, 'chapter_name') and chapter.chapter_name:
+                                    chapters.add(chapter.chapter_name)
+                                    
+                                # Cluster name (via chapter.cluster)
+                                if hasattr(chapter, 'cluster') and chapter.cluster:
+                                    cluster = chapter.cluster
+                                    if hasattr(cluster, 'cluster_name') and cluster.cluster_name:
+                                        clusters.add(cluster.cluster_name)
+                except Exception as e:
+                    print(f"⚠️ Error processing participant {participant.id}: {e}")
+                    continue
+            
+            print(f"📊 Filter options found - Areas: {len(areas)}, Chapters: {len(chapters)}, Clusters: {len(clusters)}")
+            
+            filter_options = {
+                'areas': sorted(list(areas)),
+                'chapters': sorted(list(chapters)), 
+                'clusters': sorted(list(clusters))
+            }
+            
+        except Exception as e:
+            print(f"❌ Error building filter options: {e}")
+            filter_options = {
+                'areas': [],
+                'chapters': [], 
+                'clusters': []
+            }
+
+        # Apply pagination
         page = self.paginate_queryset(participants)        
         if page is not None:
             if simple:
                 serializer = ListEventParticipantSerializer(page, many=True)
             else:
                 serializer = ParticipantManagementSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            
+            # Get paginated response and add filter options
+            paginated_response = self.get_paginated_response(serializer.data)
+            paginated_response.data['filter_options'] = filter_options
+            return paginated_response
+        
+        # Return all results if pagination is disabled
         if simple:
             serializer = ListEventParticipantSerializer(participants, many=True)
         else:
             serializer = ParticipantManagementSerializer(participants, many=True)
-        return Response(serializer.data)
+        
+        return Response({
+            'results': serializer.data,
+            'filter_options': filter_options
+        })
     
     @action(detail=True, methods=['post'], url_name="register", url_path="register")
     def register(self, request, pk=None):
@@ -888,10 +1139,14 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         )
         
         event: Event = participant.event   
-        check_in_datetime = timezone.now()
+        check_in_datetime_utc = timezone.now()
         
+        # Convert to London time for storage
+        import pytz
+        london_tz = pytz.timezone('Europe/London')
+        check_in_datetime = check_in_datetime_utc.astimezone(london_tz)
 
-        if check_in_datetime < event.start_date:
+        if check_in_datetime_utc < event.start_date:
             raise serializers.ValidationError("cannot check in participant as the event has not yet started")
         
         if participant.status != EventParticipant.ParticipantStatus.ATTENDED:
@@ -909,7 +1164,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
             EventDayAttendance.objects.create(
                 event = participant.event,
                 user = participant.user,
-                check_in_time =check_in_datetime.time(),
+                check_in_time = check_in_datetime.time(),  # Now stores London time
                 day_date = check_in_datetime.date(),
                 day_id = data.get("day_id", 1)
             )
@@ -969,7 +1224,12 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
             Q(event_pax_id = event_pax_id) | Q(secondary_reference_id = event_pax_id),
             event=event_uuid
         )
-        check_out_datetime = timezone.now()
+        check_out_datetime_utc = timezone.now()
+        
+        # Convert to London time for storage
+        import pytz
+        london_tz = pytz.timezone('Europe/London')
+        check_out_datetime = check_out_datetime_utc.astimezone(london_tz)
                 
         checked_in = EventDayAttendance.objects.filter(
             event=participant.event, 
@@ -979,7 +1239,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         )
         if checked_in.exists():
             first = checked_in.first()
-            first.check_out_time = check_out_datetime.time()
+            first.check_out_time = check_out_datetime.time()  # Now stores London time
             first.save()
             
             # Broadcast WebSocket update for check-out

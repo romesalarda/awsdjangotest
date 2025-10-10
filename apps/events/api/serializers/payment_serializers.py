@@ -28,8 +28,8 @@ class EventPaymentPackageSerializer(serializers.ModelSerializer):
     {
         "name": "Early Bird Package",
         "description": "Special discount for early registrations",
-        "price": 5000,  // Price in pence (£50.00)
-        "discounted_price": 4500,  // Discounted price in pence (£45.00)
+        "price": 50.00,  // Price in pounds (£50.00)
+        "discounted_price": 45.00,  // Discounted price in pounds (£45.00)
         "currency": "gbp",
         "capacity": 100,
         "available_from": "2025-01-01T00:00:00Z",
@@ -70,7 +70,7 @@ class EventPaymentPackageSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at")
 
     def get_price_display(self, obj):
-        # Price is stored in pence, so divide by 100 for display
+        # Price is stored in pounds (DecimalField)
         return f"{obj.price:.2f} {obj.currency.upper()}"
     
     def create(self, validated_data):
@@ -125,7 +125,7 @@ class EventPaymentSerializer(serializers.ModelSerializer):
         "event": "456e7890-e89b-12d3-a456-426614174001",  // Event UUID
         "package": 1,  // EventPaymentPackage ID
         "method": 2,   // EventPaymentMethod ID
-        "amount": 5000,  // Amount in pence (£50.00)
+        "amount": 50.00,  // Amount in pounds (£50.00)
         "currency": "gbp",
         "status": "PENDING",
         "stripe_payment_intent": "pi_1234567890",
@@ -176,7 +176,7 @@ class EventPaymentSerializer(serializers.ModelSerializer):
                            "created_at", "updated_at", "bank_reference")
 
     def get_amount_display(self, obj):
-        return f"{obj.amount / 100:.2f} {obj.currency.upper()}"
+        return f"{obj.amount:.2f} {obj.currency.upper()}"
     
     def get_participant_details(self, obj):
         """Get participant details including registration info"""

@@ -49,10 +49,12 @@ class EventPaymentMethod(models.Model):
         verbose_name=_("payment instructions"),
         help_text=_("E.g., 'Reference your full name when making the transfer'"),
     )
-    fee_add_on = models.IntegerField(
-        default=0,
-        verbose_name=_("additional fee (in pence)"),
-        help_text=_("Optional: additional fee in smallest currency unit (e.g., pence for GBP, cents for USD)"),
+    fee_add_on = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00,
+        verbose_name=_("additional fee"),
+        help_text=_("Optional: additional fee (e.g., 2.50 for £2.50)"),
         validators=[validators.MinValueValidator(0)],
     )
     currency = models.CharField(max_length=10, default="gbp")
@@ -97,15 +99,19 @@ class EventPaymentPackage(models.Model):
     package_date_starts = models.DateField(blank=True, null=True, verbose_name=_("package start date"), auto_now=True)
     package_date_ends = models.DateField(blank=True, null=True, verbose_name=_("package end date"))
 
-    price = models.IntegerField(
-        verbose_name=_("price (in pence)"),
-        help_text=_("Store in smallest currency unit (e.g., pence for GBP, cents for USD)"),
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name=_("price"),
+        help_text=_("Price in pounds (e.g., 25.00 for £25.00)"),
     )
-    discounted_price = models.IntegerField(
+    discounted_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
         blank=True,
-        verbose_name=_("discounted price (in pence)"),
-        help_text=_("Optional: discounted price in smallest currency unit"),
-        default=0,
+        verbose_name=_("discounted price"),
+        help_text=_("Optional: discounted price in pounds (e.g., 20.00 for £20.00)"),
+        default=0.00,
         validators=[validators.MinValueValidator(0)],
     )
     currency = models.CharField(max_length=10, default="gbp")
@@ -135,7 +141,7 @@ class EventPaymentPackage(models.Model):
         verbose_name_plural = _("Event Payment Packages")
 
     def __str__(self):
-        return f"{self.name} - {self.price:.2f} {self.currency.upper()}"
+        return f"{self.name} - {self.price} {self.currency.upper()}"
 
 class EventPayment(models.Model):
     """
@@ -179,7 +185,11 @@ class EventPayment(models.Model):
 
     stripe_payment_intent = models.CharField(max_length=255, unique=True, blank=True, null=True)
 
-    amount = models.IntegerField(help_text=_("Amount in pence"))
+    amount = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        help_text=_("Amount in pounds (e.g., 30.00 for £30.00)")
+    )
     currency = models.CharField(max_length=10, default="gbp")
 
     status = models.CharField(

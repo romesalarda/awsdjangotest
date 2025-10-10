@@ -41,8 +41,8 @@ class EventProduct(models.Model):
         related_name="products"
     )
     
-    price = models.FloatField(_("Product Cost (£)"))
-    discount = models.FloatField(_("Product Discount (£)"), null=True, blank=True)
+    price = models.DecimalField(_("Product Cost (£)"), max_digits=10, decimal_places=2)
+    discount = models.DecimalField(_("Product Discount (£)"), max_digits=10, decimal_places=2, null=True, blank=True)
 
     seller = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -116,7 +116,7 @@ class EventCart(models.Model):
     order_reference_id = models.CharField(_("Order ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking order references
     
     total = models.FloatField(_("Total Cost"), default=0)
-    shipping_cost = models.FloatField(_("Shipping Cost"), default=0)
+    shipping_cost = models.DecimalField(_("Shipping Cost"), max_digits=10, decimal_places=2, default=0.00)
     created = models.DateTimeField(_("Created At"), default=timezone.now)
     updated = models.DateTimeField(_("Last Updated"), auto_now=True)
     user = models.ForeignKey(
@@ -176,8 +176,8 @@ class EventProductOrder(models.Model):
     cart = models.ForeignKey(EventCart, on_delete=models.CASCADE, related_name="orders")
     quantity = models.IntegerField(default=1)
     added = models.DateTimeField(_("Date Added to Cart"), default=timezone.now)
-    price_at_purchase = models.FloatField(_("Price at Purchase (£)"), null=True, blank=True)
-    discount_applied = models.FloatField(_("Discount Applied (£)"), null=True, blank=True)
+    price_at_purchase = models.DecimalField(_("Price at Purchase (£)"), max_digits=10, decimal_places=2, null=True, blank=True)
+    discount_applied = models.DecimalField(_("Discount Applied (£)"), max_digits=10, decimal_places=2, null=True, blank=True)
     size = models.ForeignKey(
         'shop.ProductSize',
         on_delete=models.SET_NULL,

@@ -3,6 +3,27 @@ from asgiref.sync import async_to_sync
 import json
 from datetime import datetime
 from django.core.serializers.json import DjangoJSONEncoder
+from django.utils import timezone
+import pytz
+
+
+def convert_to_london_time(dt):
+    """Handle timezone conversion for different field types"""
+    if not dt:
+        return None
+    
+    # Handle TimeField (time object) vs DateTimeField (datetime object)
+    if hasattr(dt, 'date'):
+        # It's a datetime object (DateTimeField) - convert to London time
+        if not timezone.is_aware(dt):
+            # If it's naive, assume it's UTC
+            dt = timezone.make_aware(dt, pytz.UTC)
+        
+        london_tz = pytz.timezone('Europe/London')
+        return dt.astimezone(london_tz)
+    else:
+        # It's a time object (TimeField) - already stored in London time, return as-is
+        return dt
 
 
 class WebSocketNotifier:
@@ -152,18 +173,23 @@ def serialize_participant_for_websocket(participant):
             print(f"📊 SERIALIZING - Check-in status: {current_status}")
             
             if latest_check_in_time:
-                check_in_time = latest_check_in_time.isoformat()
+                london_check_in = convert_to_london_time(latest_check_in_time)
+                check_in_time = str(london_check_in) if london_check_in else None
             if latest_check_out_time:
-                check_out_time = latest_check_out_time.isoformat()
+                london_check_out = convert_to_london_time(latest_check_out_time)
+                check_out_time = str(london_check_out) if london_check_out else None
         
         # Serialize all attendance records
         attendance_records = []
         for attendance in all_attendance:
+            london_check_in = convert_to_london_time(attendance.check_in_time)
+            london_check_out = convert_to_london_time(attendance.check_out_time)
+            
             attendance_records.append({
                 'id': str(attendance.id),
                 'day_date': attendance.day_date.isoformat() if attendance.day_date else None,
-                'check_in_time': attendance.check_in_time.isoformat() if attendance.check_in_time else None,
-                'check_out_time': attendance.check_out_time.isoformat() if attendance.check_out_time else None,
+                'check_in_time': str(london_check_in) if london_check_in else None,
+                'check_out_time': str(london_check_out) if london_check_out else None,
                 'day_id': attendance.day_id,
             })
         
@@ -179,8 +205,8 @@ def serialize_participant_for_websocket(participant):
         payment_data = []
         
         for payment in event_payments:
-            # Convert amount from pence to pounds for display
-            amount_pounds = float(payment.amount) / 100 if payment.amount else 0
+            # Convert DecimalField to float for JSON serialization
+            amount_pounds = float(payment.amount) if payment.amount else 0.0
             
             # Calculate outstanding amount: full amount if pending/failed, 0 if succeeded
             outstanding_amount = 0
@@ -221,13 +247,13 @@ def serialize_participant_for_websocket(participant):
                 'product_name': order.product.title if order.product else None,
                 'size': order.size.size if order.size else None,
                 'quantity': order.quantity,
-                'price_at_purchase': order.price_at_purchase if order.price_at_purchase else 0,
-                'discount_applied': order.discount_applied if order.discount_applied else 0,
+                'price_at_purchase': float(order.price_at_purchase) if order.price_at_purchase else 0.0,
+                'discount_applied': float(order.discount_applied) if order.discount_applied else 0.0,
                 'status': order.status,
                 'changeable': order.changeable,
                 'change_requested': order.change_requested,
                 'change_reason': order.change_reason,
-                'added': order.added.isoformat() if order.added else None,
+                'added': convert_to_london_time(order.added).isoformat() if order.added else None,
             }
             product_orders_data.append(order_info)
         

@@ -3,8 +3,35 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from apps.events.models import Event, EventParticipant, EventDayAttendance
+from django.utils import timezone
+from django.core.serializers.json import DjangoJSONEncoder
+import pytz
 
 User = get_user_model()
+
+
+def safe_json_dumps(data):
+    """Helper function to safely serialize data including Decimal objects"""
+    return json.dumps(data, cls=DjangoJSONEncoder)
+
+
+def convert_to_london_time(dt):
+    """Handle timezone conversion for different field types"""
+    if not dt:
+        return None
+    
+    # Handle TimeField (time object) vs DateTimeField (datetime object)
+    if hasattr(dt, 'date'):
+        # It's a datetime object (DateTimeField) - convert to London time
+        if not timezone.is_aware(dt):
+            # If it's naive, assume it's UTC
+            dt = timezone.make_aware(dt, pytz.UTC)
+        
+        london_tz = pytz.timezone('Europe/London')
+        return dt.astimezone(london_tz)
+    else:
+        # It's a time object (TimeField) - already stored in London time, return as-is
+        return dt
 
 
 class EventCheckInConsumer(AsyncWebsocketConsumer):
@@ -86,7 +113,7 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
         participant_name = event['participant'].get('user', {}).get('first_name', 'Unknown')
         print(f"📤 WebSocket SENDING checkin_update - Group: {self.event_group_name}, Participant: {participant_name}, Action: {event['action']}")
         
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=safe_json_dumps({
             'type': 'checkin_update',
             'participant': event['participant'],
             'action': event['action'],  # 'checkin' or 'checkout'
@@ -102,7 +129,7 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
         participant_name = event['participant'].get('user', {}).get('first_name', 'Unknown')
         print(f"📤 WebSocket SENDING participant_registered - Group: {self.event_group_name}, Participant: {participant_name}")
         
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=safe_json_dumps({
             'type': 'participant_registered',
             'participant': event['participant'],
             'timestamp': event['timestamp']
@@ -115,7 +142,7 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
         event_data = await self.get_event_data()
         participants_data = await self.get_participants_data()
         
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=safe_json_dumps({
             'type': 'initial_data',
             'event': event_data,
             'participants': participants_data
@@ -127,7 +154,7 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
         """
         participants_data = await self.get_participants_data()
         
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=safe_json_dumps({
             'type': 'participants_data',
             'participants': participants_data
         }))
@@ -214,11 +241,31 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                 # Serialize all attendance records
                 attendance_records = []
                 for attendance in all_attendance:
+                    london_check_in = convert_to_london_time(attendance.check_in_time)
+                    london_check_out = convert_to_london_time(attendance.check_out_time)
+                    
+                    # Handle time vs datetime serialization
+                    check_in_iso = None
+                    if london_check_in:
+                        if hasattr(london_check_in, 'isoformat'):
+                            check_in_iso = london_check_in.isoformat()
+                        else:
+                            # It's a time object, convert to string
+                            check_in_iso = str(london_check_in)
+                    
+                    check_out_iso = None
+                    if london_check_out:
+                        if hasattr(london_check_out, 'isoformat'):
+                            check_out_iso = london_check_out.isoformat()
+                        else:
+                            # It's a time object, convert to string
+                            check_out_iso = str(london_check_out)
+                    
                     attendance_records.append({
                         'id': str(attendance.id),
                         'day_date': attendance.day_date.isoformat() if attendance.day_date else None,
-                        'check_in_time': attendance.check_in_time.isoformat() if attendance.check_in_time else None,
-                        'check_out_time': attendance.check_out_time.isoformat() if attendance.check_out_time else None,
+                        'check_in_time': check_in_iso,
+                        'check_out_time': check_out_iso,
                         'day_id': attendance.day_id,
                     })
                 
@@ -248,13 +295,13 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                         'product_name': order.product.title if order.product else None,
                         'size': order.size.size if order.size else None,
                         'quantity': order.quantity,
-                        'price_at_purchase': order.price_at_purchase if order.price_at_purchase else 0,
-                        'discount_applied': order.discount_applied if order.discount_applied else 0,
+                        'price_at_purchase': float(order.price_at_purchase) if order.price_at_purchase else 0.0,
+                        'discount_applied': float(order.discount_applied) if order.discount_applied else 0.0,
                         'status': order.status,
                         'changeable': order.changeable,
                         'change_requested': order.change_requested,
                         'change_reason': order.change_reason,
-                        'added': order.added.isoformat() if order.added else None,
+                        'added': convert_to_london_time(order.added).isoformat() if order.added else None,
                     }
                     product_orders_data.append(order_info)
                 
@@ -276,8 +323,8 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                     'registration_date': participant.registration_date.isoformat() if participant.registration_date else None,
                     'checked_in': current_status == 'checked-in',
                     'check_status': current_status,  # New field for 3-status system
-                    'check_in_time': latest_check_in_time.isoformat() if latest_check_in_time else None,
-                    'check_out_time': latest_check_out_time.isoformat() if latest_check_out_time else None,
+                    'check_in_time': str(convert_to_london_time(latest_check_in_time)) if latest_check_in_time else None,
+                    'check_out_time': str(convert_to_london_time(latest_check_out_time)) if latest_check_out_time else None,
                     'attendance_records': attendance_records,  # All attendance history
                     'product_orders': product_orders_data,  # Product orders
                 }

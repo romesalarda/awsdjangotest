@@ -661,7 +661,7 @@ class EventSerializer(serializers.ModelSerializer):
                 {
                     "name": "Early Bird Special",
                     "description": "Special pricing for early registrations",
-                    "price": "25.00",  // String format, converted to pence
+                    "price": "25.00",  // String format for £25.00
                     "currency": "GBP",
                     "capacity": 100,
                     "available_from": "2025-05-01T00:00:00",  // ISO format or HTML datetime-local
@@ -862,7 +862,7 @@ class EventSerializer(serializers.ModelSerializer):
                         'event': instance.id,
                         'name': package_data.get('name', ''),
                         'description': package_data.get('description', ''),
-                        'price': float(package_data.get('price', 0)),  # Convert pounds to pence
+                        'price': float(package_data.get('price', 0)),  # Price already in pounds
                         'currency': package_data.get('currency', 'GBP').lower(),
                         'capacity': package_data.get('capacity'),
                         'is_active': package_data.get('is_active', True),
@@ -1601,7 +1601,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             amount_display = str(payment.amount)
             try:
                 if payment.currency and payment.amount:
-                    amount_display = f"{float(payment.amount)/100:.2f} {payment.currency.upper()}"
+                    amount_display = f"{float(payment.amount):.2f} {payment.currency.upper()}"
             except (AttributeError, ValueError, TypeError):
                 amount_display = str(payment.amount)
             
