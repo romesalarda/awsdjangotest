@@ -322,9 +322,12 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                         Q(event_pax_id__icontains=identity_term)
                     )
                 
-                # Bank reference filter
+                # Bank reference filter#
+                # TODO: also get bank reference from ProductPayment linked to user
                 if filters.get('bank_reference'):
                     filter_conditions &= Q(participant_event_payments__bank_reference__icontains=filters['bank_reference'])
+                    # TODO: also get bank reference from ProductPayment linked to user
+                    filter_conditions |= Q(user__product_payments__bank_reference__icontains=filters['bank_reference'])
                 
                 # Outstanding payments filter
                 if filters.get('outstanding_payments'):

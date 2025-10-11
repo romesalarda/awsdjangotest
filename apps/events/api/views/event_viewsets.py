@@ -103,7 +103,7 @@ class EventViewSet(viewsets.ModelViewSet):
         super().perform_create(serializer)
         
     @action(detail=True, methods=['get'], url_name="booking", url_path="booking")
-    def booking(self, request, pk=None):
+    def booking(self, request, id=None):
         '''
         Handle event booking logic here.
         '''
@@ -192,9 +192,10 @@ class EventViewSet(viewsets.ModelViewSet):
             payment_details["method_info"] = None
             
         payment_details["payment_deadline"] = payment_deadline
+        # payment_details["bank_reference"] = 
         # print()
         
-        print(payment_details)
+        # print("❗ payment_details:", payment_details)
         
         # extra_questions = event_data.pop("extra_questions", [])
 
@@ -644,7 +645,7 @@ class EventViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'], url_name="register", url_path="register")
-    def register(self, request, pk=None):
+    def register(self, request, id=None):
         '''
         Register a user for a specific event.
         '''
@@ -718,7 +719,7 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['delete'], url_name="remove-participant", url_path="remove-participant")
-    def remove_participant(self, request, pk=None):
+    def remove_participant(self, request, id=None):
         '''
         Remove a participant from the event.
         '''
@@ -737,7 +738,7 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=['get'], url_name="attendance", url_path="attendance")
-    def attendance(self, request, pk=None):
+    def attendance(self, request, id=None):
         '''
         Retrieve a list of attendance records for a specific event.
         '''
@@ -752,7 +753,7 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['get'], url_path="service-team")
-    def service_team(self, request, pk=None):
+    def service_team(self, request, id=None):
         '''
         Retrieve a list of service team members for a specific event.
         '''
@@ -769,7 +770,7 @@ class EventViewSet(viewsets.ModelViewSet):
     # service team related actions
     
     @action(detail=True, methods=['post'], url_name="add-service-member", url_path="add-service-member")
-    def add_service_member(self, request, pk=None):
+    def add_service_member(self, request, id=None):
         '''
         Add a service team member to a specific event.
         {"member_id": "member-uuid", "role_ids": [role_uuid1, role_uuid2], "head_of_role": true}
@@ -816,7 +817,7 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['delete'], url_name="remove-service-member", url_path="remove-service-member")
-    def remove_service_member(self, request, pk=None):
+    def remove_service_member(self, request, id=None):
         '''
         Remove a service team member from a specific event.
         {"member_id": "member-uuid"}
@@ -855,7 +856,7 @@ class EventViewSet(viewsets.ModelViewSet):
     # metadata related actions
     
     @action(detail=True, methods=['get'])
-    def talks(self, request, pk=None):
+    def talks(self, request, id=None):
         '''
         Retrieve a list of talks for a specific event.
         '''
@@ -870,7 +871,7 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['get'])
-    def workshops(self, request, pk=None):
+    def workshops(self, request, id=None):
         '''
         Retrieve a list of workshops for a specific event.
         '''
@@ -900,7 +901,7 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=True, methods=['get'], url_name="products", url_path="products")
-    def products(self, request, pk=None):
+    def products(self, request, id=None):
         '''
         Retrieve a list of products for a specific event.
         '''
@@ -930,7 +931,7 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=True, methods=['get', 'post'], url_name="product-payment-methods", url_path="product-payment-methods")
-    def product_payment_methods(self, request, pk=None):
+    def product_payment_methods(self, request, id=None):
         '''
         Retrieve and create merchandise payment methods for a specific event.
         '''
@@ -955,7 +956,7 @@ class EventViewSet(viewsets.ModelViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['put', 'patch', 'delete'], url_name="product-payment-method-detail", url_path="product-payment-methods/(?P<method_id>[^/.]+)")
-    def product_payment_method_detail(self, request, pk=None, method_id=None):
+    def product_payment_method_detail(self, request, id=None, method_id=None):
         '''
         Update or delete a specific merchandise payment method for an event.
         '''
@@ -987,7 +988,7 @@ class EventViewSet(viewsets.ModelViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=["GET"], url_name="check-in-users", url_path="check-in-users")
-    def get_check_in_users(self, request, pk=None):
+    def get_check_in_users(self, request, id=None):
         '''
         To filter by cluster use ?area=cluster_d
         '''
@@ -1006,7 +1007,7 @@ class EventViewSet(viewsets.ModelViewSet):
                 )
         participants = EventParticipant.objects.filter(
             (Q(user__event_attendance__stale=True) | Q(user__event_attendance=None)),
-            event=pk,
+            event=id,
             *query_params,
         ).distinct()
         
