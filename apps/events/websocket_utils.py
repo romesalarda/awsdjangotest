@@ -261,38 +261,77 @@ def serialize_participant_for_websocket(participant):
         if product_orders_data:
             print(f"🛒 SERIALIZE - Sample order: {product_orders_data[0]}")
 
+        # Build area_from_display to match REST API structure
+        area_from_display = None
+        try:
+            if hasattr(participant.user, 'area_from') and participant.user.area_from:
+                area = participant.user.area_from
+                cluster_info = None
+                chapter_info = None
+                if hasattr(area, 'unit') and area.unit:
+                    chapter_info = getattr(area.unit.chapter, 'chapter_name', None) if hasattr(area.unit, 'chapter') else None
+                    cluster_info = getattr(area.unit.chapter.cluster, 'cluster_id', None) if (hasattr(area.unit, 'chapter') and hasattr(area.unit.chapter, 'cluster')) else None
+                area_from_display = {
+                    "area": getattr(area, 'area_name', None),
+                    "chapter": chapter_info,
+                    "cluster": cluster_info,
+                }
+            else:
+                area_from_display = {"area": None, "chapter": None, "cluster": None}
+        except AttributeError:
+            area_from_display = None
+
+        # Match ParticipantManagementSerializer structure exactly
         serialized_data = {
-            'id': str(participant.id),
-            'event_pax_id': participant.event_pax_id,
+            'event': participant.event.event_code,
+            'event_user_id': participant.event_pax_id,
             'user': {
-                'id': str(participant.user.id),
-                'first_name': participant.user.first_name,
-                'last_name': participant.user.last_name,
-                'email': getattr(participant.user, 'email', None) or getattr(participant.user, 'primary_email', None),
-                'phone': getattr(participant.user, 'phone', None),
-                'profile_picture': participant.user.profile_picture.url if hasattr(participant.user, 'profile_picture') and participant.user.profile_picture else None,
-                'area_from_display': {
-                    'area': getattr(getattr(participant.user, 'area_from_display', None), 'area', None)
-                } if hasattr(participant.user, 'area_from_display') and getattr(participant.user, 'area_from_display', None) else None,
+                "first_name": participant.user.first_name,
+                "last_name": participant.user.last_name,
+                "ministry": getattr(participant.user, 'ministry', None),
+                "gender": getattr(participant.user, 'gender', None),
+                "date_of_birth": getattr(participant.user, 'date_of_birth', None),
+                "member_id": getattr(participant.user, 'member_id', None),
+                "username": participant.user.username,
+                "profile_picture": participant.user.profile_picture.url if hasattr(participant.user, 'profile_picture') and participant.user.profile_picture else None,
+                "area_from_display": area_from_display,
+                "primary_email": getattr(participant.user, 'primary_email', None),
+                "phone": getattr(participant.user, 'phone_number', None),
             },
             'status': {
-                'code': participant.status,
-                'display_name': participant.get_status_display(),
-            } if participant.status else None,
-            'participant_type': {
-                'code': participant.participant_type,
-                'display_name': participant.get_participant_type_display(),
-            } if participant.participant_type else None,
-            'registration_date': participant.registration_date.isoformat() if participant.registration_date else None,
+                "code": participant.status,
+                "participant_type": participant.participant_type,
+            },
+            'dates': {
+                "registered_on": participant.registration_date,
+                "confirmed_on": participant.confirmation_date,
+                "attended_on": participant.attended_date,
+                "payment_date": participant.payment_date,
+            },
+            'consents': {
+                "media_consent": participant.media_consent,
+                "data_consent": participant.data_consent,
+                "understood_registration": participant.understood_registration,
+            },
+            'health': {
+                "allergies": [],  # Simplified for WebSocket
+                "medical_conditions": [],
+            },
+            'emergency_contacts': [],  # Simplified for WebSocket
+            'notes': participant.notes,
+            'payment': {
+                "paid_amount": str(participant.paid_amount),
+            },
+            'verified': participant.verified,
+            'event_payments': payment_data,
+            'carts': [],  # Simplified for WebSocket
+            'questions_answered': [],  # Simplified for WebSocket
             'checked_in': is_currently_checked_in,
-            'check_status': current_status,  # New field for 3-status system
+            'check_status': current_status,
             'check_in_time': check_in_time,
             'check_out_time': check_out_time,
-            'attendance_records': attendance_records,  # All attendance history
-            'has_payment_issues': has_payment_issues,
-            'total_outstanding': total_outstanding,
-            'event_payments': payment_data,
-            'product_orders': product_orders_data,  # Product orders
+            'attendance_records': attendance_records,
+            'product_orders': product_orders_data,
         }
         
         print(f"✅ SERIALIZING SUCCESS - Data: {serialized_data['user']['first_name']} is checked_in: {serialized_data['checked_in']}")

@@ -1453,6 +1453,16 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
     
     # Questions answered (simplified)
     questions_answered = serializers.SerializerMethodField()
+    
+    # Check-in status (to match WebSocket data)
+    checked_in = serializers.SerializerMethodField()
+    check_status = serializers.SerializerMethodField()
+    check_in_time = serializers.SerializerMethodField()
+    check_out_time = serializers.SerializerMethodField()
+    attendance_records = serializers.SerializerMethodField()
+    
+    # Product orders (to match WebSocket data)
+    product_orders = serializers.SerializerMethodField()
 
     class Meta:
         model = EventParticipant
@@ -1471,6 +1481,12 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             "event_payments",
             "carts",
             "questions_answered",
+            "checked_in",
+            "check_status", 
+            "check_in_time",
+            "check_out_time",
+            "attendance_records",
+            "product_orders",
         ]
         read_only_fields = fields
 
@@ -1686,6 +1702,14 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                     
                     images = product.images.all() if product and hasattr(product, 'images') else []
                     image_url = images[0].image if images else None
+                    
+                    # Handle size field properly - convert to string to avoid serialization errors
+                    size_value = None
+                    try:
+                        if hasattr(order, 'size') and order.size is not None:
+                            size_value = str(order.size)
+                    except Exception:
+                        size_value = None
                         
                     order_data = {
                         "id": order.id,
@@ -1694,7 +1718,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                         "imageUrl": str(image_url.url) if image_url else None,
                         "price": float(getattr(product, 'price', 0.0)) if getattr(product, 'price', None) else 0.0,
                         "bank_reference": getattr(product_payment, 'bank_reference', None),
-                        "size": getattr(order.size, 'size', None),
+                        "size": size_value,  # Now guaranteed to be string or None
                     }
                     
                     # Safely get product title
@@ -1774,6 +1798,112 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             pass
         return None
 
+    def get_checked_in(self, obj):
+        """Get current check-in status"""
+        from datetime import date
+        today = date.today()
+        return obj.user.event_attendance.filter(
+            event=obj.event,
+            day_date=today,
+            check_in_time__isnull=False,
+            check_out_time__isnull=True
+        ).exists()
+
+    def get_check_status(self, obj):
+        """Get detailed check status (not-checked-in, checked-in, checked-out)"""
+        from datetime import date
+        today = date.today()
+        
+        latest_attendance = obj.user.event_attendance.filter(
+            event=obj.event,
+            day_date=today
+        ).order_by('-check_in_time').first()
+        
+        if not latest_attendance or not latest_attendance.check_in_time:
+            return 'not-checked-in'
+        elif latest_attendance.check_out_time:
+            return 'checked-out'
+        else:
+            return 'checked-in'
+
+    def get_check_in_time(self, obj):
+        """Get latest check-in time"""
+        from datetime import date
+        today = date.today()
+        
+        latest_attendance = obj.user.event_attendance.filter(
+            event=obj.event,
+            day_date=today,
+            check_in_time__isnull=False
+        ).order_by('-check_in_time').first()
+        
+        return latest_attendance.check_in_time.isoformat() if latest_attendance else None
+
+    def get_check_out_time(self, obj):
+        """Get latest check-out time"""
+        from datetime import date
+        today = date.today()
+        
+        latest_attendance = obj.user.event_attendance.filter(
+            event=obj.event,
+            day_date=today,
+            check_out_time__isnull=False
+        ).order_by('-check_out_time').first()
+        
+        return latest_attendance.check_out_time.isoformat() if latest_attendance else None
+
+    def get_attendance_records(self, obj):
+        """Get all attendance records for this participant"""
+        records = []
+        for attendance in obj.user.event_attendance.filter(event=obj.event).order_by('-day_date', '-check_in_time'):
+            records.append({
+                'id': str(attendance.id),
+                'day_date': attendance.day_date.isoformat() if attendance.day_date else None,
+                'check_in_time': attendance.check_in_time.isoformat() if attendance.check_in_time else None,
+                'check_out_time': attendance.check_out_time.isoformat() if attendance.check_out_time else None,
+                'day_id': attendance.day_id
+            })
+        return records
+
+    def get_product_orders(self, obj):
+        """Get product orders for this participant"""
+        from apps.shop.models import EventProductOrder
+        
+        # Don't use select_related('size') - it causes Django field errors
+        # The 'size' is a ForeignKey to ProductSize, but Django has issues with it
+        orders = EventProductOrder.objects.filter(
+            cart__user=obj.user,
+            cart__event=obj.event
+        ).select_related('product')
+        
+        orders_data = []
+        for order in orders:
+            # Handle ProductSize field properly - it's a ForeignKey to ProductSize model
+            size_value = None
+            try:
+                if hasattr(order, 'size') and order.size is not None:
+                    # order.size is a ProductSize instance, get the size choice value
+                    size_value = str(order.size.size) if hasattr(order.size, 'size') else str(order.size)
+            except Exception:
+                # If any error occurs, fallback to None
+                size_value = None
+            
+            orders_data.append({
+                'id': str(order.id),
+                'order_reference_id': getattr(order, 'order_reference_id', None),
+                'product_name': order.product.title if order.product else None,
+                'size': size_value,  # This is now guaranteed to be a string or None
+                'quantity': order.quantity,
+                'price_at_purchase': float(order.price_at_purchase) if order.price_at_purchase else 0.0,
+                'discount_applied': float(order.discount_applied) if order.discount_applied else 0.0,
+                'status': order.status,
+                'changeable': getattr(order, 'changeable', True),
+                'change_requested': getattr(order, 'change_requested', False),
+                'change_reason': getattr(order, 'change_reason', None),
+                'added': order.added.isoformat() if order.added else None
+            })
+        return orders_data
+
     def to_representation(self, instance):
         """Override to use custom field getters"""
         return {
@@ -1791,6 +1921,12 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             "event_payments": self.get_event_payments(instance),
             "carts": self.get_carts(instance),
             "questions_answered": self.get_questions_answered(instance),
+            "checked_in": self.get_checked_in(instance),
+            "check_status": self.get_check_status(instance),
+            "check_in_time": self.get_check_in_time(instance),
+            "check_out_time": self.get_check_out_time(instance),
+            "attendance_records": self.get_attendance_records(instance),
+            "product_orders": self.get_product_orders(instance),
         }
         
 class EventDayAttendanceSerializer(serializers.ModelSerializer): #! used for future reference, not currently implemented

@@ -94,7 +94,20 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
             message_type = text_data_json.get('type')
 
             if message_type == 'get_participants':
-                await self.send_participants_data()
+                # Handle filter parameters from client
+                filters = text_data_json.get('filters', {})
+                order_by = text_data_json.get('order_by', 'recent_updates')
+                page = text_data_json.get('page', 1)
+                page_size = text_data_json.get('page_size', 50)
+                print(f"🔍 WebSocket get_participants - Filters: {filters}")
+                await self.send_participants_data(filters, order_by, page, page_size)
+            elif message_type == 'update_filters':
+                # Handle filter updates
+                filters = text_data_json.get('filters', {})
+                order_by = text_data_json.get('order_by', 'recent_updates')
+                page = text_data_json.get('page', 1)
+                page_size = text_data_json.get('page_size', 50)
+                await self.send_participants_data(filters, order_by, page, page_size)
             elif message_type == 'ping':
                 await self.send(text_data=json.dumps({
                     'type': 'pong',
@@ -145,18 +158,36 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=safe_json_dumps({
             'type': 'initial_data',
             'event': event_data,
-            'participants': participants_data
+            'participants': participants_data['results'],
+            'pagination': {
+                'count': participants_data['count'],
+                'page': 1,
+                'page_size': 50,
+                'total_pages': participants_data['total_pages'],
+                'has_next': participants_data['has_next'],
+                'has_previous': participants_data['has_previous']
+            },
+            'filter_options': participants_data['filter_options']
         }))
 
-    async def send_participants_data(self):
+    async def send_participants_data(self, filters=None, order_by='recent_updates', page=1, page_size=50):
         """
-        Send current participants data
+        Send current participants data with filtering, ordering, and pagination
         """
-        participants_data = await self.get_participants_data()
+        participants_data = await self.get_participants_data(filters, order_by, page, page_size)
         
         await self.send(text_data=safe_json_dumps({
             'type': 'participants_data',
-            'participants': participants_data
+            'participants': participants_data['results'],
+            'pagination': {
+                'count': participants_data['count'],
+                'page': page,
+                'page_size': page_size,
+                'total_pages': participants_data['total_pages'],
+                'has_next': participants_data['has_next'],
+                'has_previous': participants_data['has_previous']
+            },
+            'filter_options': participants_data['filter_options']
         }))
 
     @database_sync_to_async
@@ -204,135 +235,186 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
             return None
 
     @database_sync_to_async
-    def get_participants_data(self):
+    def get_participants_data(self, filters=None, order_by='recent_updates', page=1, page_size=50):
         """
-        Get current participants data with check-in status
+        Get current participants data with check-in status, filtering, ordering, and pagination
         """
+        from django.db.models import Q, Max
+        from django.core.paginator import Paginator
+        import math
+        
         try:
             event = Event.objects.get(id=self.event_id)
-            participants = EventParticipant.objects.filter(event=event).select_related('user')
             
+            # Base queryset with optimized joins
+            participants = EventParticipant.objects.filter(event=event).select_related(
+                'user', 'user__area_from', 'user__area_from__unit__chapter', 
+                'user__area_from__unit__chapter__cluster'
+            ).prefetch_related(
+                'participant_event_payments', 'user__product_payments', 
+                'user__carts', 'event_question_answers'
+            )
+            
+            # Apply filters if provided
+            if filters:
+                filter_conditions = Q()
+                
+                # Search filter
+                if filters.get('search'):
+                    search_term = filters['search']
+                    filter_conditions &= (
+                        Q(user__first_name__icontains=search_term) |
+                        Q(user__last_name__icontains=search_term) |
+                        Q(user__primary_email__icontains=search_term) |
+                        Q(user__member_id__icontains=search_term) |
+                        Q(event_pax_id__icontains=search_term)
+                    )
+                
+                # Area filter
+                if filters.get('area'):
+                    area_term = filters['area']
+                    filter_conditions &= (
+                        Q(user__area_from__area_name__icontains=area_term) |
+                        Q(user__area_from__area_code__icontains=area_term)
+                    )
+                
+                # Chapter filter
+                if filters.get('chapter'):
+                    filter_conditions &= Q(user__area_from__unit__chapter__chapter_name__icontains=filters['chapter'])
+                
+                # Cluster filter  
+                if filters.get('cluster'):
+                    filter_conditions &= Q(user__area_from__unit__chapter__cluster__cluster_id__icontains=filters['cluster'])
+                
+                # Status filter
+                if filters.get('status'):
+                    status_upper = filters['status'].upper()
+                    if status_upper in ['REGISTERED', 'CONFIRMED', 'CANCELLED']:
+                        filter_conditions &= Q(status__iexact=status_upper)
+                    elif status_upper == 'CHECKED_IN':
+                        # Participants checked in today
+                        from datetime import date
+                        today = date.today()
+                        filter_conditions &= (
+                            Q(user__event_attendance__day_date=today) &
+                            Q(user__event_attendance__check_in_time__isnull=False) &
+                            Q(user__event_attendance__check_out_time__isnull=True)
+                        )
+                    elif status_upper == 'NOT_CHECKED_IN':
+                        # Participants not checked in today
+                        from datetime import date
+                        today = date.today()
+                        filter_conditions &= ~Q(
+                            user__event_attendance__day_date=today,
+                            user__event_attendance__check_in_time__isnull=False
+                        )
+                    elif status_upper == 'PENDING_PAYMENT':
+                        filter_conditions &= Q(verified=False)
+                
+                # Identity filter (email/member ID)
+                if filters.get('identity'):
+                    identity_term = filters['identity']
+                    filter_conditions &= (
+                        Q(user__primary_email__icontains=identity_term) |
+                        Q(user__member_id__icontains=identity_term) |
+                        Q(user__first_name__icontains=identity_term) |
+                        Q(user__last_name__icontains=identity_term) |
+                        Q(event_pax_id__icontains=identity_term)
+                    )
+                
+                # Bank reference filter
+                if filters.get('bank_reference'):
+                    filter_conditions &= Q(participant_event_payments__bank_reference__icontains=filters['bank_reference'])
+                
+                # Outstanding payments filter
+                if filters.get('outstanding_payments'):
+                    if filters['outstanding_payments'].lower() == 'true':
+                        filter_conditions &= Q(verified=False)  # Has outstanding payments
+                    elif filters['outstanding_payments'].lower() == 'false':
+                        filter_conditions &= Q(verified=True)   # No outstanding payments
+                
+                participants = participants.filter(filter_conditions).distinct()
+            
+            # Apply ordering
+            if order_by == 'recent_updates':
+                participants = participants.annotate(
+                    latest_checkin=Max('user__event_attendance__check_in_time')
+                ).order_by('-latest_checkin', '-registration_date')
+            elif order_by == 'name':
+                participants = participants.order_by('user__first_name', 'user__last_name')
+            elif order_by == 'registration_date':
+                participants = participants.order_by('-registration_date')
+            
+            # Get total count before pagination
+            total_count = participants.count()
+            
+            # Calculate pagination
+            total_pages = math.ceil(total_count / page_size) if page_size > 0 else 1
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            
+            # Apply pagination
+            paginated_participants = participants[start_index:end_index]
+            
+            # Collect filter options from all participants (not just paginated)
+            all_participants = EventParticipant.objects.filter(event=event).select_related(
+                'user__area_from__unit__chapter__cluster'
+            )
+            
+            areas = set()
+            chapters = set() 
+            clusters = set()
+            
+            print(f"🔍 Collecting filter options from {all_participants.count()} participants")
+            
+            for p in all_participants:
+                if hasattr(p.user, 'area_from') and p.user.area_from:
+                    if p.user.area_from.area_name:
+                        areas.add(p.user.area_from.area_name)
+                    if hasattr(p.user.area_from, 'unit') and p.user.area_from.unit:
+                        if hasattr(p.user.area_from.unit, 'chapter') and p.user.area_from.unit.chapter:
+                            if p.user.area_from.unit.chapter.chapter_name:
+                                chapters.add(p.user.area_from.unit.chapter.chapter_name)
+                            if hasattr(p.user.area_from.unit.chapter, 'cluster') and p.user.area_from.unit.chapter.cluster:
+                                if p.user.area_from.unit.chapter.cluster.cluster_id:
+                                    clusters.add(p.user.area_from.unit.chapter.cluster.cluster_id)
+            
+            # Serialize participants using existing WebSocket serializer
+            from apps.events.websocket_utils import serialize_participant_for_websocket
             participants_list = []
-            for participant in participants:
-                # Get all attendance records for this participant (all days)
-                all_attendance = EventDayAttendance.objects.filter(
-                    event=participant.event,
-                    user=participant.user
-                ).order_by('-day_date', '-check_in_time')
-                
-                print(f"👥 Participant: {participant.user.first_name} {participant.user.last_name} (ID: {participant.user.id})")
-                print(f"📅 Found {all_attendance.count()} attendance records")
-                
-                # Determine current status based on latest attendance
-                current_status = 'not-checked-in'  # Default
-                latest_check_in_time = None
-                latest_check_out_time = None
-                
-                if all_attendance.exists():
-                    latest_attendance = all_attendance.first()
-                    latest_check_in_time = latest_attendance.check_in_time
-                    latest_check_out_time = latest_attendance.check_out_time
-                    
-                    if latest_check_in_time and latest_check_out_time:
-                        current_status = 'checked-out'
-                    elif latest_check_in_time:
-                        current_status = 'checked-in'
-                
-                # Serialize all attendance records
-                attendance_records = []
-                for attendance in all_attendance:
-                    london_check_in = convert_to_london_time(attendance.check_in_time)
-                    london_check_out = convert_to_london_time(attendance.check_out_time)
-                    
-                    # Handle time vs datetime serialization
-                    check_in_iso = None
-                    if london_check_in:
-                        if hasattr(london_check_in, 'isoformat'):
-                            check_in_iso = london_check_in.isoformat()
-                        else:
-                            # It's a time object, convert to string
-                            check_in_iso = str(london_check_in)
-                    
-                    check_out_iso = None
-                    if london_check_out:
-                        if hasattr(london_check_out, 'isoformat'):
-                            check_out_iso = london_check_out.isoformat()
-                        else:
-                            # It's a time object, convert to string
-                            check_out_iso = str(london_check_out)
-                    
-                    attendance_records.append({
-                        'id': str(attendance.id),
-                        'day_date': attendance.day_date.isoformat() if attendance.day_date else None,
-                        'check_in_time': check_in_iso,
-                        'check_out_time': check_out_iso,
-                        'day_id': attendance.day_id,
-                    })
-                
-                # Get product orders for this participant through cart->user relationship
-                from apps.shop.models import EventProductOrder, EventCart
-                
-                # Debug: Check if user has any carts for this event
-                user_carts = EventCart.objects.filter(user=participant.user, event=participant.event)
-                print(f"🛒 User {participant.user.first_name} has {user_carts.count()} carts for event {participant.event.id}")
-                
-                product_orders = EventProductOrder.objects.filter(
-                    cart__user=participant.user,
-                    cart__event=participant.event
-                ).select_related('product', 'size', 'cart').order_by('-added')
-                
-                print(f"🛒 Found {product_orders.count()} product orders for participant {participant.user.first_name}")
-                if product_orders.exists():
-                    print(f"🛒 First product order: {product_orders.first().product.title if product_orders.first().product else 'No Product'}")
-                else:
-                    print(f"🛒 No product orders found for user {participant.user.id} in event {participant.event.id}")
-                
-                product_orders_data = []
-                for order in product_orders:
-                    order_info = {
-                        'id': str(order.id),
-                        'order_reference_id': order.order_reference_id,
-                        'product_name': order.product.title if order.product else None,
-                        'size': order.size.size if order.size else None,
-                        'quantity': order.quantity,
-                        'price_at_purchase': float(order.price_at_purchase) if order.price_at_purchase else 0.0,
-                        'discount_applied': float(order.discount_applied) if order.discount_applied else 0.0,
-                        'status': order.status,
-                        'changeable': order.changeable,
-                        'change_requested': order.change_requested,
-                        'change_reason': order.change_reason,
-                        'added': convert_to_london_time(order.added).isoformat() if order.added else None,
-                    }
-                    product_orders_data.append(order_info)
-                
-                print(f"🛒 Final product orders data for {participant.user.first_name}: {len(product_orders_data)} orders")
-                if product_orders_data:
-                    print(f"🛒 Sample order: {product_orders_data[0]}")
-                
-                participant_data = {
-                    'id': str(participant.id),
-                    'event_pax_id': participant.event_pax_id,
-                    'user': {
-                        'id': str(participant.user.id),
-                        'first_name': participant.user.first_name,
-                        'last_name': participant.user.last_name,
-                        'email': participant.user.primary_email,
-                    },
-                    'status': participant.status,
-                    'participant_type': participant.participant_type,
-                    'registration_date': participant.registration_date.isoformat() if participant.registration_date else None,
-                    'checked_in': current_status == 'checked-in',
-                    'check_status': current_status,  # New field for 3-status system
-                    'check_in_time': str(convert_to_london_time(latest_check_in_time)) if latest_check_in_time else None,
-                    'check_out_time': str(convert_to_london_time(latest_check_out_time)) if latest_check_out_time else None,
-                    'attendance_records': attendance_records,  # All attendance history
-                    'product_orders': product_orders_data,  # Product orders
-                }
+            for participant in paginated_participants:
+                participant_data = serialize_participant_for_websocket(participant)
                 participants_list.append(participant_data)
             
-            return participants_list
+            return {
+                'results': participants_list,
+                'count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_previous': page > 1,
+                'filter_options': {
+                    'areas': sorted(list(areas)),
+                    'chapters': sorted(list(chapters)),
+                    'clusters': sorted(list(clusters))
+                }
+            }
+            
+            print(f"🔍 Filter options collected - Areas: {len(areas)}, Chapters: {len(chapters)}, Clusters: {len(clusters)}")
+            
+            return result
         except Event.DoesNotExist:
-            return []
+            return {
+                'results': [],
+                'count': 0,
+                'total_pages': 0,
+                'has_next': False,
+                'has_previous': False,
+                'filter_options': {
+                    'areas': [],
+                    'chapters': [],
+                    'clusters': []
+                }
+            }
 
 
 class EventDashboardConsumer(AsyncWebsocketConsumer):
