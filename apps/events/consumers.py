@@ -336,6 +336,49 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                     elif filters['outstanding_payments'].lower() == 'false':
                         filter_conditions &= Q(verified=True)   # No outstanding payments
                 
+                # Extra question filters
+                if filters.get('question_filters'):
+                    print(f"🔍 Processing question_filters: {filters['question_filters']}")
+                    for question_filter in filters['question_filters']:
+                        print(f"🔍 Processing single question_filter: {question_filter} (type: {type(question_filter)})")
+                        question_id = question_filter.get('question_id')
+                        question_value = question_filter.get('value')
+                        question_type = question_filter.get('question_type')
+                        
+                        if not question_id or not question_value:
+                            continue
+                            
+                        # Get the question to understand its type
+                        from apps.events.models import ExtraQuestion, QuestionAnswer
+                        try:
+                            question = ExtraQuestion.objects.get(id=question_id)
+                        except ExtraQuestion.DoesNotExist:
+                            continue
+                        
+                        # Build filter conditions based on question type
+                        if question.question_type in ['TEXT', 'TEXTAREA', 'INTEGER']:
+                            # Text search in answer_text
+                            filter_conditions &= Q(
+                                event_question_answers__question=question,
+                                event_question_answers__answer_text__icontains=question_value
+                            )
+                        elif question.question_type == 'BOOLEAN':
+                            # Boolean matching
+                            boolean_value = question_value.lower() in ['true', 'yes', '1']
+                            filter_conditions &= Q(
+                                event_question_answers__question=question,
+                                event_question_answers__answer_text__iexact=str(boolean_value).lower()
+                            )
+                        elif question.question_type in ['CHOICE', 'MULTICHOICE']:
+                            # Choice matching - check both selected choices and answer_text
+                            filter_conditions &= Q(
+                                event_question_answers__question=question
+                            ) & (
+                                Q(event_question_answers__selected_choices__text__icontains=question_value) |
+                                Q(event_question_answers__selected_choices__value__icontains=question_value) |
+                                Q(event_question_answers__answer_text__icontains=question_value)
+                            )
+                
                 participants = participants.filter(filter_conditions).distinct()
             
             # Apply ordering

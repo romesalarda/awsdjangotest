@@ -283,8 +283,10 @@ def serialize_participant_for_websocket(participant):
 
         # Match ParticipantManagementSerializer structure exactly
         serialized_data = {
+            'id': str(participant.id),
+            'event_pax_id': participant.event_pax_id,
+            'event_user_id': participant.event_pax_id,  # For backwards compatibility
             'event': participant.event.event_code,
-            'event_user_id': participant.event_pax_id,
             'user': {
                 "first_name": participant.user.first_name,
                 "last_name": participant.user.last_name,
@@ -332,6 +334,9 @@ def serialize_participant_for_websocket(participant):
             'check_out_time': check_out_time,
             'attendance_records': attendance_records,
             'product_orders': product_orders_data,
+            'registration_date': participant.registration_date.isoformat() if participant.registration_date else None,
+            'has_payment_issues': has_payment_issues,
+            'total_outstanding': total_outstanding,
         }
         
         print(f"✅ SERIALIZING SUCCESS - Data: {serialized_data['user']['first_name']} is checked_in: {serialized_data['checked_in']}")
