@@ -4,11 +4,16 @@ from django.db.models import Q
 
 class EventFilter(django_filters.FilterSet):
     '''
-    Event filtering based on various fields and related models.
+    Enhanced event filtering based on various fields and related models.
     '''
     event_type = django_filters.CharFilter(lookup_expr="exact")
+    event_type__in = django_filters.CharFilter(method='filter_event_types')
     area_type = django_filters.CharFilter(lookup_expr="exact")
     location = django_filters.CharFilter(method='filter_location')
+    
+    # Enhanced search capabilities
+    search = django_filters.CharFilter(method='filter_search')
+    name = django_filters.CharFilter(lookup_expr="icontains")
 
     # deep relationship filters
     area_name = django_filters.CharFilter(
@@ -39,9 +44,26 @@ class EventFilter(django_filters.FilterSet):
             # Q(area_type=Event.EventAreaType.NATIONAL, name__icontains=value)
         ).distinct()
     
+    def filter_event_types(self, queryset, name, value):
+        """Filter by multiple event types separated by comma"""
+        event_types = [event_type.strip() for event_type in value.split(',')]
+        return queryset.filter(event_type__in=event_types)
+    
+    def filter_search(self, queryset, name, value):
+        """Enhanced search across multiple event fields"""
+        return queryset.filter(
+            Q(name__icontains=value) |
+            Q(description__icontains=value) |
+            Q(sentence_description__icontains=value) |
+            Q(theme__icontains=value) |
+            Q(areas_involved__area_name__icontains=value) |
+            Q(venues__name__icontains=value) |
+            Q(venues__postcode__icontains=value)
+        ).distinct()
+    
     class Meta:
         model = Event
         fields = [
-            "event_type", "area_type", "name",
+            "event_type", "event_type__in", "area_type", "name", "search",
             "area_name", "area_code", "venue_name", "venue_postcode", "location"
         ]

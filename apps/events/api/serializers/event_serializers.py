@@ -1361,69 +1361,7 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-class ListEventParticipantSerializer(serializers.ModelSerializer):
-    """
-    Used specifically for tables
-    """
-    event = serializers.CharField(source="event.event_code", read_only=True)
-    first_name = serializers.CharField(source="user.first_name", read_only=True)
-    last_name = serializers.CharField(source="user.last_name", read_only=True)
-    email = serializers.EmailField(source="user.primary_email", read_only=True)
-     
-    registration_date = serializers.DateTimeField(read_only=True)
-    area_from = serializers.SerializerMethodField()
-    merch_data = serializers.SerializerMethodField()
-    bank_reference = serializers.SerializerMethodField()
 
-    class Meta:
-        model = EventParticipant
-        fields = [
-            "event_pax_id",
-            "event",  # UUID of event
-            "user",   # UUID of user
-            "first_name",
-            "last_name",
-            "email",
-            "participant_type",
-            "status",
-            "registration_date",
-            "area_from",
-            "merch_data",
-            "bank_reference",
-        ]
-        read_only_fields = fields
-
-    def get_merch_data(self, obj):
-        
-        carts = obj.user.carts.filter(event=obj.event)    
-        
-        merch_data = []
-        for cart in carts:
-            
-            cart_data = {
-                "cart_id": str(cart.uuid),
-                "total": cart.total,
-            }
-            reference = shop_models.ProductPayment.objects.filter(cart=cart).first()
-            cart_data["bank_reference"] = reference.bank_reference if reference else None
-            cart_data["number_of_items"] = cart.products.count()
-            merch_data.append(cart_data)
-        return merch_data
-    
-    def get_bank_reference(self, obj):
-        reference = EventPayment.objects.filter(user=obj, event=obj.event).first()
-        return reference.bank_reference if reference else None
-    
-    def get_area_from(self, obj):
-        try:
-            return {
-                "area": obj.user.area_from.area_name,
-                "chapter": obj.user.area_from.unit.chapter.chapter_name,
-                "cluster": obj.user.area_from.unit.chapter.cluster.cluster_id,
-                
-            }
-        except AttributeError:
-            return None
 
 
 class ParticipantManagementSerializer(serializers.ModelSerializer):
@@ -2098,9 +2036,18 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
 
 class ListEventParticipantSerializer(serializers.ModelSerializer):
     """
-    Optimized serializer for listing participants - minimal data for list views
+    Used specifically for participant tables - includes necessary data for management views
     """
-    user = serializers.SerializerMethodField()
+    event = serializers.CharField(source="event.event_code", read_only=True)
+    first_name = serializers.CharField(source="user.first_name", read_only=True)
+    last_name = serializers.CharField(source="user.last_name", read_only=True)
+    email = serializers.EmailField(source="user.primary_email", read_only=True)
+    phone = serializers.CharField(source="user.phone_number", read_only=True)
+     
+    registration_date = serializers.DateTimeField(read_only=True)
+    area_from = serializers.SerializerMethodField()
+    merch_data = serializers.SerializerMethodField()
+    bank_reference = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     participant_type_display = serializers.CharField(source="get_participant_type_display", read_only=True)
 
@@ -2108,26 +2055,64 @@ class ListEventParticipantSerializer(serializers.ModelSerializer):
         model = EventParticipant
         fields = [
             "id",
-            "event_pax_id", 
-            "user",
-            "status",
-            "status_display",
+            "event_pax_id",
+            "event",  # UUID of event
+            "user",   # UUID of user
+            "first_name",
+            "last_name",
+            "email",
+            "phone",
             "participant_type",
             "participant_type_display",
+            "status",
+            "status_display",
             "registration_date",
+            "area_from",
+            "merch_data",
+            "bank_reference",
             "verified"
         ]
         read_only_fields = fields
 
-    def get_user(self, obj):
-        """Essential user info only for list views"""
-        return {
-            "id": str(obj.user.id),
-            "first_name": obj.user.first_name,
-            "last_name": obj.user.last_name,
-            "email": obj.user.primary_email,
-            "member_id": getattr(obj.user, 'member_id', None),
-        }
+    def get_merch_data(self, obj):
+        try:
+            carts = obj.user.carts.filter(event=obj.event)    
+            
+            merch_data = []
+            for cart in carts:
+                cart_data = {
+                    "cart_id": str(cart.uuid),
+                    "total": cart.total,
+                }
+                reference = shop_models.ProductPayment.objects.filter(cart=cart).first()
+                cart_data["bank_reference"] = reference.bank_reference if reference else None
+                cart_data["number_of_items"] = cart.products.count()
+                merch_data.append(cart_data)
+            return merch_data
+        except Exception as e:
+            print(f"Error getting merch data for participant {obj.id}: {e}")
+            return []
+    
+    def get_bank_reference(self, obj):
+        try:
+            reference = EventPayment.objects.filter(user=obj, event=obj.event).first()
+            return reference.bank_reference if reference else None
+        except Exception as e:
+            print(f"Error getting bank reference for participant {obj.id}: {e}")
+            return None
+    
+    def get_area_from(self, obj):
+        try:
+            if obj.user and obj.user.area_from:
+                return {
+                    "area": obj.user.area_from.area_name,
+                    "chapter": obj.user.area_from.unit.chapter.chapter_name if obj.user.area_from.unit and obj.user.area_from.unit.chapter else None,
+                    "cluster": obj.user.area_from.unit.chapter.cluster.cluster_name if obj.user.area_from.unit and obj.user.area_from.unit.chapter and obj.user.area_from.unit.chapter.cluster else None,
+                }
+            return None
+        except AttributeError as e:
+            print(f"Error getting area_from for participant {obj.id}: {e}")
+            return None
 
 
 class EventDayAttendanceSerializer(serializers.ModelSerializer):
