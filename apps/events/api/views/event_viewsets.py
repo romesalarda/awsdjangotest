@@ -102,6 +102,130 @@ class EventViewSet(viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
         super().perform_create(serializer)
         
+    @action(detail=True, methods=['get', 'post', 'delete'], url_name="service_team", url_path="service-team")
+    def manage_service_team(self, request, id=None):
+        '''
+        Manage service team members for an event
+        GET: List all service team members
+        POST: Add a new service team member
+        DELETE: Remove a service team member
+        '''
+        event = self.get_object()
+        
+        if request.method == 'GET':
+            # Return all service team members with their roles
+            service_team = EventServiceTeamMember.objects.filter(event=event).select_related('user').prefetch_related('roles')
+            serializer = EventServiceTeamMemberSerializer(service_team, many=True)
+            return Response(serializer.data)
+            
+        elif request.method == 'POST':
+            # Add new service team member
+            user_id = request.data.get('user_id')
+            role_ids = request.data.get('role_ids', [])
+            head_of_role = request.data.get('head_of_role', False)
+            
+            if not user_id:
+                return Response(
+                    {'error': 'user_id is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                user = get_user_model().objects.get(id=user_id)
+                
+                # Check if user is already in service team
+                if EventServiceTeamMember.objects.filter(event=event, user=user).exists():
+                    return Response(
+                        {'error': 'User is already in the service team for this event'}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Create service team member
+                service_member = EventServiceTeamMember.objects.create(
+                    event=event,
+                    user=user,
+                    head_of_role=head_of_role,
+                    assigned_by=request.user
+                )
+                
+                # Add roles if provided
+                if role_ids:
+                    roles = EventRole.objects.filter(id__in=role_ids)
+                    service_member.roles.set(roles)
+                
+                serializer = EventServiceTeamMemberSerializer(service_member)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+                
+            except get_user_model().DoesNotExist:
+                return Response(
+                    {'error': 'User not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            except Exception as e:
+                return Response(
+                    {'error': str(e)}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+                
+        elif request.method == 'DELETE':
+            # Remove service team member
+            user_id = request.data.get('user_id')
+            if not user_id:
+                return Response(
+                    {'error': 'user_id is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                service_member = EventServiceTeamMember.objects.get(event=event, user_id=user_id)
+                service_member.delete()
+                return Response(
+                    {'message': 'Service team member removed successfully'}, 
+                    status=status.HTTP_200_OK
+                )
+            except EventServiceTeamMember.DoesNotExist:
+                return Response(
+                    {'error': 'Service team member not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+    @action(detail=True, methods=['patch'], url_name="update_service_member", url_path="service-team/(?P<member_id>[^/.]+)")
+    def update_service_member(self, request, id=None, member_id=None):
+        '''
+        Update a specific service team member's roles or head_of_role status
+        '''
+        event = self.get_object()
+        
+        try:
+            service_member = EventServiceTeamMember.objects.get(event=event, id=member_id)
+            
+            # Update fields if provided
+            if 'head_of_role' in request.data:
+                service_member.head_of_role = request.data['head_of_role']
+                service_member.save()
+            
+            if 'role_ids' in request.data:
+                roles = EventRole.objects.filter(id__in=request.data['role_ids'])
+                service_member.roles.set(roles)
+            
+            serializer = EventServiceTeamMemberSerializer(service_member)
+            return Response(serializer.data)
+            
+        except EventServiceTeamMember.DoesNotExist:
+            return Response(
+                {'error': 'Service team member not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['get'], url_name="roles", url_path="roles")
+    def get_event_roles(self, request):
+        '''
+        Get all available event roles for selection
+        '''
+        roles = EventRole.objects.all().order_by('role_name')
+        serializer = EventRoleSerializer(roles, many=True)
+        return Response(serializer.data)
+
     @action(detail=True, methods=['get'], url_name="booking", url_path="booking")
     def booking(self, request, id=None):
         '''

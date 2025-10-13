@@ -5,6 +5,7 @@ from rest_framework import viewsets, permissions, views
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db import models
 
 from .serializers import *
 from apps.events.api.serializers import SimplifiedEventSerializer
@@ -95,6 +96,47 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
             "upcoming_events": upcoming_events_data,
             "past_events": serializer_past.data
         })
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], url_name="search", url_path="search")
+    def search_users(self, request):
+        '''
+        Search users by name, email, member_id, with location filtering
+        For use in user selection dropdowns and autocomplete
+        '''
+        query = request.query_params.get('q', '').strip()
+        area_id = request.query_params.get('area_id', None)
+        ministry = request.query_params.get('ministry', None)
+        limit = int(request.query_params.get('limit', 20))
+        
+        if not query:
+            return response.Response([])
+        
+        queryset = get_user_model().objects.filter(is_active=True)
+        
+        # Text search across multiple fields
+        queryset = queryset.filter(
+            models.Q(first_name__icontains=query) |
+            models.Q(last_name__icontains=query) |
+            models.Q(preferred_name__icontains=query) |
+            models.Q(primary_email__icontains=query) |
+            models.Q(secondary_email__icontains=query) |
+            models.Q(member_id__icontains=query) |
+            models.Q(username__icontains=query)
+        )
+        
+        # Optional filters
+        if area_id:
+            queryset = queryset.filter(area_from_id=area_id)
+        
+        if ministry:
+            queryset = queryset.filter(ministry=ministry)
+        
+        # Order by relevance (exact matches first, then partial)
+        queryset = queryset.order_by('last_name', 'first_name')[:limit]
+        
+        # Use simplified serializer for search results
+        serializer = SimplifiedCommunityUserSerializer(queryset, many=True)
+        return response.Response(serializer.data)
         
 class CommunityRoleViewSet(viewsets.ModelViewSet):
     '''

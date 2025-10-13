@@ -772,7 +772,7 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CommunityUser
-        fields = ('first_name', 'last_name', 'ministry', 'gender', 'date_of_birth', 'member_id', 'username' ,            
+        fields = ('id', 'first_name', 'last_name', 'ministry', 'gender', 'date_of_birth', 'member_id', 'username' ,            
                   "profile_picture", "area_from_display", "primary_email", "password", "area", "phone_number")
 
     def get_area_from_display(self, obj):

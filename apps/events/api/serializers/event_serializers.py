@@ -312,6 +312,7 @@ class EventSerializer(serializers.ModelSerializer):
     )
     
     organisers = serializers.SerializerMethodField(read_only=True)
+    service_team = serializers.SerializerMethodField(read_only=True)
     has_merch = serializers.SerializerMethodField(read_only=True, default=False)
 
     def to_internal_value(self, data):
@@ -387,6 +388,7 @@ class EventSerializer(serializers.ModelSerializer):
             "payment_packages_data",
             "payment_methods_data",
             "organisers",
+            "service_team",
             "important_information",
             "what_to_bring",
             "auto_approve_participants",
@@ -472,7 +474,7 @@ class EventSerializer(serializers.ModelSerializer):
                 "expected_attendees": rep["expected_attendees"],
                 "age_range": rep["age_range"],
                 "organisers": rep["organisers"],
-                
+                "service_team": rep["service_team"],
             },
             "resources": {
                 "memo": rep["memo"],
@@ -489,6 +491,14 @@ class EventSerializer(serializers.ModelSerializer):
                 "existing_id_description": rep["existing_id_description"]
             }
         }
+
+    def get_service_team(self, obj):
+        return EventServiceTeamMemberSerializer(
+            EventServiceTeamMember.objects.filter(event=obj)
+            .select_related('user')
+            .prefetch_related('roles'),
+            many=True
+        ).data
 
     def get_organisers(self, obj):
         return SimplifiedEventServiceTeamMemberSerializer(
