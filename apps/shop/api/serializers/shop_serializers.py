@@ -397,6 +397,7 @@ class EventProductOrderSerializer(serializers.ModelSerializer):
     size = ProductSizeSerializer(read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     imageUrl = serializers.SerializerMethodField()
+    bank_reference = serializers.SerializerMethodField()
 
     class Meta:
         model = EventProductOrder
@@ -404,7 +405,7 @@ class EventProductOrderSerializer(serializers.ModelSerializer):
             "id", "order_reference_id", "product", "product_title", "product_details", 
             "cart", "cart_uuid", "cart_user_email", "quantity", "added", "time_added",
             "price_at_purchase", "discount_applied", "status", "status_display", 
-            "size", "uses_size", "changeable", "change_requested", "change_reason", "admin_notes", "imageUrl"
+            "size", "uses_size", "changeable", "change_requested", "change_reason", "admin_notes", "imageUrl", "bank_reference"
         ]
         read_only_fields = ["id", "order_reference_id", "product_title", "product_details", 
                            "cart_uuid", "cart_user_email", "added", "time_added", "status_display"]
@@ -415,6 +416,28 @@ class EventProductOrderSerializer(serializers.ModelSerializer):
         if images and len(images) > 0:
             return images[0].get('image_url')
         return None
+    
+    def get_bank_reference(self, obj):
+        """
+        Get the bank_reference from the associated ProductPayment for this cart.
+        Since payments are linked to the cart (not individual orders), 
+        we look up the payment for this product order's cart.
+        """
+        try:
+            # Import here to avoid circular import
+            from apps.shop.models.payments import ProductPayment
+            
+            # Get the most recent payment for this cart that has a bank_reference
+            payment = ProductPayment.objects.filter(
+                cart=obj.cart,
+                bank_reference__isnull=False
+            ).order_by('-created_at').first()
+            
+            if payment:
+                return payment.bank_reference
+            return None
+        except Exception:
+            return None
         
     def create(self, validated_data):
         # Set price_at_purchase from product if not provided

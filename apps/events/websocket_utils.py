@@ -241,6 +241,20 @@ def serialize_participant_for_websocket(participant):
         
         product_orders_data = []
         for order in product_orders:
+            # Get bank_reference from the associated ProductPayment for this cart
+            bank_reference = None
+            try:
+                from apps.shop.models.payments import ProductPayment
+                payment = ProductPayment.objects.filter(
+                    cart=order.cart,
+                    bank_reference__isnull=False
+                ).order_by('-created_at').first()
+                
+                if payment:
+                    bank_reference = payment.bank_reference
+            except Exception:
+                pass
+            
             order_info = {
                 'id': str(order.id),
                 'order_reference_id': order.order_reference_id,
@@ -254,6 +268,7 @@ def serialize_participant_for_websocket(participant):
                 'change_requested': order.change_requested,
                 'change_reason': order.change_reason,
                 'added': convert_to_london_time(order.added).isoformat() if order.added else None,
+                'bank_reference': bank_reference,
             }
             product_orders_data.append(order_info)
         
@@ -281,6 +296,92 @@ def serialize_participant_for_websocket(participant):
         except AttributeError:
             area_from_display = None
 
+        # Get user allergies
+        allergies_data = []
+        try:
+            user_allergies = participant.user.user_allergies.select_related('allergy').all()
+            for user_allergy in user_allergies:
+                allergy_info = {
+                    'id': str(user_allergy.id),
+                    'name': user_allergy.allergy.name,
+                    'severity': user_allergy.severity,
+                    'severity_display': user_allergy.get_severity_display(),
+                    'instructions': user_allergy.instructions,
+                    'notes': user_allergy.notes,
+                }
+                allergies_data.append(allergy_info)
+        except Exception as e:
+            print(f"⚠️ Error getting allergies for {participant.user.first_name}: {e}")
+
+        # Get user medical conditions  
+        medical_conditions_data = []
+        try:
+            user_conditions = participant.user.user_medical_conditions.select_related('condition').all()
+            for user_condition in user_conditions:
+                condition_info = {
+                    'id': str(user_condition.id),
+                    'name': user_condition.condition.name,
+                    'severity': user_condition.severity,
+                    'severity_display': user_condition.get_severity_display(),
+                    'instructions': user_condition.instructions,
+                    'date_diagnosed': user_condition.date_diagnosed.isoformat() if user_condition.date_diagnosed else None,
+                }
+                medical_conditions_data.append(condition_info)
+        except Exception as e:
+            print(f"⚠️ Error getting medical conditions for {participant.user.first_name}: {e}")
+
+        # Get emergency contacts
+        emergency_contacts_data = []
+        try:
+            emergency_contacts = participant.user.community_user_emergency_contacts.all()
+            for contact in emergency_contacts:
+                contact_info = {
+                    'id': str(contact.id),
+                    'first_name': contact.first_name,
+                    'last_name': contact.last_name,
+                    'phone_number': contact.phone_number,
+                    'email': contact.email,
+                    'contact_relationship': contact.contact_relationship,
+                    'contact_relationship_display': contact.get_contact_relationship_display() if contact.contact_relationship else None,
+                    'is_primary': contact.is_primary,
+                }
+                emergency_contacts_data.append(contact_info)
+        except Exception as e:
+            print(f"⚠️ Error getting emergency contacts for {participant.user.first_name}: {e}")
+
+        # Get event question answers
+        event_question_answers_data = []
+        try:
+            from apps.events.models import QuestionAnswer
+            question_answers = QuestionAnswer.objects.filter(
+                participant=participant
+            ).select_related('question').prefetch_related('selected_choices').all()
+            
+            for answer in question_answers:
+                # Get selected choices
+                selected_choices = []
+                for choice in answer.selected_choices.all():
+                    selected_choices.append({
+                        'id': choice.id,
+                        'text': choice.text,
+                    })
+                
+                answer_info = {
+                    'id': answer.id,
+                    'answer_text': answer.answer_text,
+                    'selected_choices': selected_choices,
+                    'question': {
+                        'id': answer.question.id,
+                        'question_body': answer.question.question_body,
+                        'question_type': answer.question.question_type,
+                        'question_type_display': answer.question.get_question_type_display(),
+                        'required': answer.question.required,
+                    } if answer.question else None,
+                }
+                event_question_answers_data.append(answer_info)
+        except Exception as e:
+            print(f"⚠️ Error getting question answers for {participant.user.first_name}: {e}")
+
         # Match ParticipantManagementSerializer structure exactly
         serialized_data = {
             'id': str(participant.id),
@@ -298,7 +399,7 @@ def serialize_participant_for_websocket(participant):
                 "profile_picture": participant.user.profile_picture.url if hasattr(participant.user, 'profile_picture') and participant.user.profile_picture else None,
                 "area_from_display": area_from_display,
                 "primary_email": getattr(participant.user, 'primary_email', None),
-                "phone": getattr(participant.user, 'phone_number', None),
+                "phone_number": getattr(participant.user, 'phone_number', None),
             },
             'status': {
                 "code": participant.status,
@@ -315,11 +416,9 @@ def serialize_participant_for_websocket(participant):
                 "data_consent": participant.data_consent,
                 "understood_registration": participant.understood_registration,
             },
-            'health': {
-                "allergies": [],  # Simplified for WebSocket
-                "medical_conditions": [],
-            },
-            'emergency_contacts': [],  # Simplified for WebSocket
+            'allergies': allergies_data,  # Note: keeping the existing misspelling for consistency
+            'medical_conditions': medical_conditions_data,
+            'emergency_contacts': emergency_contacts_data,
             'notes': participant.notes,
             'payment': {
                 "paid_amount": str(participant.paid_amount),
@@ -327,7 +426,7 @@ def serialize_participant_for_websocket(participant):
             'verified': participant.verified,
             'event_payments': payment_data,
             'carts': [],  # Simplified for WebSocket
-            'questions_answered': [],  # Simplified for WebSocket
+            'event_question_answers': event_question_answers_data,
             'checked_in': is_currently_checked_in,
             'check_status': current_status,
             'check_in_time': check_in_time,

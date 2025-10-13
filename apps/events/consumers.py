@@ -336,6 +336,69 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                     elif filters['outstanding_payments'].lower() == 'false':
                         filter_conditions &= Q(verified=True)   # No outstanding payments
                 
+                # Emergency contact name filter
+                if filters.get('emergency_contact_name'):
+                    emergency_name = filters['emergency_contact_name']
+                    filter_conditions &= (
+                        Q(user__community_user_emergency_contacts__first_name__icontains=emergency_name) |
+                        Q(user__community_user_emergency_contacts__last_name__icontains=emergency_name) |
+                        Q(user__community_user_emergency_contacts__preferred_name__icontains=emergency_name)
+                    )
+
+                # Emergency contacts filter
+                if filters.get('emergency_contact_relationship'):
+                    filter_conditions &= Q(
+                        user__community_user_emergency_contacts__contact_relationship__icontains=filters['emergency_contact_relationship']
+                    )
+                
+                # Has emergency contact filter
+                if filters.get('has_emergency_contact'):
+                    has_contact = filters['has_emergency_contact'].lower() == 'true'
+                    if has_contact:
+                        filter_conditions &= Q(user__community_user_emergency_contacts__isnull=False)
+                    else:
+                        filter_conditions &= Q(user__community_user_emergency_contacts__isnull=True)
+                
+                # Allergy filter
+                if filters.get('allergy_name'):
+                    filter_conditions &= Q(
+                        user__user_allergies__allergy__name__icontains=filters['allergy_name']
+                    )
+                
+                # Allergy severity filter
+                if filters.get('allergy_severity'):
+                    filter_conditions &= Q(
+                        user__user_allergies__severity__iexact=filters['allergy_severity']
+                    )
+                
+                # Has allergies filter
+                if filters.get('has_allergies'):
+                    has_allergies = filters['has_allergies'].lower() == 'true'
+                    if has_allergies:
+                        filter_conditions &= Q(user__user_allergies__isnull=False)
+                    else:
+                        filter_conditions &= Q(user__user_allergies__isnull=True)
+                
+                # Medical condition filter
+                if filters.get('medical_condition_name'):
+                    filter_conditions &= Q(
+                        user__user_medical_conditions__condition__name__icontains=filters['medical_condition_name']
+                    )
+                
+                # Medical condition severity filter
+                if filters.get('medical_condition_severity'):
+                    filter_conditions &= Q(
+                        user__user_medical_conditions__severity__iexact=filters['medical_condition_severity']
+                    )
+                
+                # Has medical conditions filter
+                if filters.get('has_medical_conditions'):
+                    has_conditions = filters['has_medical_conditions'].lower() == 'true'
+                    if has_conditions:
+                        filter_conditions &= Q(user__user_medical_conditions__isnull=False)
+                    else:
+                        filter_conditions &= Q(user__user_medical_conditions__isnull=True)
+
                 # Extra question filters
                 if filters.get('question_filters'):
                     print(f"🔍 Processing question_filters: {filters['question_filters']}")
@@ -405,11 +468,21 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
             # Collect filter options from all participants (not just paginated)
             all_participants = EventParticipant.objects.filter(event=event).select_related(
                 'user__area_from__unit__chapter__cluster'
+            ).prefetch_related(
+                'user__community_user_emergency_contacts',
+                'user__user_allergies__allergy',
+                'user__user_medical_conditions__condition'
             )
             
             areas = set()
             chapters = set() 
             clusters = set()
+            emergency_contact_names = set()
+            emergency_contact_relationships = set()
+            allergy_names = set()
+            allergy_severities = set()
+            medical_condition_names = set()
+            medical_condition_severities = set()
             
             print(f"🔍 Collecting filter options from {all_participants.count()} participants")
             
@@ -424,6 +497,33 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                             if hasattr(p.user.area_from.unit.chapter, 'cluster') and p.user.area_from.unit.chapter.cluster:
                                 if p.user.area_from.unit.chapter.cluster.cluster_id:
                                     clusters.add(p.user.area_from.unit.chapter.cluster.cluster_id)
+                
+                # Collect emergency contact names and relationships
+                for contact in p.user.community_user_emergency_contacts.all():
+                    # Collect contact names for autocomplete
+                    if contact.first_name and contact.last_name:
+                        full_name = f"{contact.first_name} {contact.last_name}"
+                        emergency_contact_names.add(full_name)
+                    if contact.preferred_name:
+                        emergency_contact_names.add(contact.preferred_name)
+                    
+                    # Collect relationships
+                    if contact.contact_relationship:
+                        emergency_contact_relationships.add(contact.get_contact_relationship_display())
+                
+                # Collect allergy information
+                for allergy in p.user.user_allergies.all():
+                    if allergy.allergy and allergy.allergy.name:
+                        allergy_names.add(allergy.allergy.name)
+                    if allergy.severity:
+                        allergy_severities.add(allergy.get_severity_display())
+                
+                # Collect medical condition information
+                for condition in p.user.user_medical_conditions.all():
+                    if condition.condition and condition.condition.name:
+                        medical_condition_names.add(condition.condition.name)
+                    if condition.severity:
+                        medical_condition_severities.add(condition.get_severity_display())
             
             # Serialize participants using existing WebSocket serializer
             from apps.events.websocket_utils import serialize_participant_for_websocket
@@ -441,7 +541,13 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                 'filter_options': {
                     'areas': sorted(list(areas)),
                     'chapters': sorted(list(chapters)),
-                    'clusters': sorted(list(clusters))
+                    'clusters': sorted(list(clusters)),
+                    'emergency_contact_names': sorted(list(emergency_contact_names)),
+                    'emergency_contact_relationships': sorted(list(emergency_contact_relationships)),
+                    'allergy_names': sorted(list(allergy_names)),
+                    'allergy_severities': sorted(list(allergy_severities)),
+                    'medical_condition_names': sorted(list(medical_condition_names)),
+                    'medical_condition_severities': sorted(list(medical_condition_severities))
                 }
             }
             
@@ -458,7 +564,13 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                 'filter_options': {
                     'areas': [],
                     'chapters': [],
-                    'clusters': []
+                    'clusters': [],
+                    'emergency_contact_names': [],
+                    'emergency_contact_relationships': [],
+                    'allergy_names': [],
+                    'allergy_severities': [],
+                    'medical_condition_names': [],
+                    'medical_condition_severities': []
                 }
             }
 
