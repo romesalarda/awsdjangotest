@@ -213,7 +213,7 @@ class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
     Simplified AreaLocation serializer for dropdowns, lists, etc
     '''
     unit_name = serializers.CharField(source="unit.unit_name", read_only=True)
-    cluster_name = serializers.CharField(source="unit.cluster.cluster_name", read_only=True)
+    cluster_id = serializers.CharField(source="unit.cluster.cluster_id", read_only=True)
 
     class Meta:
         model = AreaLocation
@@ -221,7 +221,7 @@ class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
             "id", 
             "area_name",   
             "unit_name",
-            "cluster_name",
+            "cluster_id",
         ]
         
 class EventSerializer(serializers.ModelSerializer):
@@ -2048,6 +2048,7 @@ class ListEventParticipantSerializer(serializers.ModelSerializer):
     area_from = serializers.SerializerMethodField()
     merch_data = serializers.SerializerMethodField()
     bank_reference = serializers.SerializerMethodField()
+    outstanding_orders_count = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     participant_type_display = serializers.CharField(source="get_participant_type_display", read_only=True)
 
@@ -2070,6 +2071,7 @@ class ListEventParticipantSerializer(serializers.ModelSerializer):
             "area_from",
             "merch_data",
             "bank_reference",
+            "outstanding_orders_count",
             "verified"
         ]
         read_only_fields = fields
@@ -2107,12 +2109,46 @@ class ListEventParticipantSerializer(serializers.ModelSerializer):
                 return {
                     "area": obj.user.area_from.area_name,
                     "chapter": obj.user.area_from.unit.chapter.chapter_name if obj.user.area_from.unit and obj.user.area_from.unit.chapter else None,
-                    "cluster": obj.user.area_from.unit.chapter.cluster.cluster_name if obj.user.area_from.unit and obj.user.area_from.unit.chapter and obj.user.area_from.unit.chapter.cluster else None,
+                    "cluster": obj.user.area_from.unit.chapter.cluster.cluster_id if obj.user.area_from.unit and obj.user.area_from.unit.chapter and obj.user.area_from.unit.chapter.cluster else None,
                 }
             return None
         except AttributeError as e:
             print(f"Error getting area_from for participant {obj.id}: {e}")
             return None
+    
+    def get_outstanding_orders_count(self, obj):
+        """
+        Calculate the total number of outstanding orders for this participant.
+        This includes:
+        1. Unapproved product/merch orders (carts that are submitted but not approved)
+        2. Outstanding event booking payments (event payments that are not verified or failed)
+        """
+        try:
+            outstanding_count = 0
+            
+            # Count unapproved merch orders for this event
+            unapproved_carts = obj.user.carts.filter(
+                event=obj.event,
+                submitted=True,
+                approved=False,
+                active=True
+            )
+            outstanding_count += unapproved_carts.count()
+            
+            # Count outstanding event payments (unverified or failed)
+            outstanding_event_payments = EventPayment.objects.filter(
+                user=obj,
+                event=obj.event
+            ).filter(
+                Q(verified=False) | Q(status=EventPayment.PaymentStatus.FAILED)
+            )
+            outstanding_count += outstanding_event_payments.count()
+            
+            return outstanding_count
+            
+        except Exception as e:
+            print(f"Error calculating outstanding orders for participant {obj.id}: {e}")
+            return 0
 
 
 class EventDayAttendanceSerializer(serializers.ModelSerializer):

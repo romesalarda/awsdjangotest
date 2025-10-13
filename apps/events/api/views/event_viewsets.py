@@ -544,25 +544,46 @@ class EventViewSet(viewsets.ModelViewSet):
                 Q(event_pax_id__icontains=identity_upper)
             )
         
-        # Area filtering
-        area = request.query_params.get("area")
-        if area and area.strip():
-            query_params.append(
-                Q(user__area_from__area_name__icontains=area) |
-                Q(user__area_from__area_code__icontains=area)
-            )
+        # Area filtering - support multiple values
+        areas = request.query_params.getlist("area")
+        if areas:
+            area_queries = []
+            for area in areas:
+                if area and area.strip():
+                    area_queries.append(
+                        Q(user__area_from__area_name__icontains=area) |
+                        Q(user__area_from__area_code__icontains=area)
+                    )
+            if area_queries:
+                from functools import reduce
+                import operator
+                query_params.append(reduce(operator.or_, area_queries))
             
-        # Chapter filtering  
-        chapter = request.query_params.get("chapter")
-        if chapter and chapter.strip():
-            print(f"🔍 DEBUG participants - Applying chapter filter: '{chapter}'")
-            query_params.append(Q(user__area_from__unit__chapter__chapter_name__icontains=chapter))
+        # Chapter filtering - support multiple values
+        chapters = request.query_params.getlist("chapter")
+        if chapters:
+            chapter_queries = []
+            for chapter in chapters:
+                if chapter and chapter.strip():
+                    print(f"🔍 DEBUG participants - Applying chapter filter: '{chapter}'")
+                    chapter_queries.append(Q(user__area_from__unit__chapter__chapter_name__icontains=chapter))
+            if chapter_queries:
+                from functools import reduce
+                import operator
+                query_params.append(reduce(operator.or_, chapter_queries))
             
-        # Cluster filtering
-        cluster = request.query_params.get("cluster")
-        if cluster and cluster.strip():
-            print(f"🔍 DEBUG participants - Applying cluster filter: '{cluster}'")
-            query_params.append(Q(user__area_from__unit__chapter__cluster__cluster_name__icontains=cluster))
+        # Cluster filtering - support multiple values
+        clusters = request.query_params.getlist("cluster")
+        if clusters:
+            cluster_queries = []
+            for cluster in clusters:
+                if cluster and cluster.strip():
+                    print(f"🔍 DEBUG participants - Applying cluster filter: '{cluster}'")
+                    cluster_queries.append(Q(user__area_from__unit__chapter__cluster__cluster_id__icontains=cluster))
+            if cluster_queries:
+                from functools import reduce
+                import operator
+                query_params.append(reduce(operator.or_, cluster_queries))
             
         # Bank reference filter (for both event and product payments)
         bank_reference = request.query_params.get("bank_reference")
@@ -572,6 +593,27 @@ class EventViewSet(viewsets.ModelViewSet):
                 Q(participant_event_payments__bank_reference__icontains=bank_reference_upper) |
                 Q(user__product_payments__bank_reference__icontains=bank_reference_upper)
             )
+            
+        # Has merchandise filter
+        has_merch = request.query_params.get("has_merch")
+        if has_merch:
+            if has_merch.lower() == 'true':
+                # Participants with merchandise orders
+                query_params.append(Q(user__carts__event=event))
+            elif has_merch.lower() == 'false':
+                # Participants without merchandise orders
+                query_params.append(~Q(user__carts__event=event))
+                
+        # Registration date filter
+        registration_date = request.query_params.get("registration_date")
+        if registration_date:
+            try:
+                from datetime import datetime
+                filter_date = datetime.fromisoformat(registration_date.replace('Z', '+00:00'))
+                query_params.append(Q(registration_date__date=filter_date.date()))
+            except ValueError:
+                print(f"⚠️ Invalid registration_date format: {registration_date}")
+                pass
             
         # Status filter
         status = request.query_params.get("status")
@@ -601,14 +643,22 @@ class EventViewSet(viewsets.ModelViewSet):
                 )
             
         # Outstanding payments filter
-        unverified_payments = request.query_params.get("outstanding_payments")
-        if unverified_payments and unverified_payments.lower() == 'true':
-            query_params.append(
-                Q(participant_event_payments__status=EventPayment.PaymentStatus.PENDING) |
-                Q(participant_event_payments__verified=False) |
-                Q(user__product_payments__approved=False) |
-                Q(user__carts__approved=False)
-            )
+        outstanding_payments = request.query_params.get("outstanding_payments")
+        if outstanding_payments:
+            if outstanding_payments.lower() == 'true':
+                # Participants with outstanding payments/orders
+                query_params.append(
+                    Q(participant_event_payments__event=event, participant_event_payments__verified=False) |
+                    Q(participant_event_payments__event=event, participant_event_payments__status=EventPayment.PaymentStatus.FAILED) |
+                    Q(user__carts__event=event, user__carts__submitted=True, user__carts__approved=False, user__carts__active=True)
+                )
+            elif outstanding_payments.lower() == 'false':
+                # Participants without outstanding payments/orders
+                query_params.append(
+                    ~Q(participant_event_payments__event=event, participant_event_payments__verified=False) &
+                    ~Q(participant_event_payments__event=event, participant_event_payments__status=EventPayment.PaymentStatus.FAILED) &
+                    ~Q(user__carts__event=event, user__carts__submitted=True, user__carts__approved=False, user__carts__active=True)
+                )
             
         questions = request.query_params.get("questions_match")
         if questions:
@@ -722,8 +772,8 @@ class EventViewSet(viewsets.ModelViewSet):
                                 # Cluster name (via chapter.cluster)
                                 if hasattr(chapter, 'cluster') and chapter.cluster:
                                     cluster = chapter.cluster
-                                    if hasattr(cluster, 'cluster_name') and cluster.cluster_name:
-                                        clusters.add(cluster.cluster_name)
+                                    if hasattr(cluster, 'cluster_id') and cluster.cluster_id:
+                                        clusters.add(cluster.cluster_id)
                 except Exception as e:
                     print(f"⚠️ Error processing participant {participant.id}: {e}")
                     continue
@@ -1139,13 +1189,60 @@ class EventViewSet(viewsets.ModelViewSet):
             {
                 "full_name": f"{p.user.first_name} {p.user.last_name}",
                 "picture": p.user.profile_picture.url if p.user.profile_picture else None,
-                "area:": p.user.area_from.area_name if p.user.area_from else None,
-                "chapter": p.user.area_from.unit.chapter.chapter_name if p.user.area_from else None,
-                "cluster": p.user.area_from.unit.chapter.cluster.cluster_id if p.user.area_from else None
-                
-                
+                "area": p.user.area_from.area_name if p.user.area_from else None,
+                "chapter": p.user.area_from.unit.chapter.chapter_name if p.user.area_from and p.user.area_from.unit and p.user.area_from.unit.chapter else None,
+                "cluster": p.user.area_from.unit.chapter.cluster.cluster_id if p.user.area_from and p.user.area_from.unit and p.user.area_from.unit.chapter and p.user.area_from.unit.chapter.cluster else None
             } for p in participants.all()
         ])
+        
+    @action(detail=True, methods=["GET"], url_name="filter-options", url_path="filter-options")
+    def filter_options(self, request, id=None):
+        """
+        Get available filter options for participant filtering.
+        Only returns areas, chapters, and clusters that have participants in this event.
+        """
+        try:
+            from apps.events.models.location_models import AreaLocation, ChapterLocation, ClusterLocation
+            
+            # Get the current event
+            event = self.get_object()
+            
+            # Get areas, chapters, and clusters that have participants in this event
+            participants_queryset = event.participants.all()
+            
+            # Extract unique location values from participants
+            areas_with_participants = set()
+            chapters_with_participants = set()
+            clusters_with_participants = set()
+            
+            for participant in participants_queryset:
+                if participant.user and participant.user.area_from:
+                    area_obj = participant.user.area_from
+                    if area_obj.area_name:
+                        areas_with_participants.add(area_obj.area_name)
+                    if area_obj.unit and area_obj.unit.chapter and area_obj.unit.chapter.chapter_name:
+                        chapters_with_participants.add(area_obj.unit.chapter.chapter_name)
+                    if area_obj.unit and area_obj.unit.chapter and area_obj.unit.chapter.cluster and area_obj.unit.chapter.cluster.cluster_id:
+                        clusters_with_participants.add(area_obj.unit.chapter.cluster.cluster_id)
+            
+            # Convert to sorted lists
+            areas = sorted(list(areas_with_participants))
+            chapters = sorted(list(chapters_with_participants))
+            clusters = sorted(list(clusters_with_participants))
+            
+            return Response({
+                'areas': areas,
+                'chapters': chapters,
+                'clusters': clusters
+            })
+        except Exception as e:
+            print(f"❌ Error getting filter options: {e}")
+            return Response({
+                'areas': [],
+                'chapters': [],
+                'clusters': []
+            })
+
         
 
 class EventServiceTeamMemberViewSet(viewsets.ModelViewSet):
