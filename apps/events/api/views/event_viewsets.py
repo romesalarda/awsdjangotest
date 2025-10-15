@@ -659,7 +659,36 @@ class EventViewSet(viewsets.ModelViewSet):
                     ~Q(participant_event_payments__event=event, participant_event_payments__status=EventPayment.PaymentStatus.FAILED) &
                     ~Q(user__carts__event=event, user__carts__submitted=True, user__carts__approved=False, user__carts__active=True)
                 )
+        
+        # Extra questions filtering
+        # Format: ?extra_questions=<question_id>:<choice_id_or_text>,<question_id>:<choice_id_or_text>
+        extra_questions_param = request.query_params.get("extra_questions")
+        if extra_questions_param:
+            question_filters = extra_questions_param.split(",")
+            for question_filter in question_filters:
+                try:
+                    question_id, answer_value = question_filter.split(":", 1)
+                    question_id = question_id.strip()
+                    answer_value = answer_value.strip()
+                    
+                    # Try to parse as UUID (for choice-based answers)
+                    if test_safe_uuid(answer_value):
+                        # Filter by selected choice
+                        query_params.append(
+                            Q(event_question_answers__question__id=uuid.UUID(question_id)) &
+                            Q(event_question_answers__selected_choices__id=uuid.UUID(answer_value))
+                        )
+                    else:
+                        # Filter by text answer
+                        query_params.append(
+                            Q(event_question_answers__question__id=uuid.UUID(question_id)) &
+                            Q(event_question_answers__answer_text__icontains=answer_value)
+                        )
+                except (ValueError, TypeError) as e:
+                    print(f"⚠️ Error parsing extra question filter '{question_filter}': {e}")
+                    continue
             
+        # Legacy questions_match parameter (keep for backwards compatibility)
         questions = request.query_params.get("questions_match")
         if questions:
             question_split = questions.split(",")
@@ -1199,10 +1228,11 @@ class EventViewSet(viewsets.ModelViewSet):
     def filter_options(self, request, id=None):
         """
         Get available filter options for participant filtering.
-        Only returns areas, chapters, and clusters that have participants in this event.
+        Returns areas, chapters, clusters, and extra questions with their choices.
         """
         try:
             from apps.events.models.location_models import AreaLocation, ChapterLocation, ClusterLocation
+            from apps.events.models import ExtraQuestion
             
             # Get the current event
             event = self.get_object()
@@ -1230,17 +1260,52 @@ class EventViewSet(viewsets.ModelViewSet):
             chapters = sorted(list(chapters_with_participants))
             clusters = sorted(list(clusters_with_participants))
             
+            # Get extra questions for this event
+            extra_questions = ExtraQuestion.objects.filter(event=event).prefetch_related('choices').order_by('order')
+            
+            extra_questions_data = []
+            for question in extra_questions:
+                question_data = {
+                    'id': str(question.id),
+                    'question_name': question.question_name,
+                    'question_body': question.question_body,
+                    'question_type': question.question_type,
+                    'question_type_display': question.get_question_type_display(),
+                    'required': question.required,
+                    'order': question.order,
+                    'choices': []
+                }
+                
+                # Add choices for CHOICE and MULTICHOICE questions
+                if question.question_type in ['CHOICE', 'MULTICHOICE']:
+                    choices = question.choices.all().order_by('order')
+                    question_data['choices'] = [
+                        {
+                            'id': str(choice.id),
+                            'text': choice.text,
+                            'value': choice.value or choice.text,
+                            'order': choice.order
+                        }
+                        for choice in choices
+                    ]
+                
+                extra_questions_data.append(question_data)
+            
             return Response({
                 'areas': areas,
                 'chapters': chapters,
-                'clusters': clusters
+                'clusters': clusters,
+                'extra_questions': extra_questions_data
             })
         except Exception as e:
             print(f"❌ Error getting filter options: {e}")
+            import traceback
+            traceback.print_exc()
             return Response({
                 'areas': [],
                 'chapters': [],
-                'clusters': []
+                'clusters': [],
+                'extra_questions': []
             })
 
         
