@@ -533,7 +533,7 @@ class EventSerializer(serializers.ModelSerializer):
         supervisor_ids = validated_data.pop('supervisor_ids', [])
         cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
         
-        pprint.pprint("Event serializer 'EventSerializer.create' validated data", validated_data)
+        # pprint.pprint("Event serializer 'EventSerializer.create' validated data", validated_data)
         
         with transaction.atomic():
 
@@ -727,8 +727,8 @@ class EventSerializer(serializers.ModelSerializer):
         }
         """
         # similar to create, but update existing instance
-        start_date = validated_data.get('start_date', timezone.now())
-        validated_data['start_date'] = start_date
+        # start_date = validated_data.get('start_date', timezone.now())
+        # validated_data['start_date'] = start_date
         
         area_names = validated_data.pop('area_names', [])
         venue_data = validated_data.pop('venue_data', [])
@@ -1257,7 +1257,7 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             payment_method: EventPaymentMethod = validated_data.pop('payment_methods', None)
             payment_package: EventPaymentPackage = validated_data.pop('payment_packages', None)
             
-            event_pax_id = validated_data.pop("event_pax_id") # by default not allowed to be overriden so use as a secondary
+            event_pax_id = validated_data.pop("event_pax_id", None) # by default not allowed to be overriden so use as a secondary
             
             if not event.required_existing_id and event_pax_id:
                 raise serializers.ValidationError("event_pax_id cannot be provided for an event that requires a secondary ID")
@@ -1835,14 +1835,13 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             except Exception:
                 # If any error occurs, fallback to None
                 size_value = None
-            
             orders_data.append({
                 'id': str(order.id),
                 'order_reference_id': getattr(order, 'order_reference_id', None),
                 'product_name': order.product.title if order.product else None,
                 'size': size_value,  # This is now guaranteed to be a string or None
                 'quantity': order.quantity,
-                'price_at_purchase': float(order.price_at_purchase) if order.price_at_purchase else 0.0,
+                'price_at_purchase': float(order.price_at_purchase) if order.price_at_purchase else order.product.price,
                 'discount_applied': float(order.discount_applied) if order.discount_applied else 0.0,
                 'status': order.status,
                 'changeable': getattr(order, 'changeable', True),
