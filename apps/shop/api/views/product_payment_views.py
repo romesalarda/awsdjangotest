@@ -1,10 +1,14 @@
-from rest_framework import viewsets, permissions, filters
+from rest_framework import viewsets, permissions, filters, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from apps.shop.models.payments import ProductPaymentMethod, ProductPaymentPackage, ProductPayment
 from apps.shop.api.serializers.payment_serializers import (
     ProductPaymentMethodSerializer,
     ProductPaymentPackageSerializer,
     ProductPaymentSerializer,
 )
+from apps.shop.email_utils import send_payment_verified_email
+import threading
 
 class ProductPaymentMethodViewSet(viewsets.ModelViewSet):
     '''
@@ -57,3 +61,41 @@ class ProductPaymentViewSet(viewsets.ModelViewSet):
         if user.is_superuser or getattr(user, 'is_encoder', False):
             return self.queryset  # admins and encoders can see all payments
         return self.queryset.filter(user=user)  # regular users can only see their own payments
+    
+    @action(detail=True, methods=['post'], url_name='verify-payment', url_path='verify-payment', permission_classes=[permissions.IsAdminUser])
+    def verify_payment(self, request, pk=None):
+        """
+        Admin action to verify/approve a product payment.
+        Marks payment as succeeded and approved, then sends confirmation email.
+        """
+        payment = self.get_object()
+        
+        if payment.approved:
+            return Response({
+                "status": "already verified",
+                "message": "This payment has already been verified."
+            }, status=status.HTTP_200_OK)
+        
+        # Update payment status
+        payment.status = ProductPayment.PaymentStatus.SUCCEEDED
+        payment.approved = True
+        payment.mark_as_paid()
+        payment.save()
+        
+        # Send confirmation email in background
+        def send_email():
+            try:
+                send_payment_verified_email(payment.cart, payment)
+                print(f"📧 Payment verification email queued for order {payment.cart.order_reference_id}")
+            except Exception as e:
+                print(f"⚠️ Failed to send payment verification email: {e}")
+        
+        email_thread = threading.Thread(target=send_email)
+        email_thread.start()
+        
+        serializer = self.get_serializer(payment)
+        return Response({
+            "status": "payment verified",
+            "message": f"Payment for order {payment.cart.order_reference_id} has been verified. Confirmation email sent to user.",
+            "payment": serializer.data
+        }, status=status.HTTP_200_OK)

@@ -16,6 +16,8 @@ from apps.shop.api.serializers.shop_serializers import (
 )
 from apps.shop.api.serializers.shop_metadata_serializers import ProductSizeSerializer
 from apps.shop.api.serializers.payment_serializers import ProductPaymentMethodSerializer
+from apps.shop.email_utils import send_order_confirmation_email
+import threading
 
 class EventProductViewSet(viewsets.ModelViewSet):
     '''
@@ -264,6 +266,17 @@ class EventCartViewSet(viewsets.ModelViewSet):
             bank_instructions = payment.get_bank_transfer_instructions()
             if bank_instructions:
                 instructions = bank_instructions
+
+        # Send order confirmation email in background thread
+        def send_email():
+            try:
+                send_order_confirmation_email(cart, payment)
+                print(f"📧 Order confirmation email queued for order {cart.order_reference_id}")
+            except Exception as e:
+                print(f"⚠️ Failed to send order confirmation email: {e}")
+        
+        email_thread = threading.Thread(target=send_email)
+        email_thread.start()
 
         serialized = self.get_serializer(cart)
         return Response({

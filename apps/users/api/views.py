@@ -1,6 +1,7 @@
-from rest_framework import filters, response
+from rest_framework import filters, response, status
 from rest_framework.decorators import action
 from rest_framework import viewsets, permissions, views
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
@@ -23,8 +24,9 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     search_fields = ['first_name', 'last_name', 'email', 'member_id', 'username']
     ordering_fields = ['last_name', 'first_name', 'date_of_birth', 'uploaded_at']
     ordering = ['last_name', 'first_name']
-    permission_classes = [permissions.IsAuthenticated] 
+    permission_classes = [permissions.AllowAny] 
     lookup_field = "member_id"
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
     
     # TODO: double check read permissions - only logged in user can see the data about themselves and NO ONE else. Superusers can see everything - override Retrieve method
         
@@ -36,6 +38,104 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
         self.check_permissions(request)        
         serializer = CommunityUserSerializer(request.user)
         return response.Response(serializer.data)
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], url_name="choices", url_path="choices")
+    def get_choices(self, request):
+        """
+        Return selectable choices for profile fields to power dropdowns in the UI.
+        """
+        UserModel = get_user_model()
+
+        def choices_to_list(choices):
+            return [
+                {"value": key, "label": label}
+                for key, label in choices
+            ]
+
+        data = {
+            "gender": choices_to_list(UserModel.GenderType.choices),
+            "marital_status": choices_to_list(UserModel.MaritalType.choices),
+            "blood_type": choices_to_list(UserModel.BloodType.choices),
+            "ministry": choices_to_list(UserModel.MinistryType.choices),
+        }
+        return response.Response(data)
+    
+    @action(detail=False, methods=['patch'], permission_classes=[permissions.IsAuthenticated], url_name="update-profile", url_path="me/update")
+    def update_profile(self, request):
+        '''
+        Update the current user's profile information
+        Supports both JSON and multipart/form-data for file uploads
+        '''
+        self.check_permissions(request)
+        serializer = ProfileUpdateSerializer(
+            request.user, 
+            data=request.data, 
+            partial=True,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            updated_user = serializer.save()
+            # Refresh from database to get the latest values
+            updated_user.refresh_from_db()
+            # Return the updated user data using the full serializer
+            response_serializer = CommunityUserSerializer(updated_user)
+            return response.Response({
+                'message': 'Profile updated successfully',
+                'user': response_serializer.data
+            }, status=status.HTTP_200_OK)
+        
+        return response.Response({
+            'message': 'Profile update failed',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated], 
+            url_name="upload-picture", url_path="me/upload-picture",
+            parser_classes=[MultiPartParser, FormParser])
+    def upload_profile_picture(self, request):
+        '''
+        Upload or update the current user's profile picture
+        Expects multipart/form-data with a 'profile_picture' file field
+        '''
+        self.check_permissions(request)
+        
+        if 'profile_picture' not in request.FILES:
+            return response.Response({
+                'message': 'No file provided',
+                'errors': {'profile_picture': ['This field is required.']}
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        profile_picture = request.FILES['profile_picture']
+        
+        # Validate file type
+        allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp']
+        file_extension = profile_picture.name.split('.')[-1].lower()
+        
+        if file_extension not in allowed_extensions:
+            return response.Response({
+                'message': 'Invalid file type',
+                'errors': {'profile_picture': [f'Only {", ".join(allowed_extensions)} files are allowed.']}
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate file size (max 5MB)
+        max_size = 5 * 1024 * 1024  # 5MB in bytes
+        if profile_picture.size > max_size:
+            return response.Response({
+                'message': 'File too large',
+                'errors': {'profile_picture': ['File size must not exceed 5MB.']}
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Update the user's profile picture
+        request.user.profile_picture = profile_picture
+        request.user.save(update_fields=['profile_picture', 'profile_picture_uploaded_at'])
+        
+        # Return the updated user data
+        response_serializer = CommunityUserSerializer(request.user)
+        return response.Response({
+            'message': 'Profile picture uploaded successfully',
+            'user': response_serializer.data
+        }, status=status.HTTP_200_OK)
     
     
     def get_serializer_class(self):
@@ -137,6 +237,54 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
         # Use simplified serializer for search results
         serializer = SimplifiedCommunityUserSerializer(queryset, many=True)
         return response.Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], 
+            url_name="search-areas", url_path="search-areas")
+    def search_areas(self, request):
+        '''
+        Search for area locations by area name, chapter name, or chapter code
+        Returns areas with their chapter and cluster information
+        '''
+        from apps.events.models import AreaLocation, ChapterLocation
+        from apps.events.api.serializers import SimplifiedAreaLocationSerializer
+        
+        query = request.query_params.get('q', '').strip()
+        chapter_filter = request.query_params.get('chapter', '').strip()
+        limit = int(request.query_params.get('limit', 20))
+        
+        if not query and not chapter_filter:
+            return response.Response({
+                'message': 'Please provide a search query (q) or chapter filter',
+                'areas': []
+            })
+        
+        queryset = AreaLocation.objects.filter(active=True).select_related(
+            'unit__chapter__cluster__world_location'
+        )
+        
+        # Search by area name or chapter
+        if query:
+            queryset = queryset.filter(
+                models.Q(area_name__icontains=query) |
+                models.Q(unit__chapter__chapter_name__icontains=query) |
+                models.Q(unit__chapter__chapter_code__icontains=query) |
+                models.Q(area_code__icontains=query)
+            )
+        
+        # Filter by specific chapter if provided
+        if chapter_filter:
+            queryset = queryset.filter(
+                models.Q(unit__chapter__chapter_name__icontains=chapter_filter) |
+                models.Q(unit__chapter__chapter_code__icontains=chapter_filter)
+            )
+        
+        queryset = queryset.order_by('unit__chapter__chapter_name', 'area_name')[:limit]
+        
+        serializer = SimplifiedAreaLocationSerializer(queryset, many=True)
+        return response.Response({
+            'count': queryset.count(),
+            'areas': serializer.data
+        })
         
 class CommunityRoleViewSet(viewsets.ModelViewSet):
     '''

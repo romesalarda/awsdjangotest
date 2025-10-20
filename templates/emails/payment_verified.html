@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Verified</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ Payment Verified!</h1>
+        </div>
+        
+        <div class="content">
+            <p>Dear {{ user.first_name }},</p>
+            
+            <p>Great news! Your payment for <strong>{{ event_name }}</strong> has been verified and confirmed.</p>
+            
+            {% if payment_reference or payment_amount %}
+            <div style="background-color: #f8f9fa; border-left: 4px solid #28a745; padding: 20px; margin: 20px 0; border-radius: 5px;">
+                <p style="margin: 0; font-size: 14px; color: #6c757d;">Payment Details:</p>
+                {% if payment_reference %}
+                <p style="margin: 5px 0; font-size: 16px;"><strong>Payment Reference:</strong> {{ payment_reference }}</p>
+                {% endif %}
+                {% if payment_amount %}
+                <p style="margin: 5px 0; font-size: 16px;"><strong>Amount Paid:</strong> £{{ payment_amount }}</p>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <p>Your registration is now fully confirmed. We look forward to seeing you at the event!</p>
+            
+            <p style="margin-top: 30px;">
+                Best regards,<br>
+                <strong>The Event Team</strong>
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p style="margin: 0;">
+                This is an automated message. Please do not reply to this email.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -213,7 +213,8 @@ class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
     Simplified AreaLocation serializer for dropdowns, lists, etc
     '''
     unit_name = serializers.CharField(source="unit.unit_name", read_only=True)
-    cluster_id = serializers.CharField(source="unit.cluster.cluster_id", read_only=True)
+    chapter_name = serializers.CharField(source="unit.chapter.chapter_name", read_only=True)
+    cluster_id = serializers.CharField(source="unit.chapter.cluster.cluster_id", read_only=True)
 
     class Meta:
         model = AreaLocation
@@ -221,7 +222,8 @@ class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
             "id", 
             "area_name",   
             "unit_name",
-            "cluster_id",
+            "chapter_name",
+            "cluster_id"
         ]
         
 class EventSerializer(serializers.ModelSerializer):

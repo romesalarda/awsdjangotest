@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Confirmation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 650px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #00c9ff 0%, #92fe9d 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .order-summary-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #00c9ff;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .order-number {
+            font-size: 18px;
+            font-weight: bold;
+            color: #00c9ff;
+            margin: 10px 0;
+        }
+        .details-section {
+            margin: 25px 0;
+        }
+        .details-section h2 {
+            color: #00c9ff;
+            font-size: 18px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #00c9ff;
+            padding-bottom: 5px;
+        }
+        .detail-row {
+            display: flex;
+            padding: 10px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+            min-width: 150px;
+        }
+        .detail-value {
+            color: #212529;
+        }
+        .product-item {
+            display: flex;
+            gap: 15px;
+            padding: 15px;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            background-color: #ffffff;
+        }
+        .product-image {
+            flex-shrink: 0;
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .product-image-placeholder {
+            flex-shrink: 0;
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6c757d;
+            font-size: 12px;
+            text-align: center;
+            padding: 10px;
+        }
+        .product-details {
+            flex-grow: 1;
+        }
+        .product-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #212529;
+            margin: 0 0 5px 0;
+        }
+        .product-meta {
+            font-size: 14px;
+            color: #6c757d;
+            margin: 3px 0;
+        }
+        .product-pricing {
+            text-align: right;
+            min-width: 100px;
+        }
+        .product-price {
+            font-size: 16px;
+            font-weight: 600;
+            color: #212529;
+        }
+        .product-unit-price {
+            font-size: 13px;
+            color: #6c757d;
+        }
+        .order-totals {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 15px;
+        }
+        .total-row.grand-total {
+            border-top: 2px solid #00c9ff;
+            margin-top: 10px;
+            padding-top: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #00c9ff;
+        }
+        .payment-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .payment-verified {
+            background-color: #d4edda;
+            border-left-color: #28a745;
+        }
+        .payment-instructions {
+            background-color: #e7f3ff;
+            border-left: 4px solid #0066cc;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            font-size: 14px;
+            white-space: pre-line;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .status-succeeded {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        .reference-box {
+            background-color: #e7f3ff;
+            border: 2px dashed #0066cc;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .reference-label {
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+        .reference-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #0066cc;
+            font-family: 'Courier New', monospace;
+        }
+        @media only screen and (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            .header h1 {
+                font-size: 22px;
+            }
+            .product-item {
+                flex-direction: column;
+            }
+            .product-image, .product-image-placeholder {
+                width: 100%;
+                height: 200px;
+            }
+            .product-pricing {
+                text-align: left;
+                margin-top: 10px;
+            }
+            .detail-row {
+                flex-direction: column;
+            }
+            .detail-label {
+                min-width: auto;
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛍️ Order Confirmed!</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px;">{{ event_name }}</p>
+        </div>
+        
+        <div class="content">
+            <p>Dear {{ user.first_name }},</p>
+            
+            <p>Thank you for your order! We've received your purchase and are processing it now.</p>
+            
+            <div class="order-summary-box">
+                <p style="margin: 0; font-size: 14px; color: #6c757d;">Your Order Number:</p>
+                <div class="order-number">{{ order_reference }}</div>
+                <p style="margin: 10px 0 0 0; font-size: 13px; color: #6c757d;">
+                    Order placed on {{ cart.created|date:"F j, Y, g:i A" }}
+                </p>
+            </div>
+            
+            <div class="details-section">
+                <h2>📦 Order Details</h2>
+                
+                {% for item in order_items %}
+                <div class="product-item">
+                    {% if item.image_url %}
+                        <img src="{{ item.image_url }}" alt="{{ item.product.title }}" class="product-image">
+                    {% else %}
+                        <div class="product-image-placeholder">
+                            No Image Available
+                        </div>
+                    {% endif %}
+                    
+                    <div class="product-details">
+                        <h3 class="product-title">{{ item.product.title }}</h3>
+                        {% if item.product.description %}
+                        <p class="product-meta">{{ item.product.description|truncatewords:20 }}</p>
+                        {% endif %}
+                        {% if item.size %}
+                        <p class="product-meta"><strong>Size:</strong> {{ item.size }}</p>
+                        {% endif %}
+                        <p class="product-meta"><strong>Quantity:</strong> {{ item.order.quantity }}</p>
+                        {% if item.order.order_reference_id %}
+                        <p class="product-meta" style="font-size: 12px; color: #6c757d;">
+                            Item Ref: {{ item.order.order_reference_id }}
+                        </p>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="product-pricing">
+                        <div class="product-price">£{{ item.line_total|floatformat:2 }}</div>
+                        <div class="product-unit-price">£{{ item.unit_price|floatformat:2 }} each</div>
+                        {% if item.discount > 0 %}
+                        <div class="product-unit-price" style="color: #28a745;">
+                            -£{{ item.discount|floatformat:2 }} discount
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                
+                <div class="order-totals">
+                    <div class="total-row">
+                        <span>Subtotal:</span>
+                        <span>£{{ subtotal|floatformat:2 }}</span>
+                    </div>
+                    {% if shipping_cost > 0 %}
+                    <div class="total-row">
+                        <span>Shipping:</span>
+                        <span>£{{ shipping_cost|floatformat:2 }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="total-row grand-total">
+                        <span>Total:</span>
+                        <span>£{{ total|floatformat:2 }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            {% if shipping_address %}
+            <div class="details-section">
+                <h2>📍 Shipping Address</h2>
+                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; white-space: pre-line;">{{ shipping_address }}</div>
+            </div>
+            {% endif %}
+            
+            <div class="details-section">
+                <h2>💳 Payment Information</h2>
+                <div class="payment-box {% if payment_verified %}payment-verified{% endif %}">
+                    <div class="detail-row" style="border: none;">
+                        <div class="detail-label">Payment Method:</div>
+                        <div class="detail-value">{{ payment_method }}</div>
+                    </div>
+                    <div class="detail-row" style="border: none;">
+                        <div class="detail-label">Amount Paid:</div>
+                        <div class="detail-value">£{{ payment.amount|floatformat:2 }}</div>
+                    </div>
+                    {% if payment_reference %}
+                    <div class="detail-row" style="border: none;">
+                        <div class="detail-label">Payment Reference:</div>
+                        <div class="detail-value" style="font-family: 'Courier New', monospace;">{{ payment_reference }}</div>
+                    </div>
+                    {% endif %}
+                    <div class="detail-row" style="border: none;">
+                        <div class="detail-label">Payment Status:</div>
+                        <div class="detail-value">
+                            {% if payment_verified %}
+                                <strong style="color: #28a745;">✓ Verified</strong>
+                            {% else %}
+                                <span class="status-badge status-{{ payment.status|lower }}">{{ payment_status }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                {% if bank_reference %}
+                <div class="reference-box">
+                    <div class="reference-label">Bank Transfer Reference</div>
+                    <div class="reference-value">{{ bank_reference }}</div>
+                    <p style="margin: 10px 0 0 0; font-size: 12px; color: #6c757d;">
+                        ⚠️ Please include this reference in your bank transfer
+                    </p>
+                </div>
+                {% endif %}
+                
+                {% if payment_instructions %}
+                <div class="payment-instructions">
+                    <strong>Payment Instructions:</strong><br>
+                    {{ payment_instructions }}
+                </div>
+                {% endif %}
+                
+                {% if not payment_verified %}
+                <p style="font-size: 14px; color: #856404; background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-top: 15px;">
+                    ⏳ <strong>Payment Processing:</strong> Your payment is being verified. You'll receive a confirmation email once it's approved (usually within 1-2 business days).
+                </p>
+                {% endif %}
+            </div>
+            
+            <div class="details-section">
+                <h2>📋 What's Next?</h2>
+                <ul style="padding-left: 20px;">
+                    <li>Save this email for your records</li>
+                    <li><strong>Visit the event dashboard to track your order status and view updates</strong></li>
+                    {% if not payment_verified %}
+                    <li>Complete your payment using the instructions above (if not already done)</li>
+                    <li>Your order will be processed once payment is verified</li>
+                    {% else %}
+                    <li>Your order is being prepared for {{ event_name }}</li>
+                    {% endif %}
+                    {% if shipping_address %}
+                    <li>Your items will be shipped to the address provided</li>
+                    {% else %}
+                    <li>Collect your items at the event check-in desk</li>
+                    {% endif %}
+                    <li>If you have any questions, please contact the event organizers</li>
+                </ul>
+            </div>
+            
+            <p style="margin-top: 30px;">
+                Thank you for your purchase! We look forward to seeing you at {{ event_name }}.
+            </p>
+            
+            <p style="margin-top: 20px;">
+                Best regards,<br>
+                <strong>The Event Team</strong>
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p style="margin: 0;">
+                This is an automated message. Please do not reply to this email.
+            </p>
+            <p style="margin: 10px 0 0 0; font-size: 12px;">
+                © {{ "now"|date:"Y" }} CEMS. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

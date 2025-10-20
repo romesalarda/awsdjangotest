@@ -7,6 +7,7 @@ from apps.users.models import (
     CommunityUser, CommunityRole, UserCommunityRole,
     Allergy, MedicalCondition, EmergencyContact, UserAllergy, UserMedicalCondition
 )
+from apps.events.models import AreaLocation
 
 class CommunityRoleSerializer(serializers.ModelSerializer):
     '''
@@ -275,7 +276,10 @@ class CommunityUserSerializer(serializers.ModelSerializer):
         model = CommunityUser
         fields = ('member_id','roles', 'id', 'username', 'full_name', 'short_name','password', 'first_name', 'last_name', 'middle_name', 'preferred_name',
                   'primary_email', 'secondary_email', 'phone_number', 'address_line_1', 'address_line_2', 'postcode', 'area_from',
-                  'emergency_contacts', 'alergies', 'medical_conditions', "is_encoder", "date_of_birth", "chapter", "cluster", "area_from_display", "area_full_display",
+                  'emergency_contacts', 'alergies', 'medical_conditions', "is_encoder", "is_active", "date_of_birth", 
+                  'gender', 'age', 'marital_status', 'blood_type', 'ministry', 
+                  'profile_picture', 'profile_picture_uploaded_at', 'last_login', 'user_uploaded_at',
+                  "chapter", "cluster", "area_from_display", "area_full_display",
                   # Write-only nested data fields
                   'emergency_contacts_data', 'allergies_data', 'medical_conditions_data', 'roles_data')
         extra_kwargs = {
@@ -473,39 +477,6 @@ class CommunityUserSerializer(serializers.ModelSerializer):
         return user
     
     def update(self, instance, validated_data):
-        # TODO: refactor entire update method as it is not compatible with the current serializer, it follows the representation and not the method fields
-        # refer to create as it has correct, need to check as well if any methods rely on this but realistically it would only be for profile updates 
-        raise serializers.ValidationError("Community user update method called which is no longer supported")
-        if 'identity' in validated_data:
-            identity_data = validated_data.pop('identity')
-            for key, value in identity_data.items():
-                validated_data[key] = value
-        
-        if 'contact' in validated_data:
-            contact_data = validated_data.pop('contact')
-            # Handle nested address structure
-            if 'address' in contact_data:
-                address_data = contact_data.pop('address')
-                for key, value in address_data.items():
-                    contact_data[key] = value
-            if 'area' in contact_data:
-                area_data = contact_data.pop("area")
-                # TODO: update where the user resides - format of {"area": "Frimley"}  
-                    
-            
-            for key, value in contact_data.items():
-                validated_data[key] = value
-        
-        if 'community' in validated_data:
-            community_data = validated_data.pop('community')
-            for key, value in community_data.items():
-                validated_data[key] = value
-        
-        if 'safeguarding' in validated_data:
-            safeguarding_data = validated_data.pop('safeguarding')
-            for key, value in safeguarding_data.items():
-                validated_data[key] = value
-        
         # Extract nested relationship data
         password = validated_data.pop('password', None)
         emergency_contacts_data = validated_data.pop('emergency_contacts_data', None)
@@ -521,163 +492,6 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             # Handle password update
             if password:
                 instance.set_password(password)
-            
-            
-            # Handle Emergency Contacts - CRUD operations
-            if emergency_contacts_data is not None:
-                existing_contacts = {str(contact.id): contact for contact in instance.community_user_emergency_contacts.all()}
-                processed_ids = set()
-                
-                for contact_data in emergency_contacts_data:
-                    contact_id = contact_data.get('id')          
-                    relationship = contact_data.get('contact_relationship')
-                    relationship = relationship.strip().upper() if relationship else None
-                    # Validate relationship choice
-                    if relationship and relationship not in dict(EmergencyContact.ContactRelationshipType.choices).keys():
-                        raise serializers.ValidationError({
-                            "error": f"Invalid contact relationship: {relationship} for contact {contact_data.get('first_name', '')} {contact_data.get('last_name', '')}."
-                        })
-                              
-                    if contact_id and contact_id in existing_contacts:
-                        # Update existing emergency contact
-                        contact_serializer = EmergencyContactSerializer(
-                            existing_contacts[contact_id],
-                            data=contact_data,
-                            partial=True
-                        )
-                        if contact_serializer.is_valid(raise_exception=True):
-                            contact_serializer.save()
-                            processed_ids.add(contact_id)
-                    else:
-                        # Create new emergency contact
-                        contact_data['user'] = instance.id
-                        contact_serializer = EmergencyContactSerializer(data=contact_data)
-                        if contact_serializer.is_valid(raise_exception=True):
-                            new_contact = contact_serializer.save()
-                            processed_ids.add(new_contact.id)
-                
-                # Remove contacts that weren't in the update
-                for contact_id, contact in existing_contacts.items():
-                    if contact_id not in processed_ids:
-                        contact.delete()
-            # Handle Allergies - CRUD operations on UserAllergy through model
-            if allergies_data is not None:
-                existing_allergies = {str(allergy.id): allergy for allergy in instance.user_allergies.all()}
-                processed_ids = set()
-                for allergy_data in allergies_data:
-                    allergy_id = allergy_data.get('id')
-                    
-                    if allergy_id and (allergy_id in [str(a) for a in existing_allergies.keys()]):
-                        # Update existing UserAllergy
-                        allergy_name = allergy_data.pop('allergy_name')
-                        allergy_data['name'] = allergy_name
-                        allergy_serializer = SimpleAllergySerializer(
-                            existing_allergies[allergy_id],
-                            data=allergy_data,
-                            partial=True,
-                            context={'user': instance}
-                        )
-                        if allergy_serializer.is_valid(raise_exception=True):
-                            allergy_serializer.save()
-                            processed_ids.add(allergy_id)
-                    else:
-                        # Create new UserAllergy
-                        allergy_name = allergy_data.pop('allergy_name')
-                        allergy_data['name'] = allergy_name
-                        allergy_data['user'] = instance.id
-                        allergy_serializer = SimpleAllergySerializer(
-                            data=allergy_data,
-                            context={'user': instance}
-                        )
-                        if allergy_serializer.is_valid(raise_exception=True):
-                            new_allergy = allergy_serializer.save()
-                            processed_ids.add(new_allergy.id)
-                
-                # Remove allergies that weren't in the update
-                for allergy_id, allergy in existing_allergies.items():
-                    if allergy_id not in processed_ids:
-                        allergy.delete()
-            # Handle Medical Conditions - CRUD operations on UserMedicalCondition through model
-            if medical_conditions_data is not None:
-                existing_conditions = {str(condition.id): condition for condition in instance.user_medical_conditions.all()}
-                processed_ids = set()
-                
-                for condition_data in medical_conditions_data:
-                    condition_id = condition_data.get('id')
-                    severity = condition_data.get('severity')
-                    severity = severity.strip().upper() if severity else None
-
-                    if severity and severity not in dict(UserMedicalCondition.Severity.choices).keys():
-                        raise serializers.ValidationError({
-                            'severity': _('Invalid severity level.')
-                        })
-
-                    condition_data['severity'] = severity
-                    if condition_id and condition_id in existing_conditions:
-                        # Update existing UserMedicalCondition
-                        condition_name = condition_data.pop('condition_name')
-                        condition_data['name'] = condition_name
-                        condition_serializer = SimpleMedicalConditionSerializer(
-                            existing_conditions[condition_id],
-                            data=condition_data,
-                            partial=True,
-                            context={'user': instance}
-                        )
-                        if condition_serializer.is_valid(raise_exception=True):
-                            condition_serializer.save()
-                            processed_ids.add(condition_id)
-                    else:
-                        # Create new UserMedicalCondition
-                        condition_name = condition_data.pop('condition_name')
-                        condition_data['name'] = condition_name
-
-                        condition_data['user'] = instance.id
-                        condition_serializer = SimpleMedicalConditionSerializer(
-                            data=condition_data,
-                            context={'user': instance}
-                        )
-                        if condition_serializer.is_valid(raise_exception=True):
-                            new_condition = condition_serializer.save()
-                            processed_ids.add(new_condition.id)
-                
-                # Remove medical conditions that weren't in the update
-                for condition_id, condition in existing_conditions.items():
-                    if condition_id not in processed_ids:
-                        condition.delete()
-            # Handle Community Roles - CRUD operations on UserCommunityRole through model
-            if roles_data is not None:
-                existing_roles = {str(role.id): role for role in instance.role_links.all()}
-                processed_ids = set()
-                
-                for role_data in roles_data:
-                    role_link_id = role_data.get('id')  # This is UserCommunityRole ID
-                    
-                    if role_link_id and role_link_id in existing_roles:
-                        # Update existing UserCommunityRole
-                        role_serializer = UserCommunityRoleSerializer(
-                            existing_roles[role_link_id],
-                            data=role_data,
-                            partial=True
-                        )
-                        if role_serializer.is_valid(raise_exception=True):
-                            role_serializer.save()
-                            processed_ids.add(role_link_id)
-                    else:
-                        # Create new UserCommunityRole
-                        role_data['user'] = instance.id
-                        # Handle role_id field for new assignments
-                        if 'role_id' in role_data:
-                            role_data['role'] = role_data.pop('role_id')
-                        
-                        role_serializer = UserCommunityRoleSerializer(data=role_data)
-                        if role_serializer.is_valid(raise_exception=True):
-                            new_role = role_serializer.save()
-                            processed_ids.add(new_role.id)
-                
-                # Remove role assignments that weren't in the update
-                for role_id, role in existing_roles.items():
-                    if role_id not in processed_ids:
-                        role.delete()
             
             instance.save()
         
@@ -754,6 +568,240 @@ class ReducedMinistryType(models.TextChoices):
     VOLUNTEER = "VLN", _("Volunteer") # not looking to join the community but is attending an event e.g. a priest
     YOUTH_GUEST = "YGT", _("Youth Guest")
     ADULT_GUEST = "AGT", _("Adult Guest") 
+
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    '''
+    Dedicated serializer for user profile updates via PATCH requests.
+    Supports updating basic profile information, profile picture, and safeguarding data.
+    '''
+    area_from_id = serializers.PrimaryKeyRelatedField(
+        queryset=AreaLocation.objects.all(),
+        source='area_from',
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    
+    # Write-only fields for nested safeguarding data
+    emergency_contacts_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False
+    )
+    allergies_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False
+    )
+    medical_conditions_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False
+    )
+    
+    class Meta:
+        model = CommunityUser
+        fields = (
+            'first_name', 'last_name', 'middle_name', 'preferred_name',
+            'primary_email', 'secondary_email', 'phone_number',
+            'address_line_1', 'address_line_2', 'postcode',
+            'area_from', 'area_from_id', 'gender', 'date_of_birth',
+            'marital_status', 'blood_type', 'ministry', 'profile_picture',
+            'emergency_contacts_data', 'allergies_data', 'medical_conditions_data'
+        )
+        extra_kwargs = {
+            'area_from': {'read_only': True},
+            'profile_picture': {'required': False},
+            'gender': {'required': False, 'allow_null': True},
+            'marital_status': {'required': False, 'allow_null': True},
+            'blood_type': {'required': False, 'allow_null': True},
+            'ministry': {'required': False},
+        }
+    
+    def validate_area_from_id(self, value):
+        """Validate that the area location exists and is active."""
+        if value and not value.active:
+            raise serializers.ValidationError("Selected area is not active.")
+        return value
+    
+    def validate_primary_email(self, value):
+        """Ensure primary email is unique (excluding current user)."""
+        if value:
+            existing = CommunityUser.objects.filter(primary_email=value).exclude(id=self.instance.id if self.instance else None)
+            if existing.exists():
+                raise serializers.ValidationError("This email address is already in use.")
+        return value
+    
+    def validate_secondary_email(self, value):
+        """Ensure secondary email is unique (excluding current user)."""
+        if value:
+            existing = CommunityUser.objects.filter(secondary_email=value).exclude(id=self.instance.id if self.instance else None)
+            if existing.exists():
+                raise serializers.ValidationError("This email address is already in use.")
+        return value
+    
+    def validate(self, attrs):
+        """Cross-field validation."""
+        # Ensure primary and secondary emails are different
+        primary = attrs.get('primary_email') or (self.instance.primary_email if self.instance else None)
+        secondary = attrs.get('secondary_email') or (self.instance.secondary_email if self.instance else None)
+        
+        if primary and secondary and primary == secondary:
+            raise serializers.ValidationError({
+                "secondary_email": "Secondary email must be different from primary email."
+            })
+        
+        # Normalize empty string choices to None or skip
+        # Only pop if the value is truly empty (empty string, None, or whitespace-only)
+        for choice_field in ['gender', 'marital_status', 'blood_type', 'ministry']:
+            if choice_field in attrs:
+                value = attrs[choice_field]
+                # Check if value is None, empty string, or whitespace-only string
+                if value is None or (isinstance(value, str) and value.strip() == ''):
+                    # Remove empty updates to avoid invalid choice errors and keep existing value
+                    attrs.pop(choice_field)
+
+        return attrs
+    
+    def update(self, instance, validated_data):
+        """Update user profile fields including nested safeguarding data."""
+        # Extract nested data
+        emergency_contacts_data = validated_data.pop('emergency_contacts_data', None)
+        allergies_data = validated_data.pop('allergies_data', None)
+        medical_conditions_data = validated_data.pop('medical_conditions_data', None)
+        
+        with transaction.atomic():
+            # Update basic fields
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            
+            # Update emergency contacts
+            if emergency_contacts_data is not None:
+                # Delete existing contacts
+                instance.community_user_emergency_contacts.all().delete()
+                # Create new contacts
+                for contact_data in emergency_contacts_data:
+                    EmergencyContact.objects.create(
+                        user=instance,
+                        first_name=contact_data.get('first_name', ''),
+                        last_name=contact_data.get('last_name', ''),
+                        phone_number=contact_data.get('phone_number', ''),
+                        contact_relationship=contact_data.get('contact_relationship', ''),
+                        is_primary=contact_data.get('is_primary', False)
+                    )
+            
+            # Update allergies
+            if allergies_data is not None:
+                # Delete existing allergies
+                instance.user_allergies.all().delete()
+                # Create new allergies
+                for allergy_data in allergies_data:
+                    # Get or create the allergy master data
+                    allergy, _ = Allergy.objects.get_or_create(
+                        name=allergy_data.get('name', ''),
+                        defaults={'description': ''}
+                    )
+                    # Create the user allergy link
+                    UserAllergy.objects.create(
+                        user=instance,
+                        allergy=allergy,
+                        severity=allergy_data.get('severity', 'low'),
+                        instructions=allergy_data.get('instructions', ''),
+                        notes=allergy_data.get('notes', '')
+                    )
+            
+            # Update medical conditions
+            if medical_conditions_data is not None:
+                # Delete existing conditions
+                instance.user_medical_conditions.all().delete()
+                # Create new conditions
+                for condition_data in medical_conditions_data:
+                    # Get or create the condition master data
+                    condition, _ = MedicalCondition.objects.get_or_create(
+                        name=condition_data.get('name', ''),
+                        defaults={'description': ''}
+                    )
+                    # Create the user condition link
+                    UserMedicalCondition.objects.create(
+                        user=instance,
+                        condition=condition,
+                        severity=condition_data.get('severity', 'low'),
+                        instructions=condition_data.get('instructions', ''),
+                        date_diagnosed=condition_data.get('date_diagnosed') or None
+                    )
+        
+        return instance
+
+    def to_internal_value(self, data):
+        """
+        Accept nested payloads from the frontend in the same shape as the read representation:
+        - identity.name.{first,last,middle,preferred}
+        - identity.{gender,date_of_birth,marital_status,blood_type}
+        - contact.{primary_email,secondary_email,phone_number}
+        - contact.address.{line1,line2,postcode,area_from}
+        - community.{ministry}
+        """
+        # Copy to mutable dict if QueryDict
+        data = dict(data)
+
+        # identity
+        identity = data.pop('identity', None)
+        if identity and isinstance(identity, dict):
+            name = identity.get('name') or {}
+            if isinstance(name, dict):
+                if 'first' in name:
+                    data['first_name'] = name.get('first')
+                if 'last' in name:
+                    data['last_name'] = name.get('last')
+                if 'middle' in name:
+                    data['middle_name'] = name.get('middle')
+                if 'preferred' in name:
+                    data['preferred_name'] = name.get('preferred')
+
+            for k in ['gender', 'date_of_birth', 'marital_status', 'blood_type']:
+                if k in identity:
+                    data[k] = identity.get(k)
+
+        # contact
+        contact = data.pop('contact', None)
+        if contact and isinstance(contact, dict):
+            for k in ['primary_email', 'secondary_email', 'phone_number']:
+                if k in contact:
+                    data[k] = contact.get(k)
+
+            address = contact.get('address') or {}
+            if isinstance(address, dict):
+                # map to model fields
+                if 'line1' in address:
+                    data['address_line_1'] = address.get('line1')
+                if 'line2' in address:
+                    data['address_line_2'] = address.get('line2')
+                if 'postcode' in address:
+                    data['postcode'] = address.get('postcode')
+                # area selection can be provided as numeric id
+                if 'area_from' in address and address.get('area_from') not in [None, '', 'null']:
+                    data['area_from_id'] = address.get('area_from')
+
+        # community
+        community = data.pop('community', None)
+        if community and isinstance(community, dict):
+            if 'ministry' in community:
+                data['ministry'] = community.get('ministry')
+        
+        # safeguarding
+        safeguarding = data.pop('safeguarding', None)
+        if safeguarding and isinstance(safeguarding, dict):
+            if 'emergency_contacts' in safeguarding:
+                data['emergency_contacts_data'] = safeguarding.get('emergency_contacts')
+            if 'allergies' in safeguarding:
+                data['allergies_data'] = safeguarding.get('allergies')
+            if 'medical_conditions' in safeguarding:
+                data['medical_conditions_data'] = safeguarding.get('medical_conditions')
+
+        return super().to_internal_value(data)
+
 
 class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
     '''

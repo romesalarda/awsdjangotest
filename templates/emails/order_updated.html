@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Updated</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 650px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #0066cc 0%, #00a3ff 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .order-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #0066cc;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .update-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .product-item {
+            display: flex;
+            gap: 15px;
+            padding: 15px;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            margin: 20px 0;
+            background-color: #ffffff;
+        }
+        .product-image {
+            flex-shrink: 0;
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .product-image-placeholder {
+            flex-shrink: 0;
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6c757d;
+            font-size: 12px;
+            text-align: center;
+            border: 1px solid #dee2e6;
+        }
+        .product-details {
+            flex-grow: 1;
+        }
+        .product-title {
+            font-weight: 600;
+            font-size: 18px;
+            margin: 0 0 10px 0;
+            color: #212529;
+        }
+        .product-meta {
+            font-size: 14px;
+            color: #6c757d;
+            margin: 4px 0;
+        }
+        .change-item {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #fff;
+            border-left: 3px solid #ffc107;
+            border-radius: 4px;
+        }
+        .change-label {
+            font-weight: 600;
+            color: #856404;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        .section-title {
+            color: #0066cc;
+            font-size: 18px;
+            margin: 25px 0 15px 0;
+            border-bottom: 2px solid #0066cc;
+            padding-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📝 Order Updated</h1>
+        </div>
+        
+        <div class="content">
+            <p>Dear {{ user.first_name }},</p>
+            
+            <p>We wanted to let you know that your order <strong>{{ order_reference }}</strong> has been updated by our team.</p>
+            
+            <div class="order-box">
+                <p style="margin: 0; font-size: 14px; color: #6c757d;">Order Number:</p>
+                <p style="margin: 5px 0 10px 0; font-size: 18px; font-weight: bold; color: #0066cc;">{{ order_reference }}</p>
+                <p style="margin: 0; font-size: 14px; color: #6c757d;">Event: {{ event_name }}</p>
+            </div>
+            
+            <h2 class="section-title">Updated Product</h2>
+            
+            <div class="product-item">
+                {% if product_image_url %}
+                <img src="{{ product_image_url }}" alt="{{ product.title }}" class="product-image">
+                {% else %}
+                <div class="product-image-placeholder">
+                    No Image
+                </div>
+                {% endif %}
+                
+                <div class="product-details">
+                    <div class="product-title">{{ product.title }}</div>
+                    {% if size %}
+                    <div class="product-meta">Size: {{ size }}</div>
+                    {% endif %}
+                    <div class="product-meta">Quantity: {{ order.quantity }}</div>
+                    <div class="product-meta">Price: £{{ order.price_at_purchase }}</div>
+                </div>
+            </div>
+            
+            <div class="update-box">
+                <p style="margin: 0 0 15px 0; font-weight: 600; color: #856404;">Changes Made:</p>
+                
+                {% if updated_fields.quantity %}
+                <div class="change-item">
+                    <span class="change-label">Quantity:</span> Updated to {{ updated_fields.quantity }}
+                </div>
+                {% endif %}
+                
+                {% if updated_fields.size %}
+                <div class="change-item">
+                    <span class="change-label">Size:</span> Updated to {{ updated_fields.size }}
+                </div>
+                {% endif %}
+                
+                {% if updated_fields.price_at_purchase %}
+                <div class="change-item">
+                    <span class="change-label">Price:</span> Updated to £{{ updated_fields.price_at_purchase }}
+                </div>
+                {% endif %}
+            </div>
+            
+            <p><strong>What This Means:</strong></p>
+            <ul>
+                <li>Your order details have been updated as shown above</li>
+                <li>Check your event dashboard for the complete updated order summary</li>
+                <li>If you have any questions about these changes, please contact our support team</li>
+            </ul>
+            
+            <p style="margin-top: 30px;">
+                If you did not request this change or have any concerns, please contact us immediately.
+            </p>
+            
+            <p style="margin-top: 20px;">
+                Best regards,<br>
+                <strong>The Event Team</strong>
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p style="margin: 0;">
+                This is an automated message. Please do not reply to this email.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

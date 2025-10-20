@@ -26,6 +26,9 @@ from apps.shop.models import EventCart, ProductPayment, EventProduct, EventProdu
 from apps.shop.api.serializers import EventCartMinimalSerializer
 from apps.shop.api.serializers.payment_serializers import ProductPaymentMethodSerializer
 from apps.events.websocket_utils import websocket_notifier, serialize_participant_for_websocket, get_event_supervisors
+from apps.events.email_utils import send_booking_confirmation_email, send_payment_verification_email
+from apps.shop.email_utils import send_payment_verified_email, send_order_update_email
+import threading
 
 #! Remember that service team members are also participants but not all participants are service team members
 
@@ -1566,15 +1569,31 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
         
     def create(self, request, *args, **kwargs):
-        request = super().create(request, *args, **kwargs)
-        data = request.data
+        response = super().create(request, *args, **kwargs)
+        data = response.data
+        
+        # Send booking confirmation email with QR code
+        try:
+            # Get the created participant
+            event_user_id = data.get("event_user_id")
+            if event_user_id:
+                participant = EventParticipant.objects.get(event_pax_id=event_user_id)
+                # Send email asynchronously (non-blocking)
+                from threading import Thread
+                email_thread = Thread(target=send_booking_confirmation_email, args=(participant,))
+                email_thread.start()
+                print(f"📧 Booking confirmation email queued for {event_user_id}")
+        except Exception as e:
+            # Don't fail the registration if email fails
+            print(f"⚠️ Failed to queue booking confirmation email: {e}")
+        
         return Response(
             {   
              "event_user_id": data["event_user_id"], 
              "is_paid": all(p['status'] == 'SUCCEEDED' for p in data['event_payments']), 
              "payment_method": data['event_payments'][0]['method'] if data['event_payments'] else 'No payment method', 
              "needs_verification": any(not p['verified'] for p in data['event_payments'])
-            }, status=request.status_code)
+            }, status=response.status_code)
         
     @action(detail=True, methods=['post'], url_name="confirm-payment", url_path="confirm-payment")
     def confirm_registration_payment(self, request, event_pax_id=None):
@@ -1591,10 +1610,26 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
             )
         
         payment = get_object_or_404(EventPayment, user=participant)
+        
+        # Check if already verified
+        already_verified = payment.verified
+        
         payment.verified = True
         payment.paid_at = timezone.now()
         payment.status = EventPayment.PaymentStatus.SUCCEEDED
         payment.save()
+        
+        # Send confirmation email in background if newly verified
+        if not already_verified:
+            def send_email():
+                try:
+                    send_payment_verification_email(participant)
+                    print(f"📧 Registration payment verification email queued for {participant.event_pax_id}")
+                except Exception as e:
+                    print(f"⚠️ Failed to send payment verification email: {e}")
+            
+            email_thread = threading.Thread(target=send_email)
+            email_thread.start()
         
         serializer = self.get_serializer(participant)
         return Response(serializer.data)
@@ -1621,6 +1656,10 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         product_payment = get_object_or_404(ProductPayment, cart=cart_instance, user=participant.user)
+        
+        # Check if already approved
+        already_approved = product_payment.approved
+        
         product_payment.status = ProductPayment.PaymentStatus.SUCCEEDED
         product_payment.approved = True
         product_payment.paid_at = timezone.now()
@@ -1628,6 +1667,18 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         
         cart_instance.approved = True
         cart_instance.save()
+        
+        # Send confirmation email in background if newly approved
+        if not already_approved:
+            def send_email():
+                try:
+                    send_payment_verified_email(cart_instance, product_payment)
+                    print(f"📧 Merch order payment verification email queued for order {cart_instance.order_reference_id}")
+                except Exception as e:
+                    print(f"⚠️ Failed to send merch payment verification email: {e}")
+            
+            email_thread = threading.Thread(target=send_email)
+            email_thread.start()
 
         serializer = self.get_serializer(participant)
         return Response(serializer.data)
@@ -1809,6 +1860,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 )
             
             data = request.data
+            updated_fields = {}  # Track what changed for email notification
             
             # Update fields if provided
             if 'quantity' in data:
@@ -1823,7 +1875,9 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                         {'error': f'Quantity exceeds maximum order quantity of {order.product.maximum_order_quantity}.'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                order.quantity = quantity
+                if order.quantity != quantity:
+                    updated_fields['quantity'] = quantity
+                    order.quantity = quantity
             
             if 'price_at_purchase' in data:
                 price = float(data['price_at_purchase'])
@@ -1832,7 +1886,9 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                         {'error': _('Price cannot be negative.')},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                order.price_at_purchase = price
+                if order.price_at_purchase != price:
+                    updated_fields['price_at_purchase'] = price
+                    order.price_at_purchase = price
             
             # Handle size updates
             if 'size' in data:
@@ -1843,14 +1899,18 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                             size=size_value,
                             product=order.product
                         )
-                        order.size = size_instance
-                        order.uses_size = True
+                        if order.size != size_instance:
+                            updated_fields['size'] = size_value
+                            order.size = size_instance
+                            order.uses_size = True
                     except ProductSize.DoesNotExist:
                         return Response(
                             {'error': f'Size "{size_value}" not available for this product.'},
                             status=status.HTTP_400_BAD_REQUEST
                         )
                 else:
+                    if order.size is not None:
+                        updated_fields['size'] = 'None (removed)'
                     order.size = None
                     order.uses_size = False
             
@@ -1863,6 +1923,18 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 for o in cart.orders.all()
             )
             cart.save()
+            
+            # Send email notification if any changes were made
+            if updated_fields:
+                def send_email():
+                    try:
+                        send_order_update_email(cart, order, updated_fields)
+                        print(f"📧 Order update email queued for order {order.id} in cart {cart.order_reference_id}")
+                    except Exception as e:
+                        print(f"⚠️ Failed to send order update email: {e}")
+                
+                email_thread = threading.Thread(target=send_email)
+                email_thread.start()
             
             return Response(
                 {'message': _('Order updated successfully.')},
