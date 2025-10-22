@@ -589,13 +589,35 @@ class EventViewSet(viewsets.ModelViewSet):
                 query_params.append(reduce(operator.or_, cluster_queries))
             
         # Bank reference filter (for both event and product payments)
+        # This handles bank_reference, event_payment_tracking_number, and payment_reference_id
         bank_reference = request.query_params.get("bank_reference")
         if bank_reference:
             bank_reference_upper = bank_reference.upper()
             query_params.append(
                 Q(participant_event_payments__bank_reference__icontains=bank_reference_upper) |
-                Q(user__product_payments__bank_reference__icontains=bank_reference_upper)
+                Q(participant_event_payments__event_payment_tracking_number__icontains=bank_reference_upper) |
+                Q(user__product_payments__bank_reference__icontains=bank_reference_upper) |
+                Q(user__product_payments__payment_reference_id__icontains=bank_reference_upper)
             )
+        
+        # Payment method filter (for both event and product payments)
+        payment_method = request.query_params.get("payment_method")
+        if payment_method:
+            payment_method_upper = payment_method.upper()
+            query_params.append(
+                Q(participant_event_payments__method__method__iexact=payment_method_upper) |
+                Q(user__product_payments__method__method__iexact=payment_method_upper)
+            )
+        
+        # Payment package filter (for event payments only)
+        payment_package = request.query_params.get("payment_package")
+        if payment_package:
+            try:
+                package_id = uuid.UUID(payment_package)
+                query_params.append(Q(participant_event_payments__package__id=package_id))
+            except (ValueError, TypeError):
+                # If not a valid UUID, try to filter by package name
+                query_params.append(Q(participant_event_payments__package__name__icontains=payment_package))
             
         # Has merchandise filter
         has_merch = request.query_params.get("has_merch")
@@ -849,6 +871,255 @@ class EventViewSet(viewsets.ModelViewSet):
             'results': serializer.data,
             'filter_options': filter_options
         })
+    
+    @action(detail=True, methods=['get'], url_name="event-payments", url_path="event-payments")
+    def event_payments(self, request, pk=None, id=None):
+        '''
+        Retrieve a list of event payments for a specific event with filtering support.
+        
+        Supports the same filtering as participants:
+        - ?search= (search by name, email, tracking number, bank reference)
+        - ?bank_reference= (filter by bank reference or tracking number)
+        - ?payment_method= (filter by payment method: STRIPE, BANK, CASH, etc.)
+        - ?payment_package= (filter by package ID or name)
+        - ?status= (filter by payment status: PENDING, SUCCEEDED, FAILED)
+        - ?verified=true/false (filter by verification status)
+        - ?area= (filter by participant's area)
+        - ?chapter= (filter by participant's chapter)
+        - ?cluster= (filter by participant's cluster)
+        '''
+        from apps.events.api.serializers import EventPaymentListSerializer
+        
+        event_lookup = id if id is not None else pk
+        event = self.get_queryset().get(id=event_lookup)
+        
+        # Build query filters
+        query_params = []
+        
+        # Always filter by event
+        query_params.append(Q(event=event))
+        
+        # Search across multiple fields
+        search = request.query_params.get("search")
+        if search:
+            search_upper = search.upper()
+            query_params.append(
+                Q(user__user__first_name__icontains=search) |
+                Q(user__user__last_name__icontains=search) |
+                Q(user__user__primary_email__icontains=search) |
+                Q(event_payment_tracking_number__icontains=search_upper) |
+                Q(bank_reference__icontains=search_upper)
+            )
+        
+        # Bank reference filter
+        bank_reference = request.query_params.get("bank_reference")
+        if bank_reference:
+            bank_reference_upper = bank_reference.upper()
+            query_params.append(
+                Q(bank_reference__icontains=bank_reference_upper) |
+                Q(event_payment_tracking_number__icontains=bank_reference_upper)
+            )
+        
+        # Payment method filter
+        payment_method = request.query_params.get("payment_method")
+        if payment_method:
+            query_params.append(Q(method__method__iexact=payment_method.upper()))
+        
+        # Payment package filter
+        payment_package = request.query_params.get("payment_package")
+        if payment_package:
+            try:
+                package_id = uuid.UUID(payment_package)
+                query_params.append(Q(package__id=package_id))
+            except (ValueError, TypeError):
+                query_params.append(Q(package__name__icontains=payment_package))
+        
+        # Status filter
+        status_param = request.query_params.get("status")
+        if status_param:
+            query_params.append(Q(status__iexact=status_param.upper()))
+        
+        # Verified filter
+        verified = request.query_params.get("verified")
+        if verified:
+            query_params.append(Q(verified=(verified.lower() == 'true')))
+        
+        # Area filtering
+        areas = request.query_params.getlist("area")
+        if areas:
+            area_queries = []
+            for area in areas:
+                if area and area.strip():
+                    area_queries.append(
+                        Q(user__user__area_from__area_name__icontains=area) |
+                        Q(user__user__area_from__area_code__icontains=area)
+                    )
+            if area_queries:
+                from functools import reduce
+                import operator
+                query_params.append(reduce(operator.or_, area_queries))
+        
+        # Chapter filtering
+        chapters = request.query_params.getlist("chapter")
+        if chapters:
+            chapter_queries = []
+            for chapter in chapters:
+                if chapter and chapter.strip():
+                    chapter_queries.append(Q(user__user__area_from__unit__chapter__chapter_name__icontains=chapter))
+            if chapter_queries:
+                from functools import reduce
+                import operator
+                query_params.append(reduce(operator.or_, chapter_queries))
+        
+        # Cluster filtering
+        clusters = request.query_params.getlist("cluster")
+        if clusters:
+            cluster_queries = []
+            for cluster in clusters:
+                if cluster and cluster.strip():
+                    cluster_queries.append(Q(user__user__area_from__unit__chapter__cluster__cluster_id__icontains=cluster))
+            if cluster_queries:
+                from functools import reduce
+                import operator
+                query_params.append(reduce(operator.or_, cluster_queries))
+        
+        # Build queryset
+        payments = EventPayment.objects.select_related(
+            'user', 'user__user', 'user__user__area_from',
+            'user__user__area_from__unit__chapter',
+            'user__user__area_from__unit__chapter__cluster',
+            'method', 'package', 'event'
+        ).filter(*query_params).distinct().order_by('-created_at')
+        
+        # Apply pagination
+        page = self.paginate_queryset(payments)
+        if page is not None:
+            serializer = EventPaymentListSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = EventPaymentListSerializer(payments, many=True)
+        return Response({'results': serializer.data})
+    
+    @action(detail=True, methods=['get'], url_name="product-payments", url_path="product-payments")
+    def product_payments(self, request, pk=None, id=None):
+        '''
+        Retrieve a list of product payments (cart payments) for a specific event with filtering support.
+        
+        Supports the same filtering as participants:
+        - ?search= (search by name, email, payment reference, bank reference)
+        - ?bank_reference= (filter by bank reference or payment reference)
+        - ?payment_method= (filter by payment method: STRIPE, BANK, CASH, etc.)
+        - ?status= (filter by payment status: PENDING, SUCCEEDED, FAILED)
+        - ?approved=true/false (filter by approval status)
+        - ?area= (filter by user's area)
+        - ?chapter= (filter by user's chapter)
+        - ?cluster= (filter by user's cluster)
+        '''
+        from apps.shop.api.serializers import ProductPaymentListSerializer
+        
+        event_lookup = id if id is not None else pk
+        event = self.get_queryset().get(id=event_lookup)
+        
+        # Build query filters
+        query_params = []
+        
+        # Always filter by event (through cart)
+        query_params.append(Q(cart__event=event))
+        
+        # Search across multiple fields
+        search = request.query_params.get("search")
+        if search:
+            search_upper = search.upper()
+            query_params.append(
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search) |
+                Q(user__primary_email__icontains=search) |
+                Q(payment_reference_id__icontains=search_upper) |
+                Q(bank_reference__icontains=search_upper) |
+                Q(cart__order_reference_id__icontains=search_upper)
+            )
+        
+        # Bank reference filter
+        bank_reference = request.query_params.get("bank_reference")
+        if bank_reference:
+            bank_reference_upper = bank_reference.upper()
+            query_params.append(
+                Q(bank_reference__icontains=bank_reference_upper) |
+                Q(payment_reference_id__icontains=bank_reference_upper)
+            )
+        
+        # Payment method filter
+        payment_method = request.query_params.get("payment_method")
+        if payment_method:
+            query_params.append(Q(method__method__iexact=payment_method.upper()))
+        
+        # Status filter
+        status_param = request.query_params.get("status")
+        if status_param:
+            query_params.append(Q(status__iexact=status_param.upper()))
+        
+        # Approved filter
+        approved = request.query_params.get("approved")
+        if approved:
+            query_params.append(Q(approved=(approved.lower() == 'true')))
+        
+        # Area filtering
+        areas = request.query_params.getlist("area")
+        if areas:
+            area_queries = []
+            for area in areas:
+                if area and area.strip():
+                    area_queries.append(
+                        Q(user__area_from__area_name__icontains=area) |
+                        Q(user__area_from__area_code__icontains=area)
+                    )
+            if area_queries:
+                from functools import reduce
+                import operator
+                query_params.append(reduce(operator.or_, area_queries))
+        
+        # Chapter filtering
+        chapters = request.query_params.getlist("chapter")
+        if chapters:
+            chapter_queries = []
+            for chapter in chapters:
+                if chapter and chapter.strip():
+                    chapter_queries.append(Q(user__area_from__unit__chapter__chapter_name__icontains=chapter))
+            if chapter_queries:
+                from functools import reduce
+                import operator
+                query_params.append(reduce(operator.or_, chapter_queries))
+        
+        # Cluster filtering
+        clusters = request.query_params.getlist("cluster")
+        if clusters:
+            cluster_queries = []
+            for cluster in clusters:
+                if cluster and cluster.strip():
+                    cluster_queries.append(Q(user__area_from__unit__chapter__cluster__cluster_id__icontains=cluster))
+            if cluster_queries:
+                from functools import reduce
+                import operator
+                query_params.append(reduce(operator.or_, cluster_queries))
+        
+        # Build queryset
+        payments = ProductPayment.objects.select_related(
+            'user', 'user__area_from',
+            'user__area_from__unit__chapter',
+            'user__area_from__unit__chapter__cluster',
+            'method', 'package', 'cart', 'cart__event'
+        ).prefetch_related(
+            'cart__orders'
+        ).filter(*query_params).distinct().order_by('-created_at')
+        
+        # Apply pagination
+        page = self.paginate_queryset(payments)
+        if page is not None:
+            serializer = ProductPaymentListSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = ProductPaymentListSerializer(payments, many=True)
+        return Response({'results': serializer.data})
     
     @action(detail=True, methods=['post'], url_name="register", url_path="register")
     def register(self, request, id=None):

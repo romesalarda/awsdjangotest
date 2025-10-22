@@ -206,3 +206,56 @@ class EventPaymentSerializer(serializers.ModelSerializer):
                 instance.mark_as_paid()
         
         return super().update(instance, validated_data)
+
+
+class EventPaymentListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for listing event payments in participant management views.
+    Optimized for minimal data transfer with essential payment and participant info.
+    """
+    participant_id = serializers.CharField(source="user.id", read_only=True)
+    participant_name = serializers.SerializerMethodField()
+    participant_email = serializers.CharField(source="user.user.primary_email", read_only=True)
+    participant_event_pax_id = serializers.CharField(source="user.event_pax_id", read_only=True)
+    participant_area = serializers.SerializerMethodField()
+    participant_chapter = serializers.SerializerMethodField()
+    
+    payment_method = serializers.CharField(source="method.get_method_display", read_only=True)
+    payment_method_type = serializers.CharField(source="method.method", read_only=True)
+    package_name = serializers.CharField(source="package.name", read_only=True)
+    package_price = serializers.DecimalField(source="package.price", max_digits=10, decimal_places=2, read_only=True)
+    
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    amount_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = EventPayment
+        fields = [
+            "id", "participant_id", "participant_name", "participant_email", 
+            "participant_event_pax_id", "participant_area", "participant_chapter",
+            "event_payment_tracking_number", "bank_reference",
+            "payment_method", "payment_method_type", "package_name", "package_price",
+            "amount", "amount_display", "currency", 
+            "status", "status_display", "verified",
+            "paid_at", "created_at"
+        ]
+    
+    def get_participant_name(self, obj):
+        if obj.user and obj.user.user:
+            return f"{obj.user.user.first_name} {obj.user.user.last_name}"
+        return "Unknown"
+    
+    def get_participant_area(self, obj):
+        if obj.user and obj.user.user and hasattr(obj.user.user, 'area_from') and obj.user.user.area_from:
+            return obj.user.user.area_from.area_name
+        return None
+    
+    def get_participant_chapter(self, obj):
+        if obj.user and obj.user.user and hasattr(obj.user.user, 'area_from') and obj.user.user.area_from:
+            area = obj.user.user.area_from
+            if hasattr(area, 'unit') and area.unit and hasattr(area.unit, 'chapter') and area.unit.chapter:
+                return area.unit.chapter.chapter_name
+        return None
+    
+    def get_amount_display(self, obj):
+        return f"£{obj.amount:.2f}"

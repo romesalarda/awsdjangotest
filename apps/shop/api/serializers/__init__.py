@@ -2,6 +2,7 @@ from .payment_serializers import (
     ProductPaymentMethodSerializer,
     ProductPaymentPackageSerializer,    
     ProductPaymentSerializer,
+    ProductPaymentListSerializer,
 )
 from .shop_serializers import (
     EventProductSerializer,

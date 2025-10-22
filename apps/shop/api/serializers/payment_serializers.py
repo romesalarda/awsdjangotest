@@ -256,3 +256,80 @@ class ProductPaymentSerializer(serializers.ModelSerializer):
             validated_data['approved'] = True
         
         return super().update(instance, validated_data)
+
+
+class ProductPaymentListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for listing product payments in participant management views.
+    Optimized for minimal data transfer with essential payment, cart, and user info.
+    """
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    user_name = serializers.SerializerMethodField()
+    user_email = serializers.EmailField(source="user.primary_email", read_only=True)
+    user_member_id = serializers.CharField(source="user.member_id", read_only=True)
+    user_area = serializers.SerializerMethodField()
+    user_chapter = serializers.SerializerMethodField()
+    
+    cart_order_reference = serializers.CharField(source="cart.order_reference_id", read_only=True)
+    cart_total = serializers.DecimalField(source="cart.total", max_digits=10, decimal_places=2, read_only=True)
+    cart_product_count = serializers.SerializerMethodField()
+    
+    payment_method = serializers.CharField(source="method.get_method_display", read_only=True)
+    payment_method_type = serializers.CharField(source="method.method", read_only=True)
+    package_name = serializers.CharField(source="package.name", read_only=True)
+    
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    amount_display = serializers.SerializerMethodField()
+    
+    # Participant info (if user is a participant in the event)
+    participant_event_pax_id = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ProductPayment
+        fields = [
+            "id", "user_id", "user_name", "user_email", "user_member_id",
+            "user_area", "user_chapter", "participant_event_pax_id",
+            "payment_reference_id", "bank_reference",
+            "cart_order_reference", "cart_total", "cart_product_count",
+            "payment_method", "payment_method_type", "package_name",
+            "amount", "amount_display", "currency",
+            "status", "status_display", "approved",
+            "paid_at", "created_at"
+        ]
+    
+    def get_user_name(self, obj):
+        if obj.user:
+            return f"{obj.user.first_name} {obj.user.last_name}"
+        return "Unknown"
+    
+    def get_user_area(self, obj):
+        if obj.user and hasattr(obj.user, 'area_from') and obj.user.area_from:
+            return obj.user.area_from.area_name
+        return None
+    
+    def get_user_chapter(self, obj):
+        if obj.user and hasattr(obj.user, 'area_from') and obj.user.area_from:
+            area = obj.user.area_from
+            if hasattr(area, 'unit') and area.unit and hasattr(area.unit, 'chapter') and area.unit.chapter:
+                return area.unit.chapter.chapter_name
+        return None
+    
+    def get_amount_display(self, obj):
+        return f"£{obj.amount:.2f}"
+    
+    def get_cart_product_count(self, obj):
+        if obj.cart:
+            return obj.cart.orders.count()
+        return 0
+    
+    def get_participant_event_pax_id(self, obj):
+        """Get the participant's event_pax_id if they're registered for the cart's event"""
+        if obj.cart and obj.cart.event and obj.user:
+            from apps.events.models import EventParticipant
+            participant = EventParticipant.objects.filter(
+                event=obj.cart.event,
+                user=obj.user
+            ).first()
+            if participant:
+                return participant.event_pax_id
+        return None
