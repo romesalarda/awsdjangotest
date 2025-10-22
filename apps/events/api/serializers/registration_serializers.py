@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.events.models import ExtraQuestion, QuestionChoice, QuestionAnswer, ParticipantQuestion
 from apps.events.models.event_models import EventParticipant
+from django.shortcuts import get_object_or_404
 
 class QuestionChoiceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -297,6 +298,7 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     questions_type_display = serializers.CharField(source="get_questions_type_display", read_only=True)
     priority_display = serializers.CharField(source="get_priority_display", read_only=True)
+    participant_pax_id = serializers.CharField(write_only=True)
 
     class Meta:
         model = ParticipantQuestion
@@ -305,11 +307,11 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
             "submitted_at", "updated_at", "responded_at", "status", "status_display",
             "admin_notes", "answer", "answered_by", "answered_by_name",
             "questions_type", "questions_type_display", "priority", "priority_display",
-            "participant_name"
+            "participant_name", "participant_pax_id"
         ]
         read_only_fields = [
             "id", "submitted_at", "updated_at", "participant_name", 
-            "answered_by_name", "status_display", "questions_type_display", "priority_display"
+            "answered_by_name", "status_display", "questions_type_display", "priority_display", "participant"
         ]
         
     def validate(self, data):
@@ -323,3 +325,9 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Question body is required.")
             
         return data
+    
+    def create(self, validated_data):
+        participant = get_object_or_404(EventParticipant, event_pax_id=validated_data.pop("participant_pax_id", None))
+        validated_data["participant_id"] = participant.pk
+        obj = super().create(validated_data)
+        return obj

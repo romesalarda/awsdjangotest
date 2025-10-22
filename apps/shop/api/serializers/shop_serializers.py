@@ -536,7 +536,7 @@ class EventCartSerializer(serializers.ModelSerializer):
         fields = [
             "uuid", "user", "user_email", "event", "event_name", "order_reference_id",
             "total", "shipping_cost", "created", "updated", "approved", "submitted", 
-            "active", "notes", "shipping_address", "orders", "product_orders", "bank_reference"
+            "active", "notes", "shipping_address", "orders", "product_orders", "bank_reference", "created_via_admin"
         ]
         
         read_only_fields = ["uuid", "user", "user_email", "event_name", "order_reference_id", "created", "updated"]

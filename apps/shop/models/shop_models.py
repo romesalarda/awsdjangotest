@@ -128,6 +128,8 @@ class EventCart(models.Model):
     approved = models.BooleanField(default=False, help_text=_("Flags if the cart has been approved"))
     submitted = models.BooleanField(default=False, help_text=_("Flags if the cart has been submitted"))
     active = models.BooleanField(default=True, help_text=_("Flags if the cart is active"))
+    created_via_admin = models.BooleanField(default=False, help_text=_("Flags if the cart was created by an admin/event organiser"))
+
     products = models.ManyToManyField(
         "shop.EventProduct",
         through="shop.EventProductOrder",

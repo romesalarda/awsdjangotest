@@ -169,7 +169,7 @@ class EventCartMinimalSerializer(serializers.ModelSerializer):
             "uuid",
             "order_reference_id", "total", "shipping_cost", 
             "created", "approved", "submitted", "active", 
-            "orders", "order_count", "payment_method"
+            "orders", "order_count", "payment_method", "created_via_admin"
         ]
 
 
