@@ -100,6 +100,8 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     # only get the name of the area and not the full serializer
     areas_involved = serializers.SerializerMethodField(read_only=True)
     main_venue = serializers.SerializerMethodField(read_only=True)
+    cost = serializers.SerializerMethodField(read_only=True)
+    
     class Meta:
         model = Event
         fields = (
@@ -117,14 +119,26 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
             "anchor_verse",
             "areas_involved",
             "main_venue",
-            "registration_open"
+            "registration_open",
+            "cost",
         )
         
     def get_main_venue(self, obj):
-        primary_venue = obj.venues.filter(primary_venue=True).first()
+        primary_venue = obj.venues.filter(Q(primary_venue=True) | Q(venue_type=EventVenue.VenueType.MAIN_VENUE)).first()
         if primary_venue:
             return primary_venue.name
         return None
+        
+    def get_cost(self, obj):
+        packages = obj.payment_packages.all().order_by("price")
+        if packages.exists():
+            pkg = packages.first()
+            if pkg.price == 0:
+                return "Free"
+            pkg_text = f"{pkg.currency.upper()} {pkg.price}"
+            if len(packages) > 1:
+                pkg_text = pkg_text + "+"
+            return pkg_text
         
     def get_areas_involved(self, obj):
         return [area.area_name for area in obj.areas_involved.all()]
@@ -139,7 +153,8 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 "name": rep["name"],
                 "description": rep["sentence_description"],
                 "theme": rep.get("theme"),
-                "anchor_verse": rep.get("anchor_verse")
+                "anchor_verse": rep.get("anchor_verse"),
+                "cost": rep.get("cost")
             },
             "media": {
                 "landing_image": rep.get("landing_image")
@@ -765,8 +780,9 @@ class EventSerializer(serializers.ModelSerializer):
                 instance.areas_involved.set(areas)
 
             # Venue - Handle CRUD operations
-            if venue_data is not None:
+            if venue_data is not None and len(venue_data) > 0:
                 # Keep track of existing venues
+                print("venue data : ", venue_data)
                 existing_venues = {venue.id: venue for venue in instance.venues.all()}
                 processed_ids = set()
                 

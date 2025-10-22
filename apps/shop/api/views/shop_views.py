@@ -77,8 +77,8 @@ class EventCartViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
-        if user.is_superuser or getattr(user, 'is_encoder', False):
-            return self.queryset  # admins and encoders can see all carts
+        # if user.is_superuser or getattr(user, 'is_encoder', False):
+        #     return self.queryset  # admins and encoders can see all carts
         return self.queryset.filter(user=user)  # regular users can only see their own carts
     
     @action(detail=True, methods=['post'], url_name='add', url_path='add')

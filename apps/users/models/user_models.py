@@ -163,9 +163,9 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         
         # Ensure username is unique
     
-        # if not self.username:
-        base_username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
-        self.username = base_username
+        if not self.username:
+            base_username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
+            self.username = base_username
         
         # Check for duplicates and append number if needed
         counter = 1

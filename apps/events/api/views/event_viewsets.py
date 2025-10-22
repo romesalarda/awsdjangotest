@@ -358,7 +358,7 @@ class EventViewSet(viewsets.ModelViewSet):
         data["user"] = user_data
         
         #! Handle merch
-        carts = EventCart.objects.filter(user=user, event=event, active=False)
+        carts = EventCart.objects.filter(user=user, event=event, active=False) # TODO: set active to false to show 
         cart_serializer = EventCartMinimalSerializer(carts, many=True)
         data["merch"] = cart_serializer.data        
         

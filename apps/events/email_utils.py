@@ -141,7 +141,7 @@ def send_payment_verification_email(participant):
         
         # Get payment information
         event_payment = participant.participant_event_payments.first()
-        payment_reference = event_payment.payment_reference_id if event_payment else None
+        payment_reference = event_payment.event_payment_tracking_number if event_payment else None
         payment_amount = event_payment.amount if event_payment else None
         
         context = {

@@ -53,7 +53,7 @@ class CommunityUserAdmin(UserAdmin):
     list_filter = ("ministry", "gender", "is_active", "is_staff", "is_encoder")
     search_fields = ("member_id", "username", "first_name", "last_name", "primary_email")
     ordering = ("last_name", "first_name")
-    readonly_fields = ("member_id", "username", "user_uploaded_at", "profile_picture_uploaded_at")
+    readonly_fields = ("member_id", "user_uploaded_at", "profile_picture_uploaded_at")
 
     fieldsets = (
         (None, {"fields": ("username", "password")}),
