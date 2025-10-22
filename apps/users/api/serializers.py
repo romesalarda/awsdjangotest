@@ -642,15 +642,17 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
         return value
     
     def validate(self, attrs):
-        """Cross-field validation."""
+        """Cross-field validation with normalized error messages."""
+        errors = {}
+        
         # Ensure primary and secondary emails are different
         primary = attrs.get('primary_email') or (self.instance.primary_email if self.instance else None)
         secondary = attrs.get('secondary_email') or (self.instance.secondary_email if self.instance else None)
-        
+        gender = attrs.get("gender",None)
+        if gender and isinstance(gender, str):
+            attrs["gender"] = gender.upper()
         if primary and secondary and primary == secondary:
-            raise serializers.ValidationError({
-                "secondary_email": "Secondary email must be different from primary email."
-            })
+            errors['secondary_email'] = "Secondary email must be different from primary email."
         
         # Normalize empty string choices to None or skip
         # Only pop if the value is truly empty (empty string, None, or whitespace-only)
@@ -661,6 +663,9 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
                 if value is None or (isinstance(value, str) and value.strip() == ''):
                     # Remove empty updates to avoid invalid choice errors and keep existing value
                     attrs.pop(choice_field)
+        
+        if errors:
+            raise serializers.ValidationError({"errors": errors})
 
         return attrs
     

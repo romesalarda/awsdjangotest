@@ -85,9 +85,22 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
                 'user': response_serializer.data
             }, status=status.HTTP_200_OK)
         
+        # Normalize error response
+        error_dict = {}
+        for field, errors in serializer.errors.items():
+            if field == 'errors' and isinstance(errors, dict):
+                # If we have nested errors from validate(), flatten them
+                error_dict.update(errors)
+            else:
+                # Convert error list to string
+                if isinstance(errors, list):
+                    error_dict[field] = errors[0] if errors else 'Invalid value'
+                else:
+                    error_dict[field] = str(errors)
+        
         return response.Response({
             'message': 'Profile update failed',
-            'errors': serializer.errors
+            'errors': error_dict
         }, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated], 
