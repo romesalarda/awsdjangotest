@@ -27,7 +27,7 @@ from apps.shop.api.serializers import EventCartMinimalSerializer
 from apps.shop.api.serializers.payment_serializers import ProductPaymentMethodSerializer
 from apps.events.websocket_utils import websocket_notifier, serialize_participant_for_websocket, get_event_supervisors
 from apps.events.email_utils import send_booking_confirmation_email, send_payment_verification_email
-from apps.shop.email_utils import send_payment_verified_email, send_order_update_email
+from apps.shop.email_utils import send_payment_verified_email, send_order_update_email, send_cart_created_by_admin_email
 import threading
 
 #! Remember that service team members are also participants but not all participants are service team members
@@ -2264,6 +2264,17 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
             # Update cart total
             cart.total = total_amount
             cart.save()
+            
+            # Send email notification in background
+            def send_email():
+                try:
+                    send_cart_created_by_admin_email(cart)
+                    print(f"📧 Admin cart creation email queued for cart {cart.order_reference_id}")
+                except Exception as e:
+                    print(f"⚠️ Failed to send admin cart creation email: {e}")
+            
+            email_thread = threading.Thread(target=send_email)
+            email_thread.start()
             
             # Return cart data
             serializer = EventCartMinimalSerializer(cart)

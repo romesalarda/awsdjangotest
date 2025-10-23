@@ -224,7 +224,7 @@ class CommunityUserSerializer(serializers.ModelSerializer):
     For a simplified version and restrictive permissions (e.g. for dropdowns, lists, etc), use SimplifiedCommunityUserSerializer.
     '''
     roles = SimplifiedUserCommunityRoleSerializer(source='role_links', many=True, read_only=True)
-    username = serializers.CharField(required=False)
+    username = serializers.CharField(required=False, read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     short_name = serializers.CharField(source='get_short_name', read_only=True)
     password = serializers.CharField(write_only=True, required=False, style={"input_type": "password"})
@@ -286,6 +286,8 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             'password': {'write_only': True},
             'member_id': {'read_only': True},
             'username': {'read_only': True},
+            'area_from': {'required': False, 'allow_null': True},
+            'gender': {'required': False},
         }
         
         
@@ -416,7 +418,10 @@ class CommunityUserSerializer(serializers.ModelSerializer):
         allergies_data = validated_data.pop('allergies_data', [])
         medical_conditions_data = validated_data.pop('medical_conditions_data', [])
         roles_data = validated_data.pop('roles_data', [])
-        
+        print("validated data", validated_data)
+        if not validated_data.get("secondary_email"):
+            validated_data.pop("secondary_email")
+            
         with transaction.atomic():
             # Create the main user
             user = CommunityUser.objects.create(**validated_data)
@@ -810,7 +815,10 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
 
 class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
     '''
-    Simplified Community User serializer for dropdowns, lists, etc
+    Simplified Community User serializer for dropdowns, lists, and registration.
+    
+    This serializer handles the mapping of 'area' (frontend field) to 'area_from' (model field).
+    Frontend should send 'area' as a UUID string, which will be converted to an AreaLocation instance.
     '''
     first_name = serializers.CharField(required=False)
     last_name = serializers.CharField(required=False)
@@ -818,43 +826,113 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
     gender = serializers.ChoiceField(choices=CommunityUser.GenderType.choices, required=False)
     ministry = serializers.ChoiceField(choices=ReducedMinistryType.choices, required=False)
     area_from_display = serializers.SerializerMethodField()
-    area = serializers.CharField(write_only=True)
-    username = serializers.CharField(required=False)
+    area = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
+    username = serializers.CharField(required=False, read_only=True)
     password = serializers.CharField(required=False, write_only=True, style={"input_type": "password"})
     primary_email = serializers.EmailField(required=False)
 
     class Meta:
         model = CommunityUser
         fields = ('id', 'first_name', 'last_name', 'ministry', 'gender', 'date_of_birth', 'member_id', 'username' ,            
-                  "profile_picture", "area_from_display", "primary_email", "password", "area", "phone_number")
+                  "profile_picture", "area_from_display", "area_from", "primary_email", "password", "area", "phone_number")
+        extra_kwargs = {
+            'area_from': {'read_only': True},  # Read-only, use 'area' for writes
+            'member_id': {'read_only': True},
+        }
 
     def get_area_from_display(self, obj):
-        # return a list of related areas
+        """
+        Return area information with chapter and cluster details.
+        Returns None if user has no area assigned.
+        """
         if obj.area_from:
             return {
                 "area": obj.area_from.area_name,
                 "chapter": obj.area_from.unit.chapter.chapter_name,
-                "cluster":obj.area_from.unit.chapter.cluster.cluster_id,
+                "cluster": obj.area_from.unit.chapter.cluster.cluster_id,
             }
+        return None
+
+    def validate_area(self, value):
+        """
+        Validate and convert area UUID string to AreaLocation instance.
+        Returns None if value is empty/null.
+        """
+        if not value or value == '':
+            return None
+        
+        try:
+            # Import here to avoid circular imports
+            from apps.events.models import AreaLocation
+            area_location = AreaLocation.objects.get(id=value)
+            return area_location
+        except AreaLocation.DoesNotExist:
+            raise serializers.ValidationError(f"Area location with id '{value}' does not exist.")
+        except ValueError:
+            raise serializers.ValidationError(f"Invalid area location id format: '{value}'")
 
     def validate(self, attrs):
-                
+        """
+        Cross-field validation and data transformation.
+        Maps 'area' to 'area_from' for model compatibility.
+        """
+        # Handle area -> area_from mapping
+        if 'area' in attrs:
+            area_value = attrs.pop('area')
+            if area_value is not None:
+                # area_value is already validated and converted to AreaLocation instance
+                attrs['area_from'] = area_value
+            else:
+                attrs['area_from'] = None
+        
+        # Ensure required fields for creation
+        if not self.instance:
+            # Creating a new user
+            if not attrs.get('first_name'):
+                raise serializers.ValidationError({"first_name": "First name is required."})
+            if not attrs.get('last_name'):
+                raise serializers.ValidationError({"last_name": "Last name is required."})
+            if not attrs.get('primary_email'):
+                raise serializers.ValidationError({"primary_email": "Email is required."})
+            if not attrs.get('password'):
+                raise serializers.ValidationError({"password": "Password is required."})
+        
         return attrs
     
     def create(self, validated_data):
-        password = validated_data.pop("password")
+        """
+        Create a new CommunityUser instance.
+        Handles password hashing and automatic username/member_id generation.
+        """
+        # Extract password before creating user
+        password = validated_data.pop('password', None)
         
-        instance = super().create(validated_data)
+        # Create user instance (username and member_id are auto-generated in model.save())
+        instance = CommunityUser.objects.create(**validated_data)
+        
+        # Set password using Django's password hashing
         if password:
             instance.set_password(password)
             instance.save()
+        
         return instance
         
-        
     def update(self, instance, validated_data):
-        # Only update provided fields
+        """
+        Update an existing CommunityUser instance.
+        Only updates provided fields, handles password hashing if password is updated.
+        """
+        # Extract password if being updated
+        password = validated_data.pop('password', None)
+        
+        # Update all other fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        
+        # Handle password update separately with hashing
+        if password:
+            instance.set_password(password)
+        
         instance.save()
         return instance
 

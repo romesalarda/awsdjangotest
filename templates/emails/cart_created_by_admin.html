@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cart Created for You</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .header p {
+            margin: 8px 0 0 0;
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .content {
+            padding: 30px;
+            color: #333333;
+        }
+        .alert-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 0 0 20px 0;
+            border-radius: 4px;
+        }
+        .alert-box p {
+            margin: 0;
+            color: #856404;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .info-section {
+            margin: 20px 0;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            color: #666;
+            font-size: 14px;
+        }
+        .info-value {
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .order-section {
+            margin: 25px 0;
+        }
+        .order-section h2 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        .order-item {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: start;
+        }
+        .product-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 6px;
+            margin-right: 15px;
+            background-color: #e9ecef;
+        }
+        .product-details {
+            flex: 1;
+        }
+        .product-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 15px;
+            margin-bottom: 8px;
+        }
+        .product-meta {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        .product-price {
+            font-weight: 600;
+            color: #667eea;
+            font-size: 16px;
+            margin-top: 8px;
+        }
+        .summary-box {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .summary-row.total {
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+            padding-top: 15px;
+            border-top: 2px solid #dee2e6;
+            margin-top: 10px;
+        }
+        .action-buttons {
+            margin: 30px 0;
+            text-align: center;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            margin: 8px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background-color: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #5568d3;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+        .info-text {
+            background-color: #e7f3ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #004085;
+            line-height: 1.6;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>🛒 Merchandise Cart Created</h1>
+            <p>{{ event_name }}</p>
+        </div>
+        
+        <div class="content">
+            <div class="alert-box">
+                <p><strong>Action Required:</strong> An event organizer has created a merchandise cart for you. Please review the items below and confirm or cancel this order.</p>
+            </div>
+
+            <p style="margin-bottom: 20px;">Hi <strong>{{ user.first_name }}</strong>,</p>
+            
+            <p style="margin-bottom: 20px;">
+                An event organizer has created a merchandise order on your behalf for <strong>{{ event_name }}</strong>. 
+                This cart is now awaiting your confirmation.
+            </p>
+
+            <div class="info-section">
+                <div class="info-row">
+                    <span class="info-label">Order Reference:</span>
+                    <span class="info-value">{{ order_reference }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Event:</span>
+                    <span class="info-value">{{ event_name }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Created:</span>
+                    <span class="info-value">{{ created_date }}</span>
+                </div>
+                {% if shipping_address %}
+                <div class="info-row">
+                    <span class="info-label">Shipping Address:</span>
+                    <span class="info-value">{{ shipping_address }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="order-section">
+                <h2>Order Items</h2>
+                {% for item in order_items %}
+                <div class="order-item">
+                    {% if item.image_url %}
+                    <img src="{{ item.image_url }}" alt="{{ item.product_name }}" class="product-image">
+                    {% else %}
+                    <div class="product-image" style="display: flex; align-items: center; justify-content: center; color: #adb5bd;">
+                        📦
+                    </div>
+                    {% endif %}
+                    <div class="product-details">
+                        <div class="product-name">{{ item.product_name }}</div>
+                        {% if item.size %}
+                        <div class="product-meta">Size: <strong>{{ item.size }}</strong></div>
+                        {% endif %}
+                        <div class="product-meta">Quantity: <strong>{{ item.quantity }}</strong></div>
+                        <div class="product-meta">Unit Price: £{{ item.price_at_purchase }}</div>
+                        <div class="product-price">£{{ item.total_price }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="summary-box">
+                <div class="summary-row">
+                    <span>Subtotal:</span>
+                    <span>£{{ subtotal }}</span>
+                </div>
+                {% if shipping_cost > 0 %}
+                <div class="summary-row">
+                    <span>Shipping:</span>
+                    <span>£{{ shipping_cost }}</span>
+                </div>
+                {% endif %}
+                <div class="summary-row total">
+                    <span>Total:</span>
+                    <span>£{{ total }}</span>
+                </div>
+            </div>
+
+            {% if notes %}
+            <div class="info-text">
+                <strong>Notes from Organizer:</strong><br>
+                {{ notes }}
+            </div>
+            {% endif %}
+
+            <div class="info-text">
+                <strong>What does this mean?</strong><br>
+                An event organizer has pre-selected merchandise for you. This cart is now in your account waiting for your action. 
+                If you believe this was created by mistake, you can cancel this cart. Otherwise, review the items and submit for approval when ready.
+            </div>
+
+            <div class="action-buttons">
+                <p style="margin-bottom: 15px; color: #666; font-size: 14px;">Log in to your account to review and manage this cart</p>
+                <!-- Note: Add actual links when implementing in the system -->
+            </div>
+
+            <p style="margin-top: 30px; color: #666; font-size: 14px;">
+                If you have any questions about this order, please contact the event organizers.
+            </p>
+        </div>
+
+        <div class="footer">
+            <p><strong>Community Event Management System</strong></p>
+            <p>Order Reference: {{ order_reference }}</p>
+            <p>This is an automated message. Please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>

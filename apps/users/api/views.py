@@ -7,11 +7,13 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db import models
+import threading
 
 from .serializers import *
 from apps.events.api.serializers import SimplifiedEventSerializer
 from apps.events.models import Event
 from apps.users.models import CommunityRole
+from apps.users.email_utils import send_welcome_email
 
 class CommunityUserViewSet(viewsets.ModelViewSet):
     '''
@@ -29,6 +31,58 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     
     # TODO: double check read permissions - only logged in user can see the data about themselves and NO ONE else. Superusers can see everything - override Retrieve method
+    
+    def create(self, request, *args, **kwargs):
+        """
+        Override create to send welcome email after successful user registration.
+        Also normalizes error responses for better frontend handling.
+        """
+        # Call parent create method
+        try:
+            response_data = super().create(request, *args, **kwargs)
+        except Exception as e:
+            # Normalize validation errors
+            if hasattr(e, 'detail'):
+                error_dict = {}
+                if isinstance(e.detail, dict):
+                    for field, errors in e.detail.items():
+                        if isinstance(errors, list):
+                            error_dict[field] = errors
+                        else:
+                            error_dict[field] = [str(errors)]
+                else:
+                    error_dict['general'] = [str(e.detail)]
+                
+                return response.Response({
+                    'message': 'Registration failed. Please check the errors below.',
+                    'errors': error_dict
+                }, status=status.HTTP_400_BAD_REQUEST)
+            raise e
+        
+        # Send welcome email in background thread to avoid blocking
+        if response_data.status_code == status.HTTP_201_CREATED:
+            try:
+                # Get the newly created user
+                user_id = response_data.data.get('id')
+                if user_id:
+                    User = get_user_model()
+                    user = User.objects.get(id=user_id)
+                    
+                    # Send email in background
+                    def send_email():
+                        try:
+                            send_welcome_email(user)
+                            print(f"📧 Welcome email queued for user {user.username}")
+                        except Exception as e:
+                            print(f"⚠️ Failed to send welcome email: {e}")
+                    
+                    email_thread = threading.Thread(target=send_email)
+                    email_thread.start()
+            except Exception as e:
+                # Don't fail the request if email fails
+                print(f"⚠️ Error setting up welcome email: {e}")
+        
+        return response_data
         
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], url_name="self", url_path="me")
     def get_self(self, request):
@@ -251,12 +305,13 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
         serializer = SimplifiedCommunityUserSerializer(queryset, many=True)
         return response.Response(serializer.data)
     
-    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], 
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny], 
             url_name="search-areas", url_path="search-areas")
     def search_areas(self, request):
         '''
         Search for area locations by area name, chapter name, or chapter code
         Returns areas with their chapter and cluster information
+        Public endpoint - no authentication required for registration
         '''
         from apps.events.models import AreaLocation, ChapterLocation
         from apps.events.api.serializers import SimplifiedAreaLocationSerializer

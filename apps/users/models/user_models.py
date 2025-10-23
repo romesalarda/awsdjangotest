@@ -62,7 +62,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     last_name = models.CharField(max_length=50,verbose_name=_("last name"))
     middle_name = models.CharField(max_length=50,blank=True, null=True,verbose_name=_("middle name"))
     preferred_name = models.CharField(max_length=50, blank=True, null=True,verbose_name=_("preferred name"))
-    gender = models.CharField(max_length=6, choices=GenderType.choices,  verbose_name=_("gender"))
+    gender = models.CharField(max_length=6, choices=GenderType.choices, blank=True, null=True, verbose_name=_("gender"))
     age = models.IntegerField(blank=True, null=True, validators=[MinValueValidator(0), MaxValueValidator(150)],verbose_name=_("age"))
     date_of_birth = models.DateField(verbose_name=_("date of birth"), blank=True, null=True,  help_text=_("Format: YYYY-MM-DD"))
     
@@ -147,7 +147,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     objects = CommunityUserManager()
 
     USERNAME_FIELD = "username"
-    REQUIRED_FIELDS = ["first_name", "last_name", "password"]
+    REQUIRED_FIELDS = ["first_name", "last_name"]  # Removed password and username from required fields for registration
     
     class Meta:
         verbose_name = _("community user")
@@ -163,7 +163,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         
         # Ensure username is unique
     
-        if not self.username:
+        if not self.username: 
             base_username = slugify(f"{self.ministry}-{self.first_name}{self.last_name}").upper()
             self.username = base_username
         

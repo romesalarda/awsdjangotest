@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to CEMS</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px;
+            color: #333333;
+        }
+        .welcome-message {
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .info-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .info-box strong {
+            color: #667eea;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-box p {
+            margin: 8px 0 0 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        .next-steps {
+            margin: 30px 0;
+        }
+        .next-steps h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .step {
+            display: flex;
+            align-items: start;
+            margin-bottom: 15px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+        }
+        .step-number {
+            background-color: #667eea;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        .step-content {
+            flex: 1;
+        }
+        .step-content strong {
+            color: #333;
+            font-size: 15px;
+        }
+        .step-content p {
+            margin: 5px 0 0 0;
+            color: #666;
+            font-size: 14px;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #667eea;
+            color: white;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 6px;
+            margin: 20px 0;
+            font-weight: 600;
+            transition: background-color 0.3s;
+        }
+        .cta-button:hover {
+            background-color: #5568d3;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>🎉 Welcome to CEMS!</h1>
+        </div>
+        
+        <div class="content">
+            <div class="welcome-message">
+                <p>Hi <strong>{{ user.first_name }}</strong>,</p>
+                <p>Welcome to the Community Event Management System! We're excited to have you join our community. Your account has been successfully created and you're all set to start exploring upcoming events.</p>
+            </div>
+
+            <div class="info-box">
+                <strong>Your Username</strong>
+                <p>{{ user.username }}</p>
+            </div>
+
+            <div class="next-steps">
+                <h2>Next Steps</h2>
+                
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <strong>Complete Your Profile</strong>
+                        <p>Update your profile with important information like contact details, emergency contacts, and medical information. This helps event organizers provide you with the best experience.</p>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <strong>Browse Events</strong>
+                        <p>Visit the main page to discover upcoming events in your community. Filter by event type, date, or location to find events that interest you.</p>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <strong>Register for Events</strong>
+                        <p>Once you find an event you'd like to attend, simply click to register. You'll receive a confirmation email with all the details you need.</p>
+                    </div>
+                </div>
+            </div>
+
+            <p style="margin-top: 30px; color: #666; font-size: 14px;">
+                If you have any questions or need assistance, don't hesitate to reach out to our support team.
+            </p>
+        </div>
+
+        <div class="footer">
+            <p><strong>Community Event Management System</strong></p>
+            <p>This is an automated message. Please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>

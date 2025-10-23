@@ -295,3 +295,106 @@ def send_order_update_email(cart, order, updated_fields):
         import traceback
         print(f"❌ Full traceback: {traceback.format_exc()}")
         return False
+
+
+def send_cart_created_by_admin_email(cart):
+    """
+    Send an email notification when an admin/organizer creates a cart on behalf of a user.
+    
+    Args:
+        cart (EventCart): The cart instance created by admin
+    
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+    try:
+        user = cart.user
+        
+        # Get user email
+        recipient_email = user.primary_email
+        if not recipient_email:
+            print(f"⚠️ No email address for user {user.member_id}")
+            return False
+        
+        # Get all orders with product details
+        orders = cart.orders.select_related('product', 'size').prefetch_related('product__images').all()
+        
+        # Calculate order totals
+        subtotal = 0
+        order_items = []
+        
+        for order in orders:
+            product = order.product
+            unit_price = order.price_at_purchase or product.price
+            line_total = unit_price * order.quantity
+            subtotal += line_total
+            
+            # Get product image URL - AWS S3 compatible
+            product_image_url = None
+            if product.images.exists():
+                first_image = product.images.first()
+                if first_image and first_image.image:
+                    # Get absolute URL for email
+                    product_image_url = first_image.image.url
+                    if not product_image_url.startswith('http'):
+                        # Make it absolute if it's relative
+                        if hasattr(settings, 'AWS_S3_CUSTOM_DOMAIN'):
+                            # AWS S3 URL
+                            product_image_url = f"https://{settings.AWS_S3_CUSTOM_DOMAIN}/{first_image.image.name}"
+                        else:
+                            # Local development URL
+                            base_url = settings.MEDIA_URL
+                            product_image_url = f"{base_url}{first_image.image.name}"
+            
+            order_items.append({
+                'product_name': product.title,
+                'quantity': order.quantity,
+                'price_at_purchase': unit_price,
+                'total_price': line_total,
+                'size': order.size.size if order.size else None,
+                'image_url': product_image_url,
+            })
+        
+        shipping_cost = float(cart.shipping_cost) if cart.shipping_cost else 0
+        total = subtotal + shipping_cost
+        
+        # Prepare context for email template
+        context = {
+            'user': user,
+            'cart': cart,
+            'order_items': order_items,
+            'subtotal': subtotal,
+            'shipping_cost': shipping_cost,
+            'total': total,
+            'order_reference': cart.order_reference_id,
+            'event_name': cart.event.name if cart.event else "Event",
+            'shipping_address': cart.shipping_address,
+            'notes': cart.notes,
+            'created_date': cart.created.strftime('%B %d, %Y at %I:%M %p') if cart.created else "Recently",
+        }
+        
+        # Render email templates
+        subject = f'Cart Created for You - {cart.event.name if cart.event else "Event"}'
+        html_message = render_to_string('emails/cart_created_by_admin.html', context)
+        plain_message = strip_tags(html_message)
+        
+        # Create email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[recipient_email]
+        )
+        email.attach_alternative(html_message, "text/html")
+        
+        # Send email
+        email.send(fail_silently=False)
+        
+        print(f"✅ Admin cart creation email sent to {recipient_email} for cart {cart.order_reference_id}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send admin cart creation email: {e}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        return False
