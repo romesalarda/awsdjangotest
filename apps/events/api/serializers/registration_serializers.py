@@ -318,11 +318,11 @@ class ParticipantQuestionSerializer(serializers.ModelSerializer):
         """
         Ensure required fields are present and valid.
         """
-        if not data.get('question_subject', '').strip():
-            raise serializers.ValidationError("Question subject is required.")
+        # if not data.get('question_subject', '').strip():
+        #     raise serializers.ValidationError("Question subject is required.")
         
-        if not data.get('question', '').strip():
-            raise serializers.ValidationError("Question body is required.")
+        # if not data.get('question', '').strip():
+        #     raise serializers.ValidationError("Question body is required.")
             
         return data
     

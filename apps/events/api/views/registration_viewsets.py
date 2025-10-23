@@ -7,6 +7,8 @@ from apps.events.api.serializers import (
     QuestionAnswerSerializer,
     ParticipantQuestionSerializer
 )
+from apps.events.email_utils import send_participant_question_email, send_question_answer_email
+from django.utils import timezone
 
 
 class ExtraQuestionViewSet(viewsets.ModelViewSet):
@@ -99,3 +101,40 @@ class ParticipantQuestionViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(participant=participant_id)
             
         return queryset
+    
+    def perform_create(self, serializer):
+        """
+        Create a new question and send notification email to organizers.
+        """
+        question = serializer.save()
+        
+        # Send email notification to event organizers
+        try:
+            send_participant_question_email(question)
+        except Exception as e:
+            print(f"⚠️ Failed to send question notification email: {e}")
+    
+    def perform_update(self, serializer):
+        """
+        Update a question. If an answer is provided, send notification email to participant.
+        """
+        # Get the old instance before updating
+        old_instance = self.get_object()
+        old_answer = old_instance.answer
+        
+        # Save the updated instance
+        question = serializer.save()
+        
+        # Check if answer was added or changed
+        if question.answer and question.answer != old_answer:
+            # Set answered_at timestamp if not already set
+            if not question.responded_at:
+                question.responded_at = timezone.now()
+                question.answered_by = self.request.user
+                question.save(update_fields=['responded_at', 'answered_by'])
+            
+            # Send email notification to participant
+            try:
+                send_question_answer_email(question)
+            except Exception as e:
+                print(f"⚠️ Failed to send answer notification email: {e}")

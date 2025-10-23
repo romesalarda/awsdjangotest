@@ -4,10 +4,12 @@ Handles booking confirmations, QR code generation, and participant notifications
 """
 import qrcode
 import io
+import traceback
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.conf import settings
 from django.utils.html import strip_tags
+from datetime import datetime
 
 
 def generate_qr_code(data):
@@ -171,4 +173,153 @@ def send_payment_verification_email(participant):
         
     except Exception as e:
         print(f"❌ Failed to send payment verification email: {e}")
+        return False
+
+
+def send_participant_question_email(participant_question):
+    """
+    Send email to event organizers when a participant submits a question.
+    
+    Args:
+        participant_question (ParticipantQuestion): The participant question instance
+    
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+    try:
+        participant = participant_question.participant
+        event = participant.event
+        user = participant.user
+        
+        # Get organizer emails
+        organizer_emails = []
+        
+        # Add supervising youth heads
+        if event.supervising_youth_heads.exists():
+            for youth_head in event.supervising_youth_heads.all():
+                if youth_head.primary_email:
+                    organizer_emails.append(youth_head.primary_email)
+        
+        # Add supervising CFC coordinators
+        if event.supervising_CFC_coordinators.exists():
+            for coordinator in event.supervising_CFC_coordinators.all():
+                if coordinator.primary_email:
+                    organizer_emails.append(coordinator.primary_email)
+        
+        # Remove duplicates
+        organizer_emails = list(set(organizer_emails))
+        
+        if not organizer_emails:
+            print(f"⚠️ No organizer emails found for event {event.name}")
+            return False
+        
+        # Map priority to CSS class
+        priority_class_map = {
+            'high': 'high',
+            'medium': 'medium',
+            'low': 'low'
+        }
+        
+        # Prepare context for email template
+        context = {
+            'event_name': event.name,
+            'participant_name': user.get_full_name() or user.username,
+            'participant_email': user.primary_email,
+            'event_pax_id': participant.event_pax_id,
+            'question_subject': participant_question.question_subject,
+            'question_body': participant_question.question,
+            'question_type': participant_question.questions_type,
+            'priority': participant_question.priority,
+            'priority_class': priority_class_map.get(participant_question.priority, 'low'),
+            'submitted_at': participant_question.submitted_at.strftime('%B %d, %Y at %I:%M %p'),
+            'year': datetime.now().year,
+        }
+        
+        # Render email templates
+        subject = f'New Question from {user.get_full_name() or user.username} - {event.name}'
+        html_message = render_to_string('emails/participant_question_submitted.html', context)
+        plain_message = strip_tags(html_message)
+        
+        # Create email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=organizer_emails
+        )
+        email.attach_alternative(html_message, "text/html")
+        
+        # Send email
+        email.send(fail_silently=False)
+        
+        print(f"✅ Question notification email sent to {len(organizer_emails)} organizers for question #{participant_question.id}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send participant question email: {e}")
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        return False
+
+
+def send_question_answer_email(participant_question):
+    """
+    Send email to participant when an organizer answers their question.
+    
+    Args:
+        participant_question (ParticipantQuestion): The participant question instance with answer
+    
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+    try:
+        participant = participant_question.participant
+        event = participant.event
+        user = participant.user
+        
+        # Get participant email
+        recipient_email = user.primary_email
+        if not recipient_email:
+            print(f"⚠️ No email address for participant {participant.event_pax_id}")
+            return False
+        
+        # Get answered by user's name
+        answered_by_name = "Event Organizer"
+        if participant_question.answered_by:
+            answered_by_name = participant_question.answered_by.get_full_name() or participant_question.answered_by.username
+        
+        # Prepare context for email template
+        context = {
+            'event_name': event.name,
+            'participant_name': user.get_full_name() or user.username,
+            'question_subject': participant_question.question_subject,
+            'question_body': participant_question.question,
+            'answer': participant_question.answer,
+            'answered_by': answered_by_name,
+            'responded_at': participant_question.responded_at.strftime('%B %d, %Y at %I:%M %p') if participant_question.responded_at else datetime.now().strftime('%B %d, %Y at %I:%M %p'),
+            'year': datetime.now().year,
+        }
+        
+        # Render email templates
+        subject = f'Your Question Has Been Answered - {event.name}'
+        html_message = render_to_string('emails/participant_question_answered.html', context)
+        plain_message = strip_tags(html_message)
+        
+        # Create email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[recipient_email]
+        )
+        email.attach_alternative(html_message, "text/html")
+        
+        # Send email
+        email.send(fail_silently=False)
+        
+        print(f"✅ Question answer email sent to {recipient_email} for question #{participant_question.id}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send question answer email: {e}")
+        print(f"❌ Full traceback: {traceback.format_exc()}")
         return False

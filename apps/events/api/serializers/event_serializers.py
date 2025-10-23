@@ -1429,6 +1429,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
     
     # Product orders (to match WebSocket data)
     product_orders = serializers.SerializerMethodField()
+    questions_asked = serializers.SerializerMethodField()
 
     class Meta:
         model = EventParticipant
@@ -1453,6 +1454,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             "check_out_time",
             "attendance_records",
             "product_orders",
+            "questions_asked"
         ]
         read_only_fields = fields
 
@@ -1869,6 +1871,9 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             })
         return orders_data
 
+    def get_questions_asked(self, obj):
+        return ParticipantQuestionSerializer(obj.participant_questions, many=True).data
+    
     def to_representation(self, instance):
         """Override to use custom field getters"""
         return {
@@ -1892,6 +1897,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             "check_out_time": self.get_check_out_time(instance),
             "attendance_records": self.get_attendance_records(instance),
             "product_orders": self.get_product_orders(instance),
+            "questions_asked": self.get_questions_asked(instance)
         }
         
 class EventDayAttendanceSerializer(serializers.ModelSerializer): #! used for future reference, not currently implemented

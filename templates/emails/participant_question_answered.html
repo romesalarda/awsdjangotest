@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Question Has Been Answered</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 10px 10px 0 0;
+        }
+        .content {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 0 0 10px 10px;
+        }
+        .info-box {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border-left: 4px solid #4caf50;
+        }
+        .label {
+            font-weight: bold;
+            color: #4caf50;
+            margin-bottom: 5px;
+        }
+        .value {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .question-box {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .answer-box {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #4caf50;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #4caf50;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>✓ Your Question Has Been Answered</h1>
+        <p>{{ event_name }}</p>
+    </div>
+    
+    <div class="content">
+        <p>Hello {{ participant_name }},</p>
+        
+        <p>Great news! The event organizers have responded to your question.</p>
+        
+        <div class="info-box">
+            <div class="label">Your Question</div>
+            <div class="value"><strong>{{ question_subject }}</strong></div>
+            
+            <div class="label">Asked on</div>
+            <div class="value">{{ submitted_at }}</div>
+            
+            <div class="label">Answered by</div>
+            <div class="value">{{ answered_by }} on {{ responded_at }}</div>
+        </div>
+        
+        <div class="question-box">
+            <div class="label">Your Question:</div>
+            <p>{{ question_body }}</p>
+        </div>
+        
+        <div class="answer-box">
+            <div class="label">Organizer's Response:</div>
+            <p>{{ answer }}</p>
+        </div>
+        
+        <p>If you have any additional questions or need further clarification, please don't hesitate to reach out to us.</p>
+        
+        <center>
+            <a href="{{ event_url }}" class="button">View Event Details</a>
+        </center>
+        
+        <div class="footer">
+            <p>This is an automated notification from the CFC Event Management System.</p>
+            <p>If you have any concerns, please contact the event organizers directly.</p>
+            <p>© {{ year }} CFC Youth. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

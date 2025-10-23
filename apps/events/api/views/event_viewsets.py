@@ -1584,6 +1584,188 @@ class EventViewSet(viewsets.ModelViewSet):
             })
 
         
+    @action(detail=True, methods=["GET"], url_name="questions-asked", url_path="questions-asked")
+    def questions_asked(self, request, id=None):
+        """
+        Get participant questions for a specific event with same filtering as participants.
+        Supports the same filter parameters as the participants endpoint.
+        """
+        try:
+            from apps.events.models import ParticipantQuestion
+            from apps.events.api.serializers.registration_serializers import ParticipantQuestionSerializer
+            
+            # Get the current event
+            event = self.get_object()
+            
+            query_params = []
+            
+            # Enhanced search functionality
+            search = request.query_params.get("search")
+            if search:
+                search_upper = search.upper()
+                query_params.append(
+                    Q(participant__user__first_name__icontains=search) |
+                    Q(participant__user__last_name__icontains=search) |
+                    Q(participant__user__primary_email__icontains=search) |
+                    Q(participant__event_pax_id__icontains=search_upper) |
+                    Q(question_subject__icontains=search) |
+                    Q(question__icontains=search)
+                )
+            
+            # Identity filter
+            identity = request.query_params.get("identity")
+            if identity:
+                identity_upper = identity.upper()
+                query_params.append(
+                    Q(participant__user__first_name__icontains=identity) |
+                    Q(participant__user__last_name__icontains=identity) |
+                    Q(participant__user__primary_email__icontains=identity) |
+                    Q(participant__event_pax_id__icontains=identity_upper)
+                )
+            
+            # Area filtering
+            areas = request.query_params.getlist("area")
+            if areas:
+                area_queries = []
+                for area in areas:
+                    if area and area.strip():
+                        area_queries.append(
+                            Q(participant__user__area_from__area_name__icontains=area) |
+                            Q(participant__user__area_from__area_code__icontains=area)
+                        )
+                if area_queries:
+                    from functools import reduce
+                    import operator
+                    query_params.append(reduce(operator.or_, area_queries))
+                
+            # Chapter filtering
+            chapters = request.query_params.getlist("chapter")
+            if chapters:
+                chapter_queries = []
+                for chapter in chapters:
+                    if chapter and chapter.strip():
+                        chapter_queries.append(Q(participant__user__area_from__unit__chapter__chapter_name__icontains=chapter))
+                if chapter_queries:
+                    from functools import reduce
+                    import operator
+                    query_params.append(reduce(operator.or_, chapter_queries))
+                
+            # Cluster filtering
+            clusters = request.query_params.getlist("cluster")
+            if clusters:
+                cluster_queries = []
+                for cluster in clusters:
+                    if cluster and cluster.strip():
+                        cluster_queries.append(Q(participant__user__area_from__unit__chapter__cluster__cluster_id__icontains=cluster))
+                if cluster_queries:
+                    from functools import reduce
+                    import operator
+                    query_params.append(reduce(operator.or_, cluster_queries))
+            
+            # Status filter (for participant questions)
+            status_filter = request.query_params.get("question_status")
+            if status_filter:
+                status_upper = status_filter.upper()
+                if status_upper in ['PENDING', 'ANSWERED', 'CLOSED']:
+                    query_params.append(Q(status__iexact=status_upper))
+            
+            # Priority filter
+            priority = request.query_params.get("priority")
+            if priority:
+                priority_upper = priority.upper()
+                if priority_upper in ['LOW', 'MEDIUM', 'HIGH']:
+                    query_params.append(Q(priority__iexact=priority_upper))
+            
+            # Question type filter
+            question_type = request.query_params.get("questions_type")
+            if question_type:
+                type_upper = question_type.upper()
+                if type_upper in ['GENERAL', 'CHANGE_REQUEST', 'OTHER']:
+                    query_params.append(Q(questions_type__iexact=type_upper))
+            
+            # Participant status filter (to match participant filtering)
+            participant_status = request.query_params.get("status")
+            if participant_status:
+                status_upper = participant_status.upper()
+                if status_upper in ['REGISTERED', 'CONFIRMED', 'CANCELLED']:
+                    query_params.append(Q(participant__status__iexact=status_upper))
+            
+            # Base queryset with optimized joins
+            questions = ParticipantQuestion.objects.filter(event=event).select_related(
+                'participant', 
+                'participant__user', 
+                'participant__user__area_from',
+                'answered_by'
+            ).prefetch_related(
+                'participant__user__area_from__unit__chapter__cluster'
+            )
+            
+            # Apply filters
+            if query_params:
+                from functools import reduce
+                import operator
+                questions = questions.filter(reduce(operator.and_, query_params))
+            
+            # Order by most recent first
+            questions = questions.order_by('-submitted_at')
+            
+            # Pagination
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 25))
+            
+            from django.core.paginator import Paginator
+            paginator = Paginator(questions, page_size)
+            page_obj = paginator.get_page(page)
+            
+            # Serialize with enhanced details
+            serializer = ParticipantQuestionSerializer(page_obj.object_list, many=True)
+            
+            # Enhance with participant details
+            enhanced_data = []
+            for question_data in serializer.data:
+                question_obj = questions.get(id=question_data['id'])
+                participant = question_obj.participant
+                
+                enhanced_data.append({
+                    **question_data,
+                    'participant_details': {
+                        'event_pax_id': participant.event_pax_id,
+                        'participant_name': participant.user.get_full_name(),
+                        'participant_email': participant.user.primary_email,
+                        'participant_type': participant.participant_type,
+                        'participant_status': participant.status
+                    },
+                    'event_name': event.name
+                })
+            
+            return Response({
+                'questions_asked': enhanced_data,
+                'pagination': {
+                    'current_page': page,
+                    'total_pages': paginator.num_pages,
+                    'total_count': paginator.count,
+                    'page_size': page_size,
+                    'has_next': page_obj.has_next(),
+                    'has_previous': page_obj.has_previous()
+                }
+            })
+            
+        except Exception as e:
+            print(f"❌ Error getting questions asked: {e}")
+            import traceback
+            traceback.print_exc()
+            return Response({
+                'questions_asked': [],
+                'pagination': {
+                    'current_page': 1,
+                    'total_pages': 0,
+                    'total_count': 0,
+                    'page_size': 25
+                },
+                'error': str(e)
+            }, status=500)
+
+        
 
 class EventServiceTeamMemberViewSet(viewsets.ModelViewSet):
     '''
