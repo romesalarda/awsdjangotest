@@ -2472,6 +2472,107 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to cancel order: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @action(detail=True, methods=['delete'], url_name="remove-participant", url_path="remove-participant")
+    def remove_participant_from_event(self, request, event_pax_id=None):
+        '''
+        Remove a participant from the event.
+        Requires a reason for removal and confirmation.
+        Sends an email notification to the participant about the removal.
+        
+        Expected payload:
+        {
+            "reason": "Reason for removal",
+            "confirmation_name": "Participant Full Name"
+        }
+        '''
+        participant = self.get_object()
+        data = request.data
+        
+        # Validate required fields
+        reason = data.get('reason', '').strip()
+        confirmation_name = data.get('confirmation_name', '').strip()
+        
+        if not reason:
+            return Response(
+                {'error': _('A reason for removal is required.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not confirmation_name:
+            return Response(
+                {'error': _('Confirmation name is required.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate confirmation name matches participant name
+        participant_full_name = f"{participant.user.first_name} {participant.user.last_name}"
+        if confirmation_name.lower() != participant_full_name.lower():
+            return Response(
+                {'error': _('Confirmation name does not match participant name.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Calculate payment totals for refund notification
+        from decimal import Decimal
+        
+        # Get all event registration payments
+        event_payments = participant.participant_event_payments.all()
+        event_payment_total = sum(
+            payment.amount for payment in event_payments 
+            if payment.status == EventPayment.PaymentStatus.SUCCEEDED
+        ) or Decimal('0.00')
+        
+        # Get all product/merchandise payments for this event
+        product_payments = ProductPayment.objects.filter(
+            user=participant.user, 
+            cart__event=participant.event,
+            status=ProductPayment.PaymentStatus.SUCCEEDED
+        )
+        product_payment_total = sum(
+            payment.amount for payment in product_payments
+        ) or Decimal('0.00')
+        
+        # Calculate total amount
+        total_amount = event_payment_total + product_payment_total
+        has_payments = total_amount > 0
+        
+        # Prepare payment details for email
+        payment_details = {
+            'has_payments': has_payments,
+            'event_payment_total': event_payment_total,
+            'product_payment_total': product_payment_total,
+            'total_amount': total_amount,
+        }
+        
+        # Send removal notification email
+        try:
+            from apps.events.email_utils import send_participant_removal_email
+            email_sent = send_participant_removal_email(
+                participant=participant,
+                reason=reason,
+                payment_details=payment_details
+            )
+            if email_sent:
+                print(f"📧 Participant removal email sent to {participant.user.primary_email}")
+            else:
+                print(f"⚠️ Participant has no email address, proceeding with removal without notification")
+        except Exception as e:
+            print(f"⚠️ Failed to send removal email: {e}")
+            # Don't fail the removal if email fails
+        
+        # Store participant info before deletion for response
+        participant_name = participant_full_name
+        event_name = participant.event.name
+        
+        # Delete the participant
+        participant.delete()
+        
+        return Response({
+            'message': f'{participant_name} has been removed from {event_name}.',
+            'had_payments': has_payments,
+            'total_refund_amount': float(total_amount) if has_payments else 0
+        }, status=status.HTTP_200_OK)
 
 class EventTalkViewSet(viewsets.ModelViewSet):
     '''

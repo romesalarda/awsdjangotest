@@ -323,3 +323,87 @@ def send_question_answer_email(participant_question):
         print(f"❌ Failed to send question answer email: {e}")
         print(f"❌ Full traceback: {traceback.format_exc()}")
         return False
+
+
+def send_participant_removal_email(participant, reason, payment_details):
+    """
+    Send email to participant when they are removed from an event.
+    
+    Args:
+        participant (EventParticipant): The participant instance being removed
+        reason (str): Reason for removal provided by event organizer
+        payment_details (dict): Dictionary containing payment information:
+            - has_payments (bool): Whether participant has made any payments
+            - event_payment_total (Decimal): Total amount paid for event registration
+            - product_payment_total (Decimal): Total amount paid for merchandise
+            - total_amount (Decimal): Total amount paid overall
+    
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+    try:
+        event = participant.event
+        user = participant.user
+        
+        # Get participant email
+        recipient_email = user.primary_email
+        if not recipient_email:
+            print(f"⚠️ No email address for participant {participant.event_pax_id}")
+            print(f"   Participant will be removed without email notification")
+            return False
+        
+        # Get event organizer email (will be used as contact for refunds)
+        organizer_emails = []
+        if event.supervising_youth_heads.exists():
+            for youth_head in event.supervising_youth_heads.all():
+                if youth_head.primary_email:
+                    organizer_emails.append(youth_head.primary_email)
+        
+        if event.supervising_CFC_coordinators.exists():
+            for coordinator in event.supervising_CFC_coordinators.all():
+                if coordinator.primary_email:
+                    organizer_emails.append(coordinator.primary_email)
+        
+        # Use first organizer email or fallback
+        organizer_contact_email = organizer_emails[0] if organizer_emails else settings.DEFAULT_FROM_EMAIL
+        
+        # Prepare context for email template
+        context = {
+            'participant_name': user.get_full_name() or user.username,
+            'event_name': event.name,
+            'event_start_date': event.start_date,
+            'event_end_date': event.end_date,
+            'reason': reason,
+            'has_payments': payment_details.get('has_payments', False),
+            'event_payment_total': payment_details.get('event_payment_total', 0),
+            'product_payment_total': payment_details.get('product_payment_total', 0),
+            'total_amount': payment_details.get('total_amount', 0),
+            'organizer_email': organizer_contact_email,
+            'year': datetime.now().year,
+        }
+        
+        # Render email templates
+        subject = f'Registration Removed - {event.name}'
+        html_message = render_to_string('emails/participant_removal.html', context)
+        plain_message = strip_tags(html_message)
+        
+        # Create email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[recipient_email]
+        )
+        email.attach_alternative(html_message, "text/html")
+        
+        # Send email
+        email.send(fail_silently=False)
+        
+        print(f"✅ Participant removal email sent to {recipient_email}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send participant removal email: {e}")
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        return False
+
