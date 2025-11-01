@@ -128,7 +128,9 @@
 <body>
     <div class="email-container">
         <div class="header">
+            <img src="{{ logo_url|default:'https://via.placeholder.com/80' }}" alt="YFC Logo" style="max-width: 80px; height: auto; margin-bottom: 10px;">
             <h1>🎉 Welcome to CEMS!</h1>
+            <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Catholic Events Management System</p>
         </div>
         
         <div class="content">
@@ -176,8 +178,15 @@
         </div>
 
         <div class="footer">
-            <p><strong>Community Event Management System</strong></p>
-            <p>This is an automated message. Please do not reply to this email.</p>
+            <p><strong>CEMS - Catholic Events Management System</strong></p>
+            <p>Youth For Christ | Building communities of faith and fellowship</p>
+            <p style="margin-top: 10px; font-size: 12px; color: #999;">
+                You received this email because you registered for a CEMS account.<br>
+                If you have any questions, contact us at <a href="mailto:support@cems.org" style="color: #667eea;">support@cems.org</a>
+            </p>
+            <p style="margin-top: 10px; font-size: 11px; color: #aaa;">
+                © {{ current_year|default:'2025' }} CEMS. All rights reserved.
+            </p>
         </div>
     </div>
 </body>

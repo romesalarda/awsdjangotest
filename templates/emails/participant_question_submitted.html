@@ -88,7 +88,9 @@
 </head>
 <body>
     <div class="header">
+        <img src="{{ logo_url|default:'https://via.placeholder.com/80' }}" alt="YFC Logo" style="max-width: 60px; height: auto; margin-bottom: 8px;">
         <h1>New Participant Question</h1>
+        <p style="margin: 5px 0 0 0; font-size: 13px; opacity: 0.9;">Catholic Events Management System</p>
         <p>{{ event_name }}</p>
     </div>
     
@@ -132,8 +134,10 @@
         </center>
         
         <div class="footer">
-            <p>This is an automated notification from the CFC Event Management System.</p>
-            <p>© {{ year }} CFC Youth. All rights reserved.</p>
+            <p><strong>CEMS - Catholic Events Management System</strong></p>
+            <p>Youth For Christ | Building communities of faith and fellowship</p>
+            <p style="margin-top: 10px; font-size: 12px;">This is an automated notification.</p>
+            <p style="font-size: 11px; color: #999;">© {{ current_year|default:"now"|date:"Y" }} CEMS. All rights reserved.</p>
         </div>
     </div>
 </body>

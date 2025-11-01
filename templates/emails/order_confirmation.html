@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -242,7 +243,9 @@
 <body>
     <div class="container">
         <div class="header">
+            <img src="{{ logo_url|default:'https://via.placeholder.com/80' }}" alt="YFC Logo" style="max-width: 80px; height: auto; margin-bottom: 10px;">
             <h1>🛍️ Order Confirmed!</h1>
+            <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Catholic Events Management System</p>
             <p style="margin: 10px 0 0 0; font-size: 16px;">{{ event_name }}</p>
         </div>
         
@@ -409,11 +412,14 @@
         </div>
         
         <div class="footer">
-            <p style="margin: 0;">
-                This is an automated message. Please do not reply to this email.
-            </p>
+            <p style="margin: 0;"><strong>CEMS - Catholic Events Management System</strong></p>
+            <p style="margin: 5px 0;">Youth For Christ | Building communities of faith and fellowship</p>
             <p style="margin: 10px 0 0 0; font-size: 12px;">
-                © {{ "now"|date:"Y" }} CEMS. All rights reserved.
+                You received this email because you placed an order.<br>
+                If you have any questions, contact us at <a href="mailto:support@cems.org" style="color: #00c9ff; text-decoration: none;">support@cems.org</a>
+            </p>
+            <p style="margin: 10px 0 0 0; font-size: 11px; color: #999;">
+                © {{ current_year|default:"now"|date:"Y" }} CEMS. All rights reserved.
             </p>
         </div>
     </div>
