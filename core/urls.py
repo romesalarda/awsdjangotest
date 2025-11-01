@@ -5,7 +5,13 @@ from django.urls import path, include, re_path
 from django.conf.urls.static import static
 from django.conf import settings
 
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+# Import secure authentication views instead of default JWT views
+from apps.users.api.auth_views import (
+    SecureTokenObtainView,
+    SecureTokenRefreshView,
+    SecureLogoutView,
+    CSRFTokenView,
+)
 
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -40,10 +46,15 @@ MAIN URL PATTERNS
 urlpatterns = [
     path("admin/", admin.site.urls),
 
-    # path("location-admin/", LocationSite(name="location-admin").urls),
-    # Your existing API endpoints
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # Secure Authentication Endpoints (HTTPOnly Cookie-based)
+    path('api/auth/login/', SecureTokenObtainView.as_view(), name='auth_login'),
+    path('api/auth/refresh/', SecureTokenRefreshView.as_view(), name='auth_refresh'),
+    path('api/auth/logout/', SecureLogoutView.as_view(), name='auth_logout'),
+    path('api/auth/csrf/', CSRFTokenView.as_view(), name='auth_csrf'),
+    
+    # Legacy token endpoints (deprecated - redirect to new secure endpoints)
+    path('api/token/', SecureTokenObtainView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', SecureTokenRefreshView.as_view(), name='token_refresh'),
     
     path('api/location/', include(location_router.urls)),
     path('api/roles/', include(role_router.urls)),

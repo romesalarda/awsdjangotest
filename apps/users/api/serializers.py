@@ -855,7 +855,7 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
 
     def validate_area(self, value):
         """
-        Validate and convert area UUID string to AreaLocation instance.
+        Validate and convert area identifier (UUID or name) to AreaLocation instance.
         Returns None if value is empty/null.
         """
         if not value or value == '':
@@ -864,12 +864,23 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
         try:
             # Import here to avoid circular imports
             from apps.events.models import AreaLocation
-            area_location = AreaLocation.objects.get(id=value)
-            return area_location
+            import uuid
+            
+            # Try to parse as UUID first
+            try:
+                uuid.UUID(value)
+                # It's a valid UUID, look up by ID
+                area_location = AreaLocation.objects.get(id=value)
+                return area_location
+            except (ValueError, TypeError):
+                # Not a UUID, try looking up by area_name
+                area_location = AreaLocation.objects.get(area_name__iexact=value)
+                return area_location
+                
         except AreaLocation.DoesNotExist:
-            raise serializers.ValidationError(f"Area location with id '{value}' does not exist.")
-        except ValueError:
-            raise serializers.ValidationError(f"Invalid area location id format: '{value}'")
+            raise serializers.ValidationError(f"Area location '{value}' does not exist.")
+        except Exception as e:
+            raise serializers.ValidationError(f"Error validating area: {str(e)}")
 
     def validate(self, attrs):
         """
@@ -885,8 +896,8 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
             else:
                 attrs['area_from'] = None
         
-        # Ensure required fields for creation
-        if not self.instance:
+        # Ensure required fields for creation only (not for updates/partial updates)
+        if not self.instance and not self.partial:
             # Creating a new user
             if not attrs.get('first_name'):
                 raise serializers.ValidationError({"first_name": "First name is required."})

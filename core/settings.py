@@ -269,49 +269,61 @@ else:
     MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ],
-}
+# JWT Authentication Settings moved to REST_FRAMEWORK below
 
-from datetime import timedelta
-
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-}
-
-## USE WHEN TLS/SSL SETUP IS COMPLETE
+## SECURITY SETTINGS - PRODUCTION & DEVELOPMENT
 
 if not DEBUG:
+    # Production HTTPS settings
     CSRF_TRUSTED_ORIGINS = [
         'https://rsalardadevelop.com',
         'https://www.rsalardadevelop.com',
     ]
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # For Cloudflare/Proxy
-    SECURE_SSL_REDIRECT = True  # Force HTTPSs
+    CORS_ALLOWED_ORIGINS = [
+        'https://rsalardadevelop.com',
+        'https://www.rsalardadevelop.com',
+    ]
+    CORS_ALLOW_CREDENTIALS = True  # Required for HTTPOnly cookies
+    
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    
 else:
+    # Development settings
     CSRF_TRUSTED_ORIGINS = [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
     ]
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:3000',
+        'http://127.0.0.1:3000',
     ]
+    CORS_ALLOW_CREDENTIALS = True  # Required for HTTPOnly cookies
+
+# CORS Headers Configuration
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',  # Important for CSRF protection
+    'x-requested-with',
+]
 
 
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,  # items per page
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        # 'rest_framework_simplejwt.authentication.JWTStatelessUserAuthentication',
-
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Custom JWT Cookie Authentication (HTTPOnly cookies)
+        'core.authentication.JWTCookieAuthentication',
+        # Fallback to session authentication for admin
         "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.TokenAuthentication",
     ),
     # WARNING - THIS PERMISSION MUST BE SET TO 'IS_AUTHENTICATED' DURING PRODUCTION TO PROTECT ENDPOINTS
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.AllowAny",),
@@ -321,12 +333,12 @@ REST_FRAMEWORK = {
 import datetime
 
 SIMPLE_JWT = {
-    # WARNING CHANGE ACCESS TOKEN TO BE SHORTER
-    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(minutes=100),
-    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=1),
+    # Shorter access token lifetime for security
+    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
-    'UPDATE_LAST_LOGIN': False,
+    'UPDATE_LAST_LOGIN': True,
 
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
@@ -336,7 +348,7 @@ SIMPLE_JWT = {
     'JWK_URL': None,
     'LEEWAY': 0,
 
-    'AUTH_HEADER_TYPES': ('Bearer','JWT'),
+    'AUTH_HEADER_TYPES': ('Bearer',),  # Removed JWT type as we're using cookies
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
@@ -352,6 +364,20 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_LIFETIME': datetime.timedelta(minutes=5),
     'SLIDING_TOKEN_REFRESH_LIFETIME': datetime.timedelta(days=1),
 }
+
+# CSRF Settings for production security
+CSRF_COOKIE_HTTPONLY = False  # Must be False so JavaScript can read it for CSRF header
+CSRF_COOKIE_SECURE = not DEBUG  # Only send over HTTPS in production
+CSRF_COOKIE_SAMESITE = 'Strict'  # Prevent CSRF attacks
+CSRF_COOKIE_NAME = 'csrftoken'
+CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
+CSRF_USE_SESSIONS = False
+CSRF_COOKIE_AGE = 31449600  # 1 year
+
+# Session cookie settings (for admin)
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = 'Strict'
 
 # Email Configuration
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')

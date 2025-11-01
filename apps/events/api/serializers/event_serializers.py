@@ -1199,14 +1199,11 @@ class EventParticipantSerializer(serializers.ModelSerializer):
 
         # uses full version serialiser, take user informatin and update the user record if they want to override their existing data
         with transaction.atomic():
-            area = user_data.pop("area", None)
+            # Don't pop 'area' - let SimplifiedCommunityUserSerializer handle it
+            # It expects 'area' as UUID and will convert to area_from
             user_serializer = SimplifiedCommunityUserSerializer(user, data=user_data, partial=True) # used for restrictive updates
             user_serializer.is_valid(raise_exception=True)
             updated_user = user_serializer.save()
-            if area:
-                area = get_object_or_404(AreaLocation, area_name=area)
-                updated_user.area_from = area
-                updated_user.save()
 
             # Track user field changes
             for field, value in user_data.items():
