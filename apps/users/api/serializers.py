@@ -897,7 +897,11 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
                 attrs['area_from'] = None
         
         # Ensure required fields for creation only (not for updates/partial updates)
-        if not self.instance and not self.partial:
+        # Only validate for new user creation - skip if instance exists (update) or partial=True
+        # Also skip if this serializer is being used as a nested field (parent context exists)
+        is_nested_update = self.parent is not None and self.instance is not None
+        
+        if not self.instance and not self.partial and not is_nested_update:
             # Creating a new user
             if not attrs.get('first_name'):
                 raise serializers.ValidationError({"first_name": "First name is required."})
@@ -905,8 +909,8 @@ class SimplifiedCommunityUserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"last_name": "Last name is required."})
             if not attrs.get('primary_email'):
                 raise serializers.ValidationError({"primary_email": "Email is required."})
-            if not attrs.get('password'):
-                raise serializers.ValidationError({"password": "Password is required."})
+            # if not attrs.get('password'):
+            #     raise serializers.ValidationError({"password": "Password is required."})
         
         return attrs
     

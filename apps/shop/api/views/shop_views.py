@@ -252,7 +252,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
             cart.active = False
             cart.total = calculated_total  # Ensure total is correctly set
             cart.save()
-            
+                        
             # For non-Stripe payments, they might need manual approval
             if payment_method.method == ProductPaymentMethod.MethodType.STRIPE:
                 # Stripe payments will be handled by webhook/frontend

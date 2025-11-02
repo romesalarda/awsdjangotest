@@ -1,7 +1,7 @@
 from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from apps.shop.models.payments import ProductPaymentMethod, ProductPaymentPackage, ProductPayment
+from apps.shop.models.payments import ProductPaymentMethod, ProductPaymentPackage, ProductPayment, EventProductOrder
 from apps.shop.api.serializers.payment_serializers import (
     ProductPaymentMethodSerializer,
     ProductPaymentPackageSerializer,
@@ -81,6 +81,11 @@ class ProductPaymentViewSet(viewsets.ModelViewSet):
         payment.approved = True
         payment.mark_as_paid()
         payment.save()
+        
+        # todo: all orders must be set to approved as well
+        for order in payment.cart.orders.all():
+            order.status = EventProductOrder.Status.PURCHASED
+            order.save()
         
         # Send confirmation email in background
         def send_email():

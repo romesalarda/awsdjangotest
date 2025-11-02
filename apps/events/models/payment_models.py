@@ -156,7 +156,7 @@ class EventPayment(models.Model):
         SUCCEEDED = "SUCCEEDED", _("Succeeded")
         FAILED = "FAILED", _("Failed")
 
-    user = models.ForeignKey(EventParticipant, on_delete=models.CASCADE, related_name="participant_event_payments")
+    user = models.ForeignKey(EventParticipant, on_delete=models.SET_NULL, related_name="participant_event_payments", null=True)
     event = models.ForeignKey("Event", on_delete=models.SET_NULL, null=True, blank=True, related_name="event_payments")
     # used for customer reference and tracking
     event_payment_tracking_number = models.CharField(

@@ -78,6 +78,7 @@ class EventProductOrderAdmin(admin.ModelAdmin):
     list_filter = ("status", "product", "cart")
     search_fields = ("product__title", "cart__user__email")
     ordering = ("-added",)
+    readonly_fields = ("id",)
     
 @admin.register(ProductSize)
 class ProductSizeAdmin(admin.ModelAdmin):
