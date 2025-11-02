@@ -224,3 +224,163 @@ class EventPayment(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.event} - {self.get_status_display()}"
+
+
+class ParticipantRefund(models.Model):
+    """
+    Tracks refunds owed to participants who have been cancelled/removed from events.
+    Provides a clear audit trail for financial reconciliation.
+    """
+    
+    class RefundStatus(models.TextChoices):
+        PENDING = "PENDING", _("Pending Processing")
+        IN_PROGRESS = "IN_PROGRESS", _("In Progress")
+        PROCESSED = "PROCESSED", _("Refund Processed")
+        CANCELLED = "CANCELLED", _("Refund Cancelled")
+    
+    # Core relationships
+    participant = models.ForeignKey(
+        EventParticipant,
+        on_delete=models.CASCADE,
+        related_name="refunds",
+        verbose_name=_("participant")
+    )
+    event = models.ForeignKey(
+        "Event",
+        on_delete=models.CASCADE,
+        related_name="participant_refunds",
+        verbose_name=_("event")
+    )
+    
+    # Refund tracking
+    refund_reference = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name=_("refund reference"),
+        help_text=_("Unique identifier for this refund"),
+        blank=True
+    )
+    
+    # Financial details
+    event_payment_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00,
+        verbose_name=_("event registration refund amount"),
+        help_text=_("Amount to refund for event registration")
+    )
+    product_payment_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00,
+        verbose_name=_("merchandise refund amount"),
+        help_text=_("Amount to refund for merchandise purchases")
+    )
+    total_refund_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name=_("total refund amount"),
+        help_text=_("Total amount to be refunded")
+    )
+    currency = models.CharField(max_length=10, default="gbp")
+    
+    # Status and tracking
+    status = models.CharField(
+        max_length=20,
+        choices=RefundStatus.choices,
+        default=RefundStatus.PENDING,
+        verbose_name=_("refund status")
+    )
+    
+    # Removal details
+    removal_reason = models.TextField(
+        verbose_name=_("reason for removal"),
+        help_text=_("Reason provided when participant was removed from event")
+    )
+    removed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="refunds_initiated",
+        verbose_name=_("removed by")
+    )
+    
+    # Refund processing details
+    processed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="refunds_processed",
+        verbose_name=_("processed by")
+    )
+    processing_notes = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("processing notes"),
+        help_text=_("Internal notes about refund processing")
+    )
+    
+    # Contact information (cached for reference)
+    participant_email = models.EmailField(
+        blank=True,
+        null=True,
+        verbose_name=_("participant email"),
+        help_text=_("Email address at time of removal")
+    )
+    organizer_contact_email = models.EmailField(
+        verbose_name=_("organizer contact email"),
+        help_text=_("Email address for refund inquiries")
+    )
+    
+    # Payment method details (for refund processing)
+    original_payment_method = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_("original payment method"),
+        help_text=_("Payment method used for original transaction")
+    )
+    refund_method = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_("refund method"),
+        help_text=_("Method used to process refund")
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("updated at"))
+    processed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("processed at"),
+        help_text=_("Date and time when refund was marked as processed")
+    )
+    
+    def save(self, *args, **kwargs):
+        # Auto-generate refund reference if not set
+        if not self.refund_reference:
+            event_code = self.event.event_code[:5] if hasattr(self.event, 'event_code') else 'EVT'
+            self.refund_reference = f"{event_code}-REFUND-{uuid.uuid4()}".upper()
+        
+        # Auto-calculate total if not set
+        if not self.total_refund_amount:
+            self.total_refund_amount = self.event_payment_amount + self.product_payment_amount
+        
+        super().save(*args, **kwargs)
+    
+    class Meta:
+        verbose_name = _("Participant Refund")
+        verbose_name_plural = _("Participant Refunds")
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['event', 'status']),
+            models.Index(fields=['participant']),
+        ]
+    
+    def __str__(self):
+        return f"{self.refund_reference} - £{self.total_refund_amount} - {self.get_status_display()}"

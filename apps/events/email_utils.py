@@ -407,3 +407,67 @@ def send_participant_removal_email(participant, reason, payment_details):
         print(f"❌ Full traceback: {traceback.format_exc()}")
         return False
 
+
+def send_refund_processed_email(refund):
+    """
+    Send email to participant when their refund has been processed.
+    
+    Args:
+        refund (ParticipantRefund): The refund instance that was processed
+    
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+    try:
+        participant = refund.participant
+        event = refund.event
+        user = participant.user if participant else None
+        
+        # Get participant email (use cached email from refund if user email unavailable)
+        recipient_email = user.primary_email if user else refund.participant_email
+        if not recipient_email:
+            print(f"⚠️ No email address for refund {refund.refund_reference}")
+            return False
+        
+        # Prepare context for email template
+        context = {
+            'participant_name': user.get_full_name() if user else "Participant",
+            'event_name': event.name,
+            'event_start_date': event.start_date,
+            'event_end_date': event.end_date,
+            'refund_reference': refund.refund_reference,
+            'event_payment_total': refund.event_payment_amount,
+            'product_payment_total': refund.product_payment_amount,
+            'total_refund_amount': refund.total_refund_amount,
+            'refund_method': refund.refund_method or 'the original payment method',
+            'processed_date': refund.processed_at,
+            'organizer_email': refund.organizer_contact_email,
+            'processing_notes': refund.processing_notes,
+            'year': datetime.now().year,
+        }
+        
+        # Render email templates
+        subject = f'Refund Processed - {event.name}'
+        html_message = render_to_string('emails/refund_processed.html', context)
+        plain_message = strip_tags(html_message)
+        
+        # Create email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[recipient_email]
+        )
+        email.attach_alternative(html_message, "text/html")
+        
+        # Send email
+        email.send(fail_silently=False)
+        
+        print(f"✅ Refund processed email sent to {recipient_email}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send refund processed email: {e}")
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        return False
+

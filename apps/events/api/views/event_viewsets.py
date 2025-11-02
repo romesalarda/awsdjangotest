@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
 from rest_framework import serializers
+from django.conf import settings
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils.translation import gettext_lazy as _
@@ -2476,8 +2477,8 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['delete'], url_name="remove-participant", url_path="remove-participant")
     def remove_participant_from_event(self, request, event_pax_id=None):
         '''
-        Remove a participant from the event.
-        Requires a reason for removal and confirmation.
+        Remove a participant from the event by changing their status to CANCELLED.
+        Creates a refund record if the participant has made payments.
         Sends an email notification to the participant about the removal.
         
         Expected payload:
@@ -2498,6 +2499,119 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 {'error': _('A reason for removal is required.')},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        if not confirmation_name:
+            return Response(
+                {'error': _('Confirmation name is required.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate confirmation name matches participant name
+        participant_full_name = f"{participant.user.first_name} {participant.user.last_name}"
+        if confirmation_name.lower() != participant_full_name.lower():
+            return Response(
+                {'error': _('Confirmation name does not match participant name.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Calculate payment totals for refund
+        from decimal import Decimal
+        from apps.events.models import ParticipantRefund
+        
+        # Get all event registration payments
+        event_payments = participant.participant_event_payments.all()
+        event_payment_total = sum(
+            payment.amount for payment in event_payments 
+            if payment.status == EventPayment.PaymentStatus.SUCCEEDED
+        ) or Decimal('0.00')
+        
+        # Get all product/merchandise payments for this event
+        product_payments = ProductPayment.objects.filter(
+            user=participant.user, 
+            cart__event=participant.event,
+            status=ProductPayment.PaymentStatus.SUCCEEDED
+        )
+        product_payment_total = sum(
+            payment.amount for payment in product_payments
+        ) or Decimal('0.00')
+        
+        # Calculate total amount
+        total_amount = event_payment_total + product_payment_total
+        has_payments = total_amount > 0
+        
+        # Get organizer contact email
+        organizer_emails = []
+        if participant.event.supervising_youth_heads.exists():
+            for youth_head in participant.event.supervising_youth_heads.all():
+                if youth_head.primary_email:
+                    organizer_emails.append(youth_head.primary_email)
+        
+        if participant.event.supervising_CFC_coordinators.exists():
+            for coordinator in participant.event.supervising_CFC_coordinators.all():
+                if coordinator.primary_email:
+                    organizer_emails.append(coordinator.primary_email)
+        
+        organizer_contact_email = organizer_emails[0] if organizer_emails else settings.DEFAULT_FROM_EMAIL
+        
+        # Create refund record if there are payments
+        refund = None
+        if has_payments:
+            refund = ParticipantRefund.objects.create(
+                participant=participant,
+                event=participant.event,
+                event_payment_amount=event_payment_total,
+                product_payment_amount=product_payment_total,
+                total_refund_amount=total_amount,
+                removal_reason=reason,
+                removed_by=request.user,
+                participant_email=participant.user.primary_email,
+                organizer_contact_email=organizer_contact_email,
+                original_payment_method=event_payments.first().method.get_method_display() if event_payments.exists() and event_payments.first().method else None,
+                status=ParticipantRefund.RefundStatus.PENDING
+            )
+            print(f"💰 Refund record created: {refund.refund_reference} - £{total_amount}")
+        
+        # Prepare payment details for email
+        payment_details = {
+            'has_payments': has_payments,
+            'event_payment_total': event_payment_total,
+            'product_payment_total': product_payment_total,
+            'total_amount': total_amount,
+        }
+        
+        # Send removal notification email
+        try:
+            from apps.events.email_utils import send_participant_removal_email
+            email_sent = send_participant_removal_email(
+                participant=participant,
+                reason=reason,
+                payment_details=payment_details
+            )
+            if email_sent:
+                print(f"📧 Participant removal email sent to {participant.user.primary_email}")
+            else:
+                print(f"⚠️ Participant has no email address, proceeding with removal without notification")
+        except Exception as e:
+            print(f"⚠️ Failed to send removal email: {e}")
+            # Don't fail the removal if email fails
+        
+        # Store participant info before status change for response
+        participant_name = participant_full_name
+        event_name = participant.event.name
+        
+        # Change participant status to CANCELLED instead of deleting
+        participant.status = EventParticipant.ParticipantStatus.CANCELLED
+        participant.save()
+        
+        print(f"🚫 Participant {participant.event_pax_id} status changed to CANCELLED")
+        
+        return Response({
+            'message': f'{participant_name} has been removed from {event_name}.',
+            'had_payments': has_payments,
+            'total_refund_amount': float(total_amount) if has_payments else 0,
+            'refund_id': refund.id if refund else None,
+            'refund_reference': refund.refund_reference if refund else None
+        }, status=status.HTTP_200_OK)
         
         if not confirmation_name:
             return Response(

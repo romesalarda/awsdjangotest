@@ -7,7 +7,8 @@ from .models import (
     CountryLocation, ClusterLocation, ChapterLocation, UnitLocation, AreaLocation,
     EventResource, EventVenue, SearchAreaSupportLocation,
     ExtraQuestion, QuestionChoice, QuestionAnswer,
-    EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance, ParticipantQuestion
+    EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance, ParticipantQuestion,
+    ParticipantRefund
 )
 
 
@@ -364,4 +365,95 @@ class EventDayAttendanceAdmin(admin.ModelAdmin):
 @admin.register(ParticipantQuestion)
 class ParticipantQuestionAdmin(admin.ModelAdmin):
     list_display = ('question','participant', 'event', 'status', 'submitted_at', 'responded_at')
+
+
+@admin.register(ParticipantRefund)
+class ParticipantRefundAdmin(admin.ModelAdmin):
+    list_display = (
+        'refund_reference', 
+        'participant_name', 
+        'event_name', 
+        'total_refund_amount', 
+        'status', 
+        'days_pending_display',
+        'created_at'
+    )
+    list_filter = ('status', 'created_at', 'processed_at')
+    search_fields = (
+        'refund_reference', 
+        'participant__user__first_name', 
+        'participant__user__last_name',
+        'participant_email',
+        'event__name',
+        'event__event_code'
+    )
+    readonly_fields = (
+        'refund_reference',
+        'created_at', 
+        'updated_at', 
+        'days_pending_display',
+        'removed_by',
+        'processed_by'
+    )
+    autocomplete_fields = ('participant', 'event')
+    
+    fieldsets = (
+        ('Refund Information', {
+            'fields': ('refund_reference', 'status', 'participant', 'event')
+        }),
+        ('Financial Details', {
+            'fields': (
+                'event_payment_amount', 
+                'product_payment_amount', 
+                'total_refund_amount',
+                'refund_method'
+            )
+        }),
+        ('Contact Information', {
+            'fields': ('participant_email', 'organizer_contact_email')
+        }),
+        ('Removal Details', {
+            'fields': ('removal_reason', 'removed_by', 'created_at')
+        }),
+        ('Processing Details', {
+            'fields': ('processing_notes', 'processed_by', 'processed_at', 'days_pending_display'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('updated_at',),
+            'classes': ('collapse',)
+        })
+    )
+    
+    ordering = ('-created_at',)
+    
+    def participant_name(self, obj):
+        if obj.participant and obj.participant.user:
+            return obj.participant.user.get_full_name()
+        return obj.participant_email or 'Unknown'
+    participant_name.short_description = 'Participant'
+    participant_name.admin_order_field = 'participant__user__first_name'
+    
+    def event_name(self, obj):
+        return obj.event.name if obj.event else 'N/A'
+    event_name.short_description = 'Event'
+    event_name.admin_order_field = 'event__name'
+    
+    def days_pending_display(self, obj):
+        if obj.status == 'PROCESSED':
+            return 'Completed'
+        days = obj.days_pending
+        if days <= 2:
+            color = 'green'
+        elif days <= 7:
+            color = 'orange'
+        else:
+            color = 'red'
+        return f'<span style="color: {color}; font-weight: bold;">{days} days</span>'
+    days_pending_display.short_description = 'Days Pending'
+    days_pending_display.allow_tags = True
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.select_related('participant__user', 'event', 'removed_by', 'processed_by')
     

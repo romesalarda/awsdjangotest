@@ -62,6 +62,7 @@ urlpatterns = [
     path('api/users/current/', CurrentUserView.as_view(), name='current-user'),
     path('api/events/', include(event_router.urls)),
     path('api/events/registration/', include(registration_router.urls)),
+    path('api/events/payments/', include(payment_routers.urls)),
     
     path('api/shop/', include(shop.urls)),
     path('api/shop/metadata/', include(metadata.urls)),
