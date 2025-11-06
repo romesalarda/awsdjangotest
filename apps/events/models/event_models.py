@@ -157,7 +157,8 @@ class Event(models.Model):
         related_name="event_memos"
         )
     notes = models.TextField(verbose_name=_("event notes"), blank=True, null=True)
-    approved = models.BooleanField(verbose_name=_("event approved"), default=False)
+    approved = models.BooleanField(verbose_name=_("event approved"), default=False) # Defines if even the one who created the event can even use it yet
+    
     # registration dates
     registration_open = models.BooleanField(verbose_name=_("is registration open"), default=False)
     registration_open_date = models.DateTimeField(verbose_name=_("registration open date"), blank=True, null=True, auto_now=True)

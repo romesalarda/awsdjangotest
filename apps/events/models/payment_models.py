@@ -203,7 +203,7 @@ class EventPayment(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     verified = models.BooleanField(default=False, verbose_name=_("payment verified"), help_text=_("Set to true when payment is verified/confirmed"))
-
+    
     def mark_as_paid(self):
         self.status = self.PaymentStatus.SUCCEEDED
         self.paid_at = timezone.now()
@@ -384,3 +384,76 @@ class ParticipantRefund(models.Model):
     
     def __str__(self):
         return f"{self.refund_reference} - £{self.total_refund_amount} - {self.get_status_display()}"
+
+class DonationPayment(models.Model):
+    """
+    Tracks a donation, only can be made for a specific event, payed to a specific organisation
+    """
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    class PaymentStatus(models.TextChoices):
+        PENDING = "PENDING", _("Pending")
+        SUCCEEDED = "SUCCEEDED", _("Succeeded")
+        FAILED = "FAILED", _("Failed")
+
+    user = models.ForeignKey(EventParticipant, on_delete=models.SET_NULL, related_name="participant_event_payments", null=True)
+    event = models.ForeignKey("Event", on_delete=models.SET_NULL, null=True, blank=True, related_name="event_payments")
+    # used for customer reference and tracking
+    event_payment_tracking_number = models.CharField(
+        max_length=100, unique=True, verbose_name=_("payment tracking number"), help_text=_("Unique identifier for this payment (e.g., UUID or custom format)"),
+        blank=True, null=True
+        )
+    bank_reference = models.CharField(_("Payment Reference"), max_length=18, unique=True, blank=True, null=True) # required for tracking payment references
+
+    method = models.ForeignKey(
+        "EventPaymentMethod",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payments",
+        verbose_name=_("payment method"),
+    )
+
+    stripe_payment_intent = models.CharField(max_length=255, unique=True, blank=True, null=True)
+
+    amount = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        help_text=_("Amount in pounds (e.g., 30.00 for £30.00)")
+    )
+    currency = models.CharField(max_length=10, default="gbp")
+
+    status = models.CharField(
+        max_length=50,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.PENDING,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True) 
+    paid_at = models.DateTimeField(blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    verified = models.BooleanField(default=False, verbose_name=_("payment verified"), help_text=_("Set to true when payment is verified/confirmed"))
+    pay_to_event = models.BooleanField(default=True, verbose_name=_("pay to event"), help_text=_("pay this donation to the event being held"))
+    
+    def mark_as_paid(self):
+        self.status = self.PaymentStatus.SUCCEEDED
+        self.paid_at = timezone.now()
+        self.save()
+        
+    def save(self, *args, **kwargs):
+        if self.event_payment_tracking_number is None:
+            self.event_payment_tracking_number = f"{self.event.event_code}-PAY-{uuid.uuid4()}".upper()
+            
+        if not self.bank_reference:
+            self.bank_reference = f"{self.event.event_code[:5]}{str(uuid.uuid4())[:8].upper()}"
+            
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        verbose_name = _("Event Payment")
+        verbose_name_plural = _("Event Payments")
+
+    def __str__(self):
+        return f"{self.user} - {self.event} - {self.get_status_display()}"

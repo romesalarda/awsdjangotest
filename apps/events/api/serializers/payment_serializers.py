@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.events.models import EventPaymentMethod, EventPaymentPackage, EventPayment
+from apps.events.models import EventPaymentMethod, EventPaymentPackage, EventPayment, DonationPayment
 
 
 class EventPaymentMethodSerializer(serializers.ModelSerializer):
@@ -258,4 +258,188 @@ class EventPaymentListSerializer(serializers.ModelSerializer):
         return None
     
     def get_amount_display(self, obj):
+        return f"£{obj.amount:.2f}"
+
+
+class DonationPaymentSerializer(serializers.ModelSerializer):
+    """
+    Serializer for DonationPayment model with participant and event relationship handling.
+    
+    Handles donation payments made by participants for specific events, including:
+    - Tracking donation amounts and payment methods
+    - Linking donations to events and participants
+    - Supporting Stripe payment integration
+    - Maintaining payment status and verification
+    
+    Example API object:
+    {
+        "user": "123e4567-e89b-12d3-a456-426614174000",  // EventParticipant UUID
+        "event": "456e7890-e89b-12d3-a456-426614174001",  // Event UUID
+        "method": 2,   // EventPaymentMethod ID
+        "amount": 25.00,  // Donation amount in pounds (£25.00)
+        "currency": "gbp",
+        "status": "PENDING",
+        "stripe_payment_intent": "pi_1234567890",
+        "event_payment_tracking_number": "DON-2025-001234",
+        "bank_reference": "SMITH-DONATION-001"
+    }
+    
+    Response includes additional computed fields:
+    {
+        "id": "789e0123-e89b-12d3-a456-426614174002",
+        "user": "123e4567-e89b-12d3-a456-426614174000",
+        "participant_details": {
+            "participant_id": "123e4567-e89b-12d3-a456-426614174000",
+            "event_pax_id": "CNF25ANCRD-123456",
+            "full_name": "John Smith",
+            "email": "john@example.com",
+            "participant_type": "PARTICIPANT",
+            "status": "CONFIRMED"
+        },
+        "event": "456e7890-e89b-12d3-a456-426614174001",
+        "event_name": "Anchored Conference 2025",
+        "method": 2,
+        "method_display": "Bank Transfer",
+        "stripe_payment_intent": "pi_1234567890",
+        "amount": "25.00",
+        "amount_display": "£25.00 GBP",
+        "currency": "gbp",
+        "status": "PENDING",
+        "status_display": "Pending",
+        "event_payment_tracking_number": "DON-2025-001234",
+        "bank_reference": "SMITH-DONATION-001",
+        "created_at": "2025-01-15T10:35:00Z",
+        "paid_at": null,
+        "updated_at": "2025-01-15T10:35:00Z"
+    }
+    """
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    amount_display = serializers.SerializerMethodField()
+    participant_details = serializers.SerializerMethodField(read_only=True)
+    participant_user_email = serializers.CharField(source="user.user.primary_email", read_only=True)
+    event_name = serializers.CharField(source="event.name", read_only=True)
+    method_display = serializers.CharField(source="method.get_method_display", read_only=True)
+
+    class Meta:
+        model = DonationPayment
+        fields = [
+            "id", "user", "participant_details", "participant_user_email", 
+            "event", "event_name", "method", "method_display", 
+            "stripe_payment_intent", "amount", "amount_display", "currency", 
+            "status", "status_display", "event_payment_tracking_number", 
+            "bank_reference", "paid_at", "created_at", "updated_at"
+        ]
+        read_only_fields = (
+            "id", "participant_details", "participant_user_email", 
+            "event_name", "method_display", "created_at", "updated_at"
+        )
+
+    def get_amount_display(self, obj):
+        """Format amount with currency symbol"""
+        return f"£{obj.amount:.2f} {obj.currency.upper()}"
+    
+    def get_participant_details(self, obj):
+        """
+        Get participant details including registration info.
+        Returns comprehensive participant information for donation tracking.
+        """
+        if obj.user and obj.user.user:
+            return {
+                "participant_id": str(obj.user.id),
+                "event_pax_id": obj.user.event_pax_id,
+                "full_name": f"{obj.user.user.first_name} {obj.user.user.last_name}",
+                "email": obj.user.user.primary_email,
+                "participant_type": obj.user.participant_type,
+                "status": obj.user.status,
+            }
+        return None
+    
+    def validate(self, attrs):
+        """
+        Validate donation payment data.
+        Ensures event and participant are properly linked.
+        """
+        # Validate that user (participant) belongs to the event
+        user = attrs.get('user')
+        event = attrs.get('event')
+        
+        if user and event and user.event != event:
+            raise serializers.ValidationError({
+                "user": "Participant must be registered for the specified event."
+            })
+        
+        # Validate amount is positive
+        amount = attrs.get('amount')
+        if amount and amount <= 0:
+            raise serializers.ValidationError({
+                "amount": "Donation amount must be greater than zero."
+            })
+        
+        return attrs
+    
+    def create(self, validated_data):
+        """
+        Create a new donation payment.
+        Automatically sets the event from the participant if not provided.
+        """
+        # Set the event from the participant if not provided
+        if not validated_data.get('event') and validated_data.get('user'):
+            validated_data['event'] = validated_data['user'].event
+        
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        """
+        Update donation payment.
+        Handles status changes and payment confirmation.
+        """
+        # Handle status changes and paid date updates
+        if 'status' in validated_data:
+            new_status = validated_data['status']
+            if new_status == DonationPayment.PaymentStatus.SUCCEEDED and not instance.paid_at:
+                from django.utils import timezone
+                instance.paid_at = timezone.now()
+        
+        return super().update(instance, validated_data)
+
+
+class DonationPaymentListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for listing donation payments.
+    Optimized for minimal data transfer with essential donation and participant info.
+    
+    Used in list views and dashboards where full donation details aren't needed.
+    """
+    participant_id = serializers.CharField(source="user.id", read_only=True)
+    participant_name = serializers.SerializerMethodField()
+    participant_email = serializers.CharField(source="user.user.primary_email", read_only=True)
+    participant_event_pax_id = serializers.CharField(source="user.event_pax_id", read_only=True)
+    
+    event_name = serializers.CharField(source="event.name", read_only=True)
+    payment_method = serializers.CharField(source="method.get_method_display", read_only=True)
+    payment_method_type = serializers.CharField(source="method.method", read_only=True)
+    
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    amount_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = DonationPayment
+        fields = [
+            "id", "participant_id", "participant_name", "participant_email", 
+            "participant_event_pax_id", "event_name",
+            "event_payment_tracking_number", "bank_reference",
+            "payment_method", "payment_method_type",
+            "amount", "amount_display", "currency", 
+            "status", "status_display",
+            "paid_at", "created_at"
+        ]
+    
+    def get_participant_name(self, obj):
+        """Get formatted participant name or fallback"""
+        if obj.user and obj.user.user:
+            return f"{obj.user.user.first_name} {obj.user.user.last_name}"
+        return "Unknown"
+    
+    def get_amount_display(self, obj):
+        """Format amount with currency symbol"""
         return f"£{obj.amount:.2f}"
