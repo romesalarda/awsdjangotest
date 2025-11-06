@@ -26,6 +26,7 @@ from apps.users.models import CommunityUser, MedicalCondition, Allergy, Emergenc
 from .location_serializers import EventVenueSerializer, AreaLocationSerializer
 from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
 from .payment_serializers import EventPaymentPackageSerializer, EventPaymentMethodSerializer, EventPaymentSerializer
+from .permission_serializers import ServiceTeamPermissionSummarySerializer
 
 from apps.shop.api import serializers as shop_serializers
 from apps.shop import models as shop_models
@@ -51,6 +52,7 @@ class EventServiceTeamMemberSerializer(serializers.ModelSerializer):
     '''
     user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
     role_details = EventRoleSerializer(source='roles', many=True, read_only=True)
+    permission_details = ServiceTeamPermissionSummarySerializer(source='permissions', read_only=True)
     
     class Meta:
         model = EventServiceTeamMember

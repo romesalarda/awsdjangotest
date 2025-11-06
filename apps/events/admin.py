@@ -8,7 +8,7 @@ from .models import (
     EventResource, EventVenue, SearchAreaSupportLocation,
     ExtraQuestion, QuestionChoice, QuestionAnswer,
     EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance, ParticipantQuestion,
-    ParticipantRefund
+    ParticipantRefund, ServiceTeamPermission
 )
 
 
@@ -181,7 +181,7 @@ class EventAdmin(admin.ModelAdmin):
 
 @admin.register(EventServiceTeamMember)
 class EventServiceTeamMemberAdmin(admin.ModelAdmin):
-    list_display = ('user', 'event', 'head_of_role', 'assigned_at')  
+    list_display = ('user', 'event', 'head_of_role', 'has_permissions', 'assigned_at')  
     list_filter = ('head_of_role', 'assigned_at', 'event__event_type')  
     search_fields = ('user__first_name', 'user__last_name', 'event__name')  
     autocomplete_fields = ('user', 'event', 'assigned_by')
@@ -191,11 +191,102 @@ class EventServiceTeamMemberAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user', 'event', 'assigned_by') 
     
+    def has_permissions(self, obj):
+        """Check if service team member has permissions set"""
+        try:
+            return obj.permissions is not None
+        except:
+            return False
+    has_permissions.boolean = True
+    has_permissions.short_description = 'Permissions Set'
 
 
+@admin.register(ServiceTeamPermission)
+class ServiceTeamPermissionAdmin(admin.ModelAdmin):
+    list_display = (
+        'service_team_member_display', 
+        'event_display',
+        'role', 
+        'granted_by',
+        'updated_at'
+    )
+    list_filter = ('role', 'updated_at', 'created_at')
+    search_fields = (
+        'service_team_member__user__first_name',
+        'service_team_member__user__last_name',
+        'service_team_member__event__name'
+    )
+    autocomplete_fields = ('service_team_member', 'granted_by')
+    readonly_fields = ('created_at', 'updated_at', 'id')
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('id', 'service_team_member', 'role', 'granted_by')
+        }),
+        ('Participant Management', {
+            'fields': (
+                'can_view_participants',
+                'can_edit_participants',
+                'can_remove_participants',
+                'can_add_participants',
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Payment Management', {
+            'fields': (
+                'can_view_payments',
+                'can_approve_payments',
+                'can_process_refunds',
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Merchandise Management', {
+            'fields': (
+                'can_view_merch',
+                'can_manage_merch',
+                'can_approve_merch_payments',
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Event Operations', {
+            'fields': (
+                'can_access_checkin',
+                'can_access_live_dashboard',
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Event Management', {
+            'fields': (
+                'can_edit_event_details',
+                'can_manage_service_team',
+                'can_manage_permissions',
+                'can_manage_resources',
+                'can_manage_questions',
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def service_team_member_display(self, obj):
+        """Display service team member name"""
+        return f"{obj.service_team_member.user.get_full_name()} ({obj.service_team_member.user.primary_email})"
+    service_team_member_display.short_description = 'Service Team Member'
+    
+    def event_display(self, obj):
+        """Display event name"""
+        return obj.service_team_member.event.name
+    event_display.short_description = 'Event'
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('user', 'event')
+        return super().get_queryset(request).select_related(
+            'service_team_member__user',
+            'service_team_member__event',
+            'granted_by'
+        )
 
 @admin.register(EventTalk)
 class EventTalkAdmin(admin.ModelAdmin):

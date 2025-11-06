@@ -4,3 +4,4 @@ from .payment_serializers import *
 from .registration_serializers import *
 from .refund_serializers import *
 from .organisation_serializers import *
+from .permission_serializers import *

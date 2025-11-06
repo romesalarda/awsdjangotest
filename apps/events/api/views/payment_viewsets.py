@@ -80,6 +80,7 @@ class DonationPaymentViewSet(viewsets.ModelViewSet):
     - Update donation status
     - Delete donations (admin only)
     - Mark donations as paid
+    - Verify donations
     - Get donation statistics
     
     Permissions:
@@ -110,6 +111,8 @@ class DonationPaymentViewSet(viewsets.ModelViewSet):
         - participant: Filter by participant ID
         - status: Filter by payment status
         - method: Filter by payment method ID
+        - verified: Filter by verification status (true/false)
+        - pay_to_event: Filter by pay_to_event status (true/false)
         - date_from: Filter donations created after this date
         - date_to: Filter donations created before this date
         """
@@ -134,6 +137,16 @@ class DonationPaymentViewSet(viewsets.ModelViewSet):
         method_id = self.request.query_params.get('method')
         if method_id:
             queryset = queryset.filter(method_id=method_id)
+        
+        # Filter by verified status
+        verified = self.request.query_params.get('verified')
+        if verified is not None:
+            queryset = queryset.filter(verified=verified.lower() == 'true')
+        
+        # Filter by pay_to_event status
+        pay_to_event = self.request.query_params.get('pay_to_event')
+        if pay_to_event is not None:
+            queryset = queryset.filter(pay_to_event=pay_to_event.lower() == 'true')
         
         # Filter by date range
         date_from = self.request.query_params.get('date_from')
@@ -177,6 +190,37 @@ class DonationPaymentViewSet(viewsets.ModelViewSet):
         return Response({
             "status": "donation marked as paid",
             "message": f"Donation {donation.event_payment_tracking_number or donation.id} has been marked as paid.",
+            "donation": serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], url_name='verify-donation', url_path='verify-donation', permission_classes=[permissions.IsAdminUser])
+    def verify_donation(self, request, pk=None):
+        """
+        Admin action to verify/approve a donation payment.
+        
+        Updates:
+        - Sets verified to True
+        
+        Returns:
+        - Updated donation payment data
+        - Success message
+        """
+        donation = self.get_object()
+        
+        if donation.verified:
+            return Response({
+                "status": "already verified",
+                "message": "This donation has already been verified."
+            }, status=status.HTTP_200_OK)
+        
+        # Update donation verification status
+        donation.verified = True
+        donation.save()
+        
+        serializer = self.get_serializer(donation)
+        return Response({
+            "status": "donation verified",
+            "message": f"Donation {donation.event_payment_tracking_number or donation.id} has been verified.",
             "donation": serializer.data
         }, status=status.HTTP_200_OK)
     

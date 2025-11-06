@@ -397,8 +397,8 @@ class DonationPayment(models.Model):
         SUCCEEDED = "SUCCEEDED", _("Succeeded")
         FAILED = "FAILED", _("Failed")
 
-    user = models.ForeignKey(EventParticipant, on_delete=models.SET_NULL, related_name="participant_event_payments", null=True)
-    event = models.ForeignKey("Event", on_delete=models.SET_NULL, null=True, blank=True, related_name="event_payments")
+    user = models.ForeignKey(EventParticipant, on_delete=models.SET_NULL, related_name="participant_donation_payments", null=True)
+    event = models.ForeignKey("Event", on_delete=models.SET_NULL, null=True, blank=True, related_name="donation_payments")
     # used for customer reference and tracking
     event_payment_tracking_number = models.CharField(
         max_length=100, unique=True, verbose_name=_("payment tracking number"), help_text=_("Unique identifier for this payment (e.g., UUID or custom format)"),
@@ -411,7 +411,7 @@ class DonationPayment(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="payments",
+        related_name="donation_payments",
         verbose_name=_("payment method"),
     )
 

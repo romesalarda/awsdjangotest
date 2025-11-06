@@ -20,9 +20,16 @@ from apps.events.models import (
 
 from apps.events.api.serializers import *
 from apps.events.api.serializers.event_serializers import ParticipantManagementSerializer
+from apps.events.api.serializers.permission_serializers import (
+    ServiceTeamPermissionSerializer, ServiceTeamPermissionUpdateSerializer
+)
 from apps.users.api.serializers import CommunityUserSerializer
 from apps.events.api.filters import EventFilter
 from apps.shop.api.serializers import EventProductSerializer, EventCartSerializer
+from core.event_permissions import (
+    has_full_event_access, can_manage_permissions, get_user_event_permissions,
+    has_event_permission
+)
 from apps.shop.models import EventCart, ProductPayment, EventProduct, EventProductOrder, ProductSize
 from apps.shop.api.serializers import EventCartMinimalSerializer
 from apps.shop.api.serializers.payment_serializers import ProductPaymentMethodSerializer
@@ -123,10 +130,18 @@ class EventViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
             
         elif request.method == 'POST':
+            # Check permission to manage service team
+            if not has_full_event_access(request.user, event):
+                return Response(
+                    {'error': 'You do not have permission to manage the service team'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
             # Add new service team member
             user_id = request.data.get('user_id')
             role_ids = request.data.get('role_ids', [])
             head_of_role = request.data.get('head_of_role', False)
+            permission_data = request.data.get('permissions', {})
             
             if not user_id:
                 return Response(
@@ -157,6 +172,34 @@ class EventViewSet(viewsets.ModelViewSet):
                     roles = EventRole.objects.filter(id__in=role_ids)
                     service_member.roles.set(roles)
                 
+                # Create permissions if provided
+                if permission_data:
+                    from apps.events.models import ServiceTeamPermission
+                    permission_data['service_team_member'] = service_member.id
+                    permission_serializer = ServiceTeamPermissionSerializer(
+                        data=permission_data,
+                        context={'request': request}
+                    )
+                    if permission_serializer.is_valid():
+                        permission_serializer.save()
+                    else:
+                        # Delete the service member if permission creation fails
+                        service_member.delete()
+                        return Response(
+                            {'error': 'Invalid permission data', 'details': permission_serializer.errors}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                else:
+                    # Create default permissions (no access)
+                    from apps.events.models import ServiceTeamPermission
+                    ServiceTeamPermission.objects.create(
+                        service_team_member=service_member,
+                        role=ServiceTeamPermission.PermissionRole.CUSTOM,
+                        granted_by=request.user
+                    )
+                
+                # Refresh to get permissions
+                service_member.refresh_from_db()
                 serializer = EventServiceTeamMemberSerializer(service_member)
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
                 
@@ -172,6 +215,13 @@ class EventViewSet(viewsets.ModelViewSet):
                 )
                 
         elif request.method == 'DELETE':
+            # Check permission to manage service team
+            if not has_full_event_access(request.user, event):
+                return Response(
+                    {'error': 'You do not have permission to manage the service team'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
             # Remove service team member
             user_id = request.data.get('user_id')
             if not user_id:
@@ -182,7 +232,7 @@ class EventViewSet(viewsets.ModelViewSet):
             
             try:
                 service_member = EventServiceTeamMember.objects.get(event=event, user_id=user_id)
-                service_member.delete()
+                service_member.delete()  # Permissions will be deleted via CASCADE
                 return Response(
                     {'message': 'Service team member removed successfully'}, 
                     status=status.HTTP_200_OK
@@ -196,9 +246,16 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch'], url_name="update_service_member", url_path="service-team/(?P<member_id>[^/.]+)")
     def update_service_member(self, request, id=None, member_id=None):
         '''
-        Update a specific service team member's roles or head_of_role status
+        Update a specific service team member's roles, head_of_role status, or permissions
         '''
         event = self.get_object()
+        
+        # Check permission to manage service team or permissions
+        if not has_full_event_access(request.user, event):
+            return Response(
+                {'error': 'You do not have permission to update service team members'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
         
         try:
             service_member = EventServiceTeamMember.objects.get(event=event, id=member_id)
@@ -212,6 +269,38 @@ class EventViewSet(viewsets.ModelViewSet):
                 roles = EventRole.objects.filter(id__in=request.data['role_ids'])
                 service_member.roles.set(roles)
             
+            # Update permissions if provided
+            if 'permissions' in request.data:
+                permission_data = request.data['permissions']
+                
+                try:
+                    # Try to get existing permissions
+                    permissions = service_member.permissions
+                    permission_serializer = ServiceTeamPermissionSerializer(
+                        permissions,
+                        data=permission_data,
+                        partial=True,
+                        context={'request': request}
+                    )
+                except:
+                    # Create new permissions if they don't exist
+                    from apps.events.models import ServiceTeamPermission
+                    permission_data['service_team_member'] = service_member.id
+                    permission_serializer = ServiceTeamPermissionSerializer(
+                        data=permission_data,
+                        context={'request': request}
+                    )
+                
+                if permission_serializer.is_valid():
+                    permission_serializer.save()
+                else:
+                    return Response(
+                        {'error': 'Invalid permission data', 'details': permission_serializer.errors}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Refresh to get updated permissions
+            service_member.refresh_from_db()
             serializer = EventServiceTeamMemberSerializer(service_member)
             return Response(serializer.data)
             
@@ -229,6 +318,88 @@ class EventViewSet(viewsets.ModelViewSet):
         roles = EventRole.objects.all().order_by('role_name')
         serializer = EventRoleSerializer(roles, many=True)
         return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'], url_name="my_permissions", url_path="my-permissions")
+    def get_my_permissions(self, request, id=None):
+        '''
+        Get the current user's permissions for this event
+        '''
+        event = self.get_object()
+        permissions = get_user_event_permissions(request.user, event)
+        
+        if permissions is None:
+            return Response(
+                {'error': 'You do not have access to this event'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        return Response(permissions)
+    
+    @action(detail=True, methods=['get', 'patch'], url_name="member_permissions", url_path="service-team/(?P<member_id>[^/.]+)/permissions")
+    def manage_member_permissions(self, request, id=None, member_id=None):
+        '''
+        GET: Get permissions for a specific service team member
+        PATCH: Update permissions for a specific service team member
+        '''
+        event = self.get_object()
+        
+        # Check if user can manage permissions
+        if not can_manage_permissions(request.user, event):
+            return Response(
+                {'error': 'You do not have permission to manage service team permissions'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            service_member = EventServiceTeamMember.objects.get(event=event, id=member_id)
+            
+            if request.method == 'GET':
+                # Get current permissions
+                try:
+                    permissions = service_member.permissions
+                    serializer = ServiceTeamPermissionSerializer(permissions)
+                    return Response(serializer.data)
+                except:
+                    # No permissions set yet
+                    return Response({
+                        'role': 'CUSTOM',
+                        'message': 'No permissions set for this service team member'
+                    }, status=status.HTTP_200_OK)
+            
+            elif request.method == 'PATCH':
+                # Update permissions
+                try:
+                    permissions = service_member.permissions
+                    serializer = ServiceTeamPermissionSerializer(
+                        permissions,
+                        data=request.data,
+                        partial=True,
+                        context={'request': request}
+                    )
+                except:
+                    # Create new permissions
+                    from apps.events.models import ServiceTeamPermission
+                    data = request.data.copy()
+                    data['service_team_member'] = service_member.id
+                    serializer = ServiceTeamPermissionSerializer(
+                        data=data,
+                        context={'request': request}
+                    )
+                
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response(serializer.data)
+                else:
+                    return Response(
+                        {'error': 'Invalid permission data', 'details': serializer.errors}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+        
+        except EventServiceTeamMember.DoesNotExist:
+            return Response(
+                {'error': 'Service team member not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
 
     @action(detail=True, methods=['get'], url_name="booking", url_path="booking")
     def booking(self, request, id=None):

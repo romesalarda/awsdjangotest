@@ -281,7 +281,9 @@ class DonationPaymentSerializer(serializers.ModelSerializer):
         "status": "PENDING",
         "stripe_payment_intent": "pi_1234567890",
         "event_payment_tracking_number": "DON-2025-001234",
-        "bank_reference": "SMITH-DONATION-001"
+        "bank_reference": "SMITH-DONATION-001",
+        "verified": false,
+        "pay_to_event": true
     }
     
     Response includes additional computed fields:
@@ -308,6 +310,8 @@ class DonationPaymentSerializer(serializers.ModelSerializer):
         "status_display": "Pending",
         "event_payment_tracking_number": "DON-2025-001234",
         "bank_reference": "SMITH-DONATION-001",
+        "verified": false,
+        "pay_to_event": true,
         "created_at": "2025-01-15T10:35:00Z",
         "paid_at": null,
         "updated_at": "2025-01-15T10:35:00Z"
@@ -327,7 +331,8 @@ class DonationPaymentSerializer(serializers.ModelSerializer):
             "event", "event_name", "method", "method_display", 
             "stripe_payment_intent", "amount", "amount_display", "currency", 
             "status", "status_display", "event_payment_tracking_number", 
-            "bank_reference", "paid_at", "created_at", "updated_at"
+            "bank_reference", "verified", "pay_to_event", 
+            "paid_at", "created_at", "updated_at"
         ]
         read_only_fields = (
             "id", "participant_details", "participant_user_email", 
@@ -430,7 +435,7 @@ class DonationPaymentListSerializer(serializers.ModelSerializer):
             "event_payment_tracking_number", "bank_reference",
             "payment_method", "payment_method_type",
             "amount", "amount_display", "currency", 
-            "status", "status_display",
+            "status", "status_display", "verified", "pay_to_event",
             "paid_at", "created_at"
         ]
     
