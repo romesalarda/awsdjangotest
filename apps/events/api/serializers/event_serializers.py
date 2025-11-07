@@ -427,7 +427,8 @@ class EventSerializer(serializers.ModelSerializer):
             "format_verifier", 
             "required_existing_id",
             "existing_id_name",
-            "existing_id_description"
+            "existing_id_description",
+            "approved"
             ]
         read_only_fields = [
             "id",
@@ -507,7 +508,8 @@ class EventSerializer(serializers.ModelSerializer):
                 "require_existing_id": rep["required_existing_id"],
                 "format_verifier": rep["format_verifier"],
                 "existing_id_name": rep["existing_id_name"],
-                "existing_id_description": rep["existing_id_description"]
+                "existing_id_description": rep["existing_id_description"],
+                "approved": rep["approved"]
             }
         }
 
@@ -749,6 +751,7 @@ class EventSerializer(serializers.ModelSerializer):
         # start_date = validated_data.get('start_date', timezone.now())
         # validated_data['start_date'] = start_date
         
+        
         area_names = validated_data.pop('area_names', [])
         venue_data = validated_data.pop('venue_data', [])
         resource_data = validated_data.pop('resource_data', [])
@@ -764,6 +767,8 @@ class EventSerializer(serializers.ModelSerializer):
         payment_methods_data = validated_data.pop('payment_methods_data', None) or validated_data.pop('payment_methods', None)
 
         with transaction.atomic():
+            print(validated_data)
+
             self.validate(validated_data)
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)

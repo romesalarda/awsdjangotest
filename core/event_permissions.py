@@ -165,6 +165,7 @@ def get_user_event_permissions(user, event):
             'can_manage_permissions': True,
             'can_manage_resources': True,
             'can_manage_questions': True,
+            'event_approved': event.approved
         }
     
     # Check if user is a service team member with specific permissions
@@ -199,6 +200,8 @@ def get_user_event_permissions(user, event):
                 'can_manage_permissions': permissions.can_manage_permissions,
                 'can_manage_resources': permissions.can_manage_resources,
                 'can_manage_questions': permissions.can_manage_questions,
+                'event_approved': event.approved
+
             }
         except ServiceTeamPermission.DoesNotExist:
             # Service team member exists but no permissions set
@@ -225,6 +228,8 @@ def get_user_event_permissions(user, event):
                 'can_manage_permissions': False,
                 'can_manage_resources': False,
                 'can_manage_questions': False,
+                'event_approved': event.approved
+
             }
     except EventServiceTeamMember.DoesNotExist:
         # User is not a service team member

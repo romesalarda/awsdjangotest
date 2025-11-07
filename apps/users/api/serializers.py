@@ -23,7 +23,8 @@ class UserCommunityRoleSerializer(serializers.ModelSerializer):
     '''
     role_name = serializers.CharField(source='role.get_role_name_display', read_only=True)
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
-    
+    visible_field = serializers.CharField(source='role.visible_role', read_only=True)
+        
     class Meta:
         model = UserCommunityRole
         fields = '__all__'
@@ -33,10 +34,12 @@ class SimplifiedUserCommunityRoleSerializer(serializers.ModelSerializer):
     Simplified serializer for user roles.
     '''
     role_name = serializers.CharField(source='role.get_role_name_display', read_only=True)
+    visible = serializers.CharField(source='role.visible_role', read_only=True)
+    order = serializers.CharField(source='role.authority_level', read_only=True)    
     
     class Meta:
         model = UserCommunityRole
-        fields = ('role_name', 'start_date')
+        fields = ('role_name', 'start_date', 'visible', 'order')
         
 class EmergencyContactSerializer(serializers.ModelSerializer):
     '''

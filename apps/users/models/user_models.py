@@ -240,6 +240,10 @@ class CommunityRole(models.Model):
         SECTOR_YOUTH_HEAD = "SECTOR_HEAD", _("Sector Head")
         VOLUNTEER = "VOLUNTEER", _("Volunteer")
         GUEST = "GUEST", _("Guest")
+        # non-visible auth fields - generally for frontend use and is less powerful than superuser, superuser and staff refer to backend access to api control
+        
+        EVENT_APPROVER = "EVENT_APPROVER", _("Event Approver") # just able to approve events
+        COMMUNITY_ADMIN = "COMMUNITY_ADMIN", _("Community Admin") # able to promote other users to event approver status, higher level status than most
     
     role_name = models.CharField(
         max_length=20,  # FIXED: Added max_length
@@ -258,11 +262,13 @@ class CommunityRole(models.Model):
         verbose_name=_("is core role"),
         help_text=_("Defines if the role is a core role")
     )
+    authority_level = models.IntegerField(verbose_name=_("community authority"), help_text=_("helper field to determine logical ranking of roles if many are assigned"), default=0)
+    visible_role = models.BooleanField(verbose_name=_("defines if this is a public role to see"), default=True)
     
     class Meta:
         verbose_name = _("community role")
         verbose_name_plural = _("community roles")
-        ordering = ["role_name"]
+        ordering = ["authority_level", "role_name"]
     
     def __str__(self):
         return self.get_role_name_display()
