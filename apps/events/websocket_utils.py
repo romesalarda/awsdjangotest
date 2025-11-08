@@ -382,6 +382,36 @@ def serialize_participant_for_websocket(participant):
         except Exception as e:
             print(f"⚠️ Error getting question answers for {participant.user.first_name}: {e}")
 
+        # Get organisation data
+        organisation_data = None
+        try:
+            if participant.organisation:
+                organisation_data = {
+                    'id': str(participant.organisation.id),
+                    'name': participant.organisation.name,
+                    'description': participant.organisation.description,
+                    'email': participant.organisation.email,
+                    'external_link': participant.organisation.external_link,
+                }
+                # Handle logo and landing_image safely
+                if hasattr(participant.organisation, 'logo') and participant.organisation.logo:
+                    try:
+                        organisation_data['logo'] = participant.organisation.logo.url
+                    except (ValueError, AttributeError):
+                        organisation_data['logo'] = None
+                else:
+                    organisation_data['logo'] = None
+                    
+                if hasattr(participant.organisation, 'landing_image') and participant.organisation.landing_image:
+                    try:
+                        organisation_data['landing_image'] = participant.organisation.landing_image.url
+                    except (ValueError, AttributeError):
+                        organisation_data['landing_image'] = None
+                else:
+                    organisation_data['landing_image'] = None
+        except Exception as e:
+            print(f"⚠️ Error getting organisation data for {participant.user.first_name}: {e}")
+
         # Match ParticipantManagementSerializer structure exactly
         serialized_data = {
             'id': str(participant.id),
@@ -436,6 +466,7 @@ def serialize_participant_for_websocket(participant):
             'registration_date': participant.registration_date.isoformat() if participant.registration_date else None,
             'has_payment_issues': has_payment_issues,
             'total_outstanding': total_outstanding,
+            'organisation': organisation_data,
         }
         
         print(f"✅ SERIALIZING SUCCESS - Data: {serialized_data['user']['first_name']} is checked_in: {serialized_data['checked_in']}")

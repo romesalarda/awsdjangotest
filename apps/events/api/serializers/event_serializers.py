@@ -27,6 +27,7 @@ from .location_serializers import EventVenueSerializer, AreaLocationSerializer
 from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
 from .payment_serializers import EventPaymentPackageSerializer, EventPaymentMethodSerializer, EventPaymentSerializer
 from .permission_serializers import ServiceTeamPermissionSummarySerializer
+from .organisation_serializers import OrganisationSerializer
 
 from apps.shop.api import serializers as shop_serializers
 from apps.shop import models as shop_models
@@ -242,7 +243,8 @@ class SimplifiedAreaLocationSerializer(serializers.ModelSerializer):
             "chapter_name",
             "cluster_id"
         ]
-        
+from apps.events.models import Organisation
+  
 class EventSerializer(serializers.ModelSerializer):
     """
     Event serializer for full detail - for event organizers/admins
@@ -333,7 +335,18 @@ class EventSerializer(serializers.ModelSerializer):
     organisers = serializers.SerializerMethodField(read_only=True)
     service_team = serializers.SerializerMethodField(read_only=True)
     has_merch = serializers.SerializerMethodField(read_only=True, default=False)
-
+    
+    # Organisation fields
+    organisation = OrganisationSerializer(read_only=True)
+    organisation_id = serializers.PrimaryKeyRelatedField(
+        source="organisation",
+        queryset = Organisation.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
+        help_text="UUID of the organisation to associate with this event. Required if force_participant_organisation is True."
+    )
+    
     def to_internal_value(self, data):
         # Handle nested data structures sent from frontend
         
@@ -428,7 +441,11 @@ class EventSerializer(serializers.ModelSerializer):
             "required_existing_id",
             "existing_id_name",
             "existing_id_description",
-            "approved"
+            "approved",
+            # Organisation fields
+            "organisation",
+            "organisation_id",
+            "force_participant_organisation"
             ]
         read_only_fields = [
             "id",
@@ -510,6 +527,10 @@ class EventSerializer(serializers.ModelSerializer):
                 "existing_id_name": rep["existing_id_name"],
                 "existing_id_description": rep["existing_id_description"],
                 "approved": rep["approved"]
+            },
+            "organisation": {
+                "organisation": rep["organisation"],
+                "force_participant_organisation": rep["force_participant_organisation"]
             }
         }
 
@@ -1170,6 +1191,11 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         '''
         Create or update a participant's registration for an event. Also can provide extra user information 
         via this serializer to update their user profile with medical conditions, emergency contacts, allergies, etc.
+        
+        Organisation Assignment:
+        - If event.force_participant_organisation is True, automatically assigns the event's organisation to the participant
+        - If force_participant_organisation is False, uses the provided organisation or defaults to the event's organisation
+        - Ensures consistency between event and participant organisation relationships
         '''        
         # User must be logged in to register for an event
         user = self.context['request'].user
@@ -1285,6 +1311,16 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("event_pax_id cannot be provided for an event that requires a secondary ID")
             
             validated_data["secondary_reference_id"] = event_pax_id
+            
+            # Handle organisation assignment based on event settings
+            # If force_participant_organisation is True, use the event's organisation
+            # Otherwise, allow custom organisation or no organisation
+            if event.force_participant_organisation and event.organisation:
+                validated_data["organisation"] = event.organisation
+            elif "organisation" not in validated_data:
+                # If no organisation provided and not forced, default to event's organisation if available
+                if event.organisation:
+                    validated_data["organisation"] = event.organisation
             
             participant = EventParticipant.objects.create(event=event, user=updated_user, **validated_data)
 
@@ -1434,6 +1470,9 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
     # Product orders (to match WebSocket data)
     product_orders = serializers.SerializerMethodField()
     questions_asked = serializers.SerializerMethodField()
+    
+    # Organisation field
+    organisation = OrganisationSerializer(read_only=True)
 
     class Meta:
         model = EventParticipant
@@ -1458,7 +1497,8 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
             "check_out_time",
             "attendance_records",
             "product_orders",
-            "questions_asked"
+            "questions_asked",
+            "organisation"
         ]
         read_only_fields = fields
 
@@ -2044,6 +2084,7 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
     user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     participant_type_display = serializers.CharField(source="get_participant_type_display", read_only=True)
+    organisation = OrganisationSerializer(read_only=True)
 
     class Meta:
         model = EventParticipant
@@ -2056,7 +2097,8 @@ class SimplifiedEventParticipantSerializer(serializers.ModelSerializer):
             "participant_type",
             "participant_type_display",
             "registration_date",
-            "verified"
+            "verified",
+            "organisation"
         ]
         read_only_fields = fields
 
@@ -2078,6 +2120,7 @@ class ListEventParticipantSerializer(serializers.ModelSerializer):
     outstanding_orders_count = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     participant_type_display = serializers.CharField(source="get_participant_type_display", read_only=True)
+    organisation = OrganisationSerializer(read_only=True)
 
     class Meta:
         model = EventParticipant
@@ -2099,7 +2142,8 @@ class ListEventParticipantSerializer(serializers.ModelSerializer):
             "merch_data",
             "bank_reference",
             "outstanding_orders_count",
-            "verified"
+            "verified",
+            "organisation"
         ]
         read_only_fields = fields
 

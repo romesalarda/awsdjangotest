@@ -6,6 +6,7 @@ from django.utils.translation import gettext_lazy as _
 
 from .location_models import (
     AreaLocation, ChapterLocation, EventVenue)
+from .organsiation_models import Organisation
 import uuid
 
 MAX_LENGTH_EVENT_NAME_CODE = 5
@@ -182,6 +183,22 @@ class Event(models.Model):
     existing_id_name = models.CharField(max_length=100, blank=True, null=True, help_text=_("existing name for this id E.g. Members-ID"))
     existing_id_description = models.TextField(max_length=500, blank=True, null=True)
     
+    organisation = models.ForeignKey(
+        Organisation, 
+        on_delete=models.SET_NULL, 
+        verbose_name=_("event organisation"),
+        null=True,
+        blank=True,
+        help_text=_("defines the organisation attached to the event"),
+        related_name="events"
+        )
+    force_participant_organisation = models.BooleanField(
+        default=True, 
+        help_text=_(
+            "On registration, participants that register to this event will use the organisation defined above unless set otherwise. " + 
+            "set to False to allow people from other organisations to define themelves on registration"
+            ))
+    
     
     def save(self, *args, **kwargs):
         if not self.event_code:
@@ -349,6 +366,15 @@ class EventParticipant(models.Model):
     accessibility_requirements = models.TextField(_("accessibility requirements"), blank=True, null=True)
     special_requests = models.TextField(_("special requests"), blank=True, null=True)
     
+    organisation = models.ForeignKey(
+        Organisation, 
+        on_delete=models.SET_NULL, 
+        verbose_name=_("event organisation"),
+        null=True,
+        blank=True,
+        help_text=_("defines the organisation attached to the event"),
+        related_name="event_participants"
+        )
     
     class Meta:
         verbose_name = _("Event Participant")

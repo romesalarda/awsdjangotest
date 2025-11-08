@@ -223,10 +223,43 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def roles(self, request, member_id=None):
+        '''
+        Get all community roles assigned to this user, including organisation access.
+        '''
         user = self.get_object()
         roles = user.role_links.all()
         serializer = UserCommunityRoleSerializer(roles, many=True)
         return response.Response(serializer.data)
+    
+    @action(detail=True, methods=['get'], url_path='role-organisations')
+    def get_role_organisations(self, request, member_id=None):
+        '''
+        Get all organisations this user has access to across all their roles.
+        
+        Returns a consolidated view of all organisations the user can manage/access
+        based on their role assignments.
+        
+        GET /api/users/{member_id}/role-organisations/
+        '''
+        user = self.get_object()
+        
+        # Get all unique organisations across all user's roles
+        from apps.events.models import Organisation
+        organisation_ids = set()
+        
+        for role_link in user.role_links.filter(is_active=True):
+            org_ids = role_link.allowed_organisation_control.values_list('id', flat=True)
+            organisation_ids.update(org_ids)
+        
+        organisations = Organisation.objects.filter(id__in=organisation_ids)
+        
+        from apps.events.api.serializers import OrganisationSerializer
+        serializer = OrganisationSerializer(organisations, many=True, context={'request': request})
+        
+        return response.Response({
+            'count': len(organisation_ids),
+            'organisations': serializer.data
+        })
     
     @action(detail=True, methods=['get'])
     def events(self, request, member_id=None):
@@ -366,12 +399,151 @@ class CommunityRoleViewSet(viewsets.ModelViewSet):
 
 class UserCommunityRoleViewSet(viewsets.ModelViewSet):
     '''
-    Viewset for managing user-community roles
+    Viewset for managing user-community roles with organisation control.
+    
+    Supports filtering by user, role, and active status.
+    Includes actions for managing organisation access per role assignment.
     '''
-    queryset = UserCommunityRole.objects.all()
+    queryset = UserCommunityRole.objects.all().select_related('user', 'role').prefetch_related('allowed_organisation_control')
     serializer_class = UserCommunityRoleSerializer
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['user', 'role', 'is_active']
+    search_fields = ['user__first_name', 'user__last_name', 'user__username', 'role__role_name']
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @action(detail=True, methods=['post'], url_path='add-organisations')
+    def add_organisations(self, request, pk=None):
+        '''
+        Add organisations to a user role's allowed_organisation_control.
+        
+        POST /api/user-community-roles/{id}/add-organisations/
+        Body: {
+            "organisation_ids": ["uuid1", "uuid2", ...]
+        }
+        '''
+        user_role = self.get_object()
+        organisation_ids = request.data.get('organisation_ids', [])
+        
+        if not organisation_ids:
+            return response.Response({
+                'message': 'No organisation IDs provided',
+                'errors': {'organisation_ids': ['This field is required.']}
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        from apps.events.models import Organisation
+        
+        # Validate that all organisations exist
+        organisations = Organisation.objects.filter(id__in=organisation_ids)
+        if organisations.count() != len(organisation_ids):
+            found_ids = set(str(org.id) for org in organisations)
+            missing_ids = set(organisation_ids) - found_ids
+            return response.Response({
+                'message': 'Some organisations not found',
+                'errors': {'organisation_ids': [f'Organisations not found: {", ".join(missing_ids)}']}
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Add organisations (won't create duplicates due to M2M relationship)
+        user_role.allowed_organisation_control.add(*organisations)
+        
+        # Return updated role data
+        serializer = self.get_serializer(user_role)
+        return response.Response({
+            'message': 'Organisations added successfully',
+            'user_role': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], url_path='remove-organisations')
+    def remove_organisations(self, request, pk=None):
+        '''
+        Remove organisations from a user role's allowed_organisation_control.
+        
+        POST /api/user-community-roles/{id}/remove-organisations/
+        Body: {
+            "organisation_ids": ["uuid1", "uuid2", ...]
+        }
+        '''
+        user_role = self.get_object()
+        organisation_ids = request.data.get('organisation_ids', [])
+        
+        if not organisation_ids:
+            return response.Response({
+                'message': 'No organisation IDs provided',
+                'errors': {'organisation_ids': ['This field is required.']}
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        from apps.events.models import Organisation
+        
+        # Get organisations to remove
+        organisations = Organisation.objects.filter(id__in=organisation_ids)
+        
+        # Remove organisations
+        user_role.allowed_organisation_control.remove(*organisations)
+        
+        # Return updated role data
+        serializer = self.get_serializer(user_role)
+        return response.Response({
+            'message': 'Organisations removed successfully',
+            'user_role': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], url_path='set-organisations')
+    def set_organisations(self, request, pk=None):
+        '''
+        Set (replace) all organisations for a user role's allowed_organisation_control.
+        
+        POST /api/user-community-roles/{id}/set-organisations/
+        Body: {
+            "organisation_ids": ["uuid1", "uuid2", ...]
+        }
+        
+        Empty array will clear all organisations.
+        '''
+        user_role = self.get_object()
+        organisation_ids = request.data.get('organisation_ids', [])
+        
+        from apps.events.models import Organisation
+        
+        if organisation_ids:
+            # Validate that all organisations exist
+            organisations = Organisation.objects.filter(id__in=organisation_ids)
+            if organisations.count() != len(organisation_ids):
+                found_ids = set(str(org.id) for org in organisations)
+                missing_ids = set(organisation_ids) - found_ids
+                return response.Response({
+                    'message': 'Some organisations not found',
+                    'errors': {'organisation_ids': [f'Organisations not found: {", ".join(missing_ids)}']}
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Set organisations (replaces existing)
+            user_role.allowed_organisation_control.set(organisations)
+        else:
+            # Clear all organisations
+            user_role.allowed_organisation_control.clear()
+        
+        # Return updated role data
+        serializer = self.get_serializer(user_role)
+        return response.Response({
+            'message': 'Organisations updated successfully',
+            'user_role': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['get'], url_path='organisations')
+    def get_organisations(self, request, pk=None):
+        '''
+        Get all organisations assigned to this user role.
+        
+        GET /api/user-community-roles/{id}/organisations/
+        '''
+        user_role = self.get_object()
+        
+        from apps.events.api.serializers import OrganisationSerializer
+        organisations = user_role.allowed_organisation_control.all()
+        serializer = OrganisationSerializer(organisations, many=True, context={'request': request})
+        
+        return response.Response({
+            'count': organisations.count(),
+            'organisations': serializer.data
+        }, status=status.HTTP_200_OK)
 
 class AlergiesViewSet(viewsets.ModelViewSet):
     '''

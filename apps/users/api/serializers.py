@@ -7,7 +7,7 @@ from apps.users.models import (
     CommunityUser, CommunityRole, UserCommunityRole,
     Allergy, MedicalCondition, EmergencyContact, UserAllergy, UserMedicalCondition
 )
-from apps.events.models import AreaLocation
+from apps.events.models import AreaLocation, Organisation
 
 class CommunityRoleSerializer(serializers.ModelSerializer):
     '''
@@ -19,11 +19,39 @@ class CommunityRoleSerializer(serializers.ModelSerializer):
 
 class UserCommunityRoleSerializer(serializers.ModelSerializer):
     '''
-    Serializer for user community roles.
+    Serializer for user community roles with organisation control.
+    
+    Includes the allowed_organisation_control field which defines which organisations
+    this user can manage/access based on their assigned role.
+    
+    Example usage:
+    - An EVENT_APPROVER may be assigned only to YFC organisation
+    - Another EVENT_APPROVER may be assigned to both YFC and CFC organisations
+    - A COMMUNITY_ADMIN may have access to all organisations
     '''
     role_name = serializers.CharField(source='role.get_role_name_display', read_only=True)
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
     visible_field = serializers.CharField(source='role.visible_role', read_only=True)
+    
+    # Import OrganisationSerializer to avoid circular imports
+    allowed_organisations = serializers.SerializerMethodField(read_only=True)
+    allowed_organisation_ids = serializers.PrimaryKeyRelatedField(
+        source='allowed_organisation_control',
+        queryset=Organisation.objects.all(),  # 
+        many=True,
+        write_only=True,
+        required=False,
+        help_text="List of organisation UUIDs this user can manage/access with this role"
+    )
+    
+    def get_allowed_organisations(self, obj):
+        """Return simplified organisation data for display"""
+        organisations = obj.allowed_organisation_control.all()
+        return [{
+            'id': str(org.id),
+            'name': org.name,
+            'description': org.description
+        } for org in organisations]
         
     class Meta:
         model = UserCommunityRole
@@ -32,14 +60,30 @@ class UserCommunityRoleSerializer(serializers.ModelSerializer):
 class SimplifiedUserCommunityRoleSerializer(serializers.ModelSerializer):
     '''
     Simplified serializer for user roles.
+    Includes organisation count for visibility in minimal views.
     '''
     role_name = serializers.CharField(source='role.get_role_name_display', read_only=True)
     visible = serializers.CharField(source='role.visible_role', read_only=True)
-    order = serializers.CharField(source='role.authority_level', read_only=True)    
+    order = serializers.CharField(source='role.authority_level', read_only=True)
+    organisation_count = serializers.SerializerMethodField(read_only=True)
+    allowed_organisations = serializers.SerializerMethodField(read_only=True)
+
+    def get_organisation_count(self, obj):
+        """Return count of organisations this role has access to"""
+        return obj.allowed_organisation_control.count()
     
     class Meta:
         model = UserCommunityRole
-        fields = ('role_name', 'start_date', 'visible', 'order')
+        fields = ('role_name', 'start_date', 'visible', 'order', 'organisation_count', 'allowed_organisations')
+        
+    def get_allowed_organisations(self, obj):
+        """Return simplified organisation data for display"""
+        organisations = obj.allowed_organisation_control.all()
+        return [{
+            'id': str(org.id),
+            'name': org.name,
+            'description': org.description
+        } for org in organisations]
         
 class EmergencyContactSerializer(serializers.ModelSerializer):
     '''
@@ -478,9 +522,16 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                     if 'role_id' in role_data:
                         role_data['role'] = role_data.pop('role_id')
                     
+                    # Extract allowed_organisation_ids before serialization
+                    allowed_org_ids = role_data.pop('allowed_organisation_ids', [])
+                    
                     role_serializer = UserCommunityRoleSerializer(data=role_data)
                     if role_serializer.is_valid(raise_exception=True):
-                        role_serializer.save()
+                        user_role = role_serializer.save()
+                        
+                        # Set allowed organisations if provided
+                        if allowed_org_ids:
+                            user_role.allowed_organisation_control.set(allowed_org_ids)
             
         return user
     
@@ -500,6 +551,57 @@ class CommunityUserSerializer(serializers.ModelSerializer):
             # Handle password update
             if password:
                 instance.set_password(password)
+            
+            # Handle Community Roles update
+            if roles_data is not None:
+                # Get existing role IDs for this user
+                existing_role_ids = set(instance.role_links.values_list('id', flat=True))
+                processed_role_ids = set()
+                
+                for role_data in roles_data:
+                    role_id = role_data.get('id')
+                    
+                    # Extract allowed_organisation_ids before serialization
+                    allowed_org_ids = role_data.pop('allowed_organisation_ids', None)
+                    
+                    if role_id and role_id in existing_role_ids:
+                        # Update existing role assignment
+                        user_role = UserCommunityRole.objects.get(id=role_id, user=instance)
+                        role_serializer = UserCommunityRoleSerializer(
+                            user_role, 
+                            data=role_data, 
+                            partial=True
+                        )
+                        if role_serializer.is_valid(raise_exception=True):
+                            updated_role = role_serializer.save()
+                            
+                            # Update allowed organisations if provided
+                            if allowed_org_ids is not None:
+                                updated_role.allowed_organisation_control.set(allowed_org_ids)
+                            
+                            processed_role_ids.add(role_id)
+                    else:
+                        # Create new role assignment
+                        role_data['user'] = instance.id
+                        if 'role_id' in role_data:
+                            role_data['role'] = role_data.pop('role_id')
+                        
+                        role_serializer = UserCommunityRoleSerializer(data=role_data)
+                        if role_serializer.is_valid(raise_exception=True):
+                            new_role = role_serializer.save()
+                            
+                            # Set allowed organisations if provided
+                            if allowed_org_ids:
+                                new_role.allowed_organisation_control.set(allowed_org_ids)
+                            
+                            processed_role_ids.add(new_role.id)
+                
+                # Optionally remove roles that weren't in the update
+                # (Only if you want to support role removal via update)
+                # Uncomment if you want this behavior:
+                for role_id in existing_role_ids:
+                    if role_id not in processed_role_ids:
+                        UserCommunityRole.objects.filter(id=role_id).delete()
             
             instance.save()
         

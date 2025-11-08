@@ -8,7 +8,7 @@ from .models import (
     EventResource, EventVenue, SearchAreaSupportLocation,
     ExtraQuestion, QuestionChoice, QuestionAnswer,
     EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance, ParticipantQuestion,
-    ParticipantRefund, ServiceTeamPermission
+    ParticipantRefund, ServiceTeamPermission, Organisation, OrganisationSocialMediaLink
 )
 
 
@@ -146,14 +146,14 @@ class EventAdmin(admin.ModelAdmin):
     
     fieldsets = (
         (_('Basic Information'), {'fields': (
-            'name', 'name_code', 'event_code', 'event_type', 'start_date', 'end_date', 'duration_days', 'created_by', 'status', 'approved', "payment_deadline"
+            'name', 'name_code', 'event_code', 'event_type', 'start_date', 'end_date', 'duration_days', 'created_by', 'status', "payment_deadline"
         )}),
         (_('Location Information'), {'fields': (
             'area_type', 'areas_involved', 'venues'
         )}),
         (_('Event Details'), {'fields': (
             'description', 'sentence_description', 'theme', 'anchor_verse', 'number_of_pax', 'important_information', 
-            'registration_deadline', 'what_to_bring'
+            'registration_deadline', 'what_to_bring', 'organisation'
         )}),
         (_('Supervision'), {'fields': (
             'supervising_youth_heads', 'supervising_CFC_coordinators'
@@ -162,7 +162,7 @@ class EventAdmin(admin.ModelAdmin):
             'resources', 'memo', 'landing_image'
         )}),
         (_('Admin'), {'fields': (
-            'notes', 'is_public', 'registration_open', 'required_existing_id', 'format_verifier', 'existing_id_name', 'existing_id_description'
+            'notes', 'is_public', 'registration_open', 'required_existing_id', 'format_verifier', 'existing_id_name', 'existing_id_description', 'approved',
         )}),
     )
     
@@ -457,6 +457,8 @@ class EventDayAttendanceAdmin(admin.ModelAdmin):
 class ParticipantQuestionAdmin(admin.ModelAdmin):
     list_display = ('question','participant', 'event', 'status', 'submitted_at', 'responded_at')
 
+admin.site.register(Organisation)
+admin.site.register(OrganisationSocialMediaLink)
 
 @admin.register(ParticipantRefund)
 class ParticipantRefundAdmin(admin.ModelAdmin):

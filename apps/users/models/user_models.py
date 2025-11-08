@@ -243,6 +243,8 @@ class CommunityRole(models.Model):
         # non-visible auth fields - generally for frontend use and is less powerful than superuser, superuser and staff refer to backend access to api control
         
         EVENT_APPROVER = "EVENT_APPROVER", _("Event Approver") # just able to approve events
+        EVENT_CREATOR = "EVENT_CREATOR", _("Event Creator") # able to create/edit/delete own events created
+        
         COMMUNITY_ADMIN = "COMMUNITY_ADMIN", _("Community Admin") # able to promote other users to event approver status, higher level status than most
     
     role_name = models.CharField(
@@ -328,6 +330,13 @@ class UserCommunityRole(models.Model):
         verbose_name=_("notes"),
         help_text=_("Additional information about this role assignment")
     )
+    
+    allowed_organisation_control = models.ManyToManyField(
+        "events.Organisation", 
+        blank=True, 
+        help_text=_(
+            "defines what organisations this user has permissions or control to")
+        ) # used for encoders and what organisations they can create events for
     
     class Meta:
         unique_together = ("user", "role")
