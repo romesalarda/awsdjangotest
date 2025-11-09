@@ -10,7 +10,9 @@ Supports hierarchical permission checking:
 """
 
 from apps.events.models import Event, EventServiceTeamMember, ServiceTeamPermission
+from apps.users.models import CommunityRole
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 
 User = get_user_model()
 
@@ -165,7 +167,8 @@ def get_user_event_permissions(user, event):
             'can_manage_permissions': True,
             'can_manage_resources': True,
             'can_manage_questions': True,
-            'event_approved': event.approved
+            'event_approved': event.approved,
+            'can_approve': can_user_approve_event(user)
         }
     
     # Check if user is a service team member with specific permissions
@@ -200,7 +203,8 @@ def get_user_event_permissions(user, event):
                 'can_manage_permissions': permissions.can_manage_permissions,
                 'can_manage_resources': permissions.can_manage_resources,
                 'can_manage_questions': permissions.can_manage_questions,
-                'event_approved': event.approved
+                'event_approved': event.approved,
+                'can_approve': can_user_approve_event(user)
 
             }
         except ServiceTeamPermission.DoesNotExist:
@@ -228,12 +232,45 @@ def get_user_event_permissions(user, event):
                 'can_manage_permissions': False,
                 'can_manage_resources': False,
                 'can_manage_questions': False,
-                'event_approved': event.approved
+                'event_approved': event.approved,
+                'can_approve': can_user_approve_event(user)
 
             }
     except EventServiceTeamMember.DoesNotExist:
         # User is not a service team member
+        if can_user_approve_event(user):
+            return {
+                'has_full_access': False,
+                'is_creator': False,
+                'is_event_head': False,
+                'is_cfc_coordinator': False,
+                'can_view_participants': False,
+                'can_edit_participants': False,
+                'can_remove_participants': False,
+                'can_add_participants': False,
+                'can_view_payments': False,
+                'can_approve_payments': False,
+                'can_process_refunds': False,
+                'can_view_merch': False,
+                'can_manage_merch': False,
+                'can_approve_merch_payments': False,
+                'can_access_checkin': False,
+                'can_access_live_dashboard': False,
+                'can_edit_event_details': False,
+                'can_manage_service_team': False,
+                'can_manage_permissions': False,
+                'can_manage_resources': False,
+                'can_manage_questions': False,
+                'event_approved': event.approved,
+                'can_approve': True,
+
+            }
+
         return None
+    
+        # TODO: add new permissions for community admins viewing event for approval
+    
+    
 
 
 def has_event_permission(user, event, permission_name):
@@ -287,3 +324,9 @@ def can_user_access_event_dashboard(user, event):
         permissions.get('can_access_checkin'),
         permissions.get('can_access_live_dashboard'),
     ])
+
+def can_user_approve_event(user):
+    return user.community_roles.through.objects.filter(
+            Q(role__role_name=CommunityRole.RoleType.COMMUNITY_ADMIN.name) |
+            Q(role__role_name=CommunityRole.RoleType.EVENT_APPROVER.name)
+        ).exists()

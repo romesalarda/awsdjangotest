@@ -159,6 +159,38 @@ class Event(models.Model):
         )
     notes = models.TextField(verbose_name=_("event notes"), blank=True, null=True)
     approved = models.BooleanField(verbose_name=_("event approved"), default=False) # Defines if even the one who created the event can even use it yet
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_events",
+        verbose_name=_("approved by"),
+        help_text=_("User who approved this event")
+    )
+    approved_at = models.DateTimeField(
+        verbose_name=_("approval timestamp"),
+        null=True,
+        blank=True,
+        help_text=_("When the event was approved")
+    )
+    approval_notes = models.TextField(
+        verbose_name=_("approval notes"),
+        blank=True,
+        null=True,
+        help_text=_("Notes from the approver to the event creator")
+    )
+    rejected = models.BooleanField(
+        verbose_name=_("event rejected"),
+        default=False,
+        help_text=_("Whether this event has been rejected by an approver")
+    )
+    rejection_reason = models.TextField(
+        verbose_name=_("rejection reason"),
+        blank=True,
+        null=True,
+        help_text=_("Reason for rejecting this event")
+    )
     
     # registration dates
     registration_open = models.BooleanField(verbose_name=_("is registration open"), default=False)

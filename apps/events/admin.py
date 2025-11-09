@@ -137,7 +137,7 @@ class ExtraQuestionInline(admin.StackedInline):
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ('name', 'event_code', 'event_type', 'end_date', 'number_of_pax', 'created_by')
+    list_display = ('name', 'event_code', 'event_type', 'end_date', 'number_of_pax', 'created_by', 'approved', 'status')
     list_filter = ('event_type', 'area_type', 'start_date')
     search_fields = ('name', 'theme')
     date_hierarchy = 'start_date'

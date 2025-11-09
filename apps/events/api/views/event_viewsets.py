@@ -1936,6 +1936,302 @@ class EventViewSet(viewsets.ModelViewSet):
                 },
                 'error': str(e)
             }, status=500)
+    
+    @action(detail=True, methods=['post'], url_name="approve", url_path="approve")
+    def approve_event(self, request, id=None):
+        """
+        Approve an event - only Event Approvers or Community Admins can do this
+        Approvers can only approve events for organisations they have access to
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check if user has Event Approver or Community Admin role
+        from apps.users.models import UserCommunityRole, CommunityRole
+        
+        user_roles = UserCommunityRole.objects.filter(user=user).select_related('role').prefetch_related('allowed_organisation_control')
+        
+        has_approval_permission = False
+        allowed_orgs = []
+        
+        for user_role in user_roles:
+            role_name = user_role.role.get_role_name_display()
+            if role_name in ['Event Approver', 'Community Admin']:
+                has_approval_permission = True
+                # Get all organisations this user can approve for
+                user_orgs = list(user_role.allowed_organisation_control.all())
+                allowed_orgs.extend(user_orgs)
+        
+        if not has_approval_permission:
+            return Response(
+                {'error': 'You do not have permission to approve events'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if event's organisation is in user's allowed organisations
+        if event.organisation and event.organisation not in allowed_orgs:
+            return Response(
+                {'error': 'You can only approve events for organisations you manage'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if event is already approved
+        if event.approved:
+            return Response(
+                {'message': 'Event is already approved'},
+                status=status.HTTP_200_OK
+            )
+        
+        # Approve the event
+        approval_notes = request.data.get('approval_notes', '')
+        
+        event.approved = True
+        event.approved_by = user
+        event.approved_at = timezone.now()
+        event.approval_notes = approval_notes
+        event.rejected = False
+        event.rejection_reason = ''
+        event.save()
+        
+        # Serialize and return
+        serializer = self.get_serializer(event)
+        
+        return Response({
+            'message': 'Event approved successfully',
+            'event': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], url_name="reject", url_path="reject")
+    def reject_event(self, request, id=None):
+        """
+        Reject an event - only Event Approvers or Community Admins can do this
+        Rejecting an event sets status to CANCELLED
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check if user has Event Approver or Community Admin role
+        from apps.users.models import UserCommunityRole, CommunityRole
+        
+        user_roles = UserCommunityRole.objects.filter(user=user).select_related('role').prefetch_related('allowed_organisation_control')
+        
+        has_approval_permission = False
+        allowed_orgs = []
+        
+        for user_role in user_roles:
+            role_name = user_role.role.get_role_name_display()
+            if role_name in ['Event Approver', 'Community Admin']:
+                has_approval_permission = True
+                # Get all organisations this user can approve for
+                user_orgs = list(user_role.allowed_organisation_control.all())
+                allowed_orgs.extend(user_orgs)
+        
+        if not has_approval_permission:
+            return Response(
+                {'error': 'You do not have permission to reject events'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if event's organisation is in user's allowed organisations
+        if event.organisation and event.organisation not in allowed_orgs:
+            return Response(
+                {'error': 'You can only reject events for organisations you manage'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Reject the event
+        rejection_reason = request.data.get('rejection_reason', '')
+        
+        if not rejection_reason:
+            return Response(
+                {'error': 'rejection_reason is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        event.rejected = True
+        event.rejection_reason = rejection_reason
+        event.approved = False
+        event.approved_by = None
+        event.approved_at = None
+        event.approval_notes = ''
+        event.status = Event.EventStatus.CANCELLED
+        event.is_public = False
+        event.registration_open = False
+        event.save()
+        
+        # Serialize and return
+        serializer = self.get_serializer(event)
+        
+        return Response({
+            'message': 'Event rejected and cancelled successfully',
+            'event': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], url_name="unapprove", url_path="unapprove")
+    def unapprove_event(self, request, id=None):
+        """
+        Unapprove an event - only Event Approvers or Community Admins can do this
+        Unapproving forces status to CANCELLED
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check if user has Event Approver or Community Admin role
+        from apps.users.models import UserCommunityRole, CommunityRole
+        
+        user_roles = UserCommunityRole.objects.filter(user=user).select_related('role').prefetch_related('allowed_organisation_control')
+        
+        has_approval_permission = False
+        allowed_orgs = []
+        
+        for user_role in user_roles:
+            role_name = user_role.role.get_role_name_display()
+            if role_name in ['Event Approver', 'Community Admin']:
+                has_approval_permission = True
+                # Get all organisations this user can approve for
+                user_orgs = list(user_role.allowed_organisation_control.all())
+                allowed_orgs.extend(user_orgs)
+        
+        if not has_approval_permission:
+            return Response(
+                {'error': 'You do not have permission to unapprove events'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if event's organisation is in user's allowed organisations
+        if event.organisation and event.organisation not in allowed_orgs:
+            return Response(
+                {'error': 'You can only unapprove events for organisations you manage'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if event is not approved
+        if not event.approved:
+            return Response(
+                {'message': 'Event is already not approved'},
+                status=status.HTTP_200_OK
+            )
+        
+        # Unapprove the event
+        unapproval_reason = request.data.get('reason', '')
+        
+        event.approved = False
+        event.approved_by = None
+        event.approved_at = None
+        event.approval_notes = f"Unapproved by {user.get_full_name()}. Reason: {unapproval_reason}"
+        event.status = Event.EventStatus.CANCELLED
+        event.is_public = False
+        event.registration_open = False
+        event.save()
+        
+        # Serialize and return
+        serializer = self.get_serializer(event)
+        
+        return Response({
+            'message': 'Event unapproved and cancelled successfully',
+            'event': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['get'], url_name="admin_events", url_path="admin-events")
+    def admin_events(self, request):
+        """
+        Get all events for admin dashboard - filtered by user's allowed organisations
+        Only Event Approvers and Community Admins can access this
+        
+        Query params:
+        - approval_status: 'pending', 'approved', 'rejected', or 'all' (default: 'all')
+        - organisation: filter by organisation ID
+        - search: search by event name or code
+        """
+        user = request.user
+        
+        # Check if user has Event Approver or Community Admin role
+        from apps.users.models import UserCommunityRole
+        
+        user_roles = UserCommunityRole.objects.filter(user=user).select_related('role').prefetch_related('allowed_organisation_control')
+        
+        has_approval_permission = False
+        allowed_org_ids = []
+        
+        for user_role in user_roles:
+            role_name = user_role.role.get_role_name_display()
+            if role_name in ['Event Approver', 'Community Admin']:
+                has_approval_permission = True
+                # Get all organisation IDs this user can approve for
+                user_org_ids = list(user_role.allowed_organisation_control.values_list('id', flat=True))
+                allowed_org_ids.extend(user_org_ids)
+        
+        if not has_approval_permission:
+            return Response(
+                {'error': 'You do not have permission to access admin events'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Build base queryset - all events user can access
+        base_queryset = Event.objects.all()
+        
+        # Filter by allowed organisations (including events with no organisation)
+        if allowed_org_ids:
+            base_queryset = base_queryset.filter(
+                Q(organisation__id__in=allowed_org_ids) | Q(organisation__isnull=True)
+            )
+        
+        # Calculate statistics on BASE queryset (before other filters)
+        stats = {
+            'total_events': base_queryset.count(),
+            'pending_approval': base_queryset.filter(approved=False, rejected=False, status__in=['DRAFT', 'PLANNING']).exclude(status='CANCELLED').count(),
+            'approved': base_queryset.filter(approved=True).count(),
+            'rejected': base_queryset.filter(rejected=True).count(),
+            'cancelled': base_queryset.filter(status='CANCELLED', rejected=False).count(),
+        }
+        
+        # Now apply additional filters for display
+        queryset = base_queryset
+        
+        # Filter by approval status
+        approval_status = request.query_params.get('approval_status', 'all')
+        if approval_status == 'pending':
+            queryset = queryset.filter(approved=False, rejected=False)
+        elif approval_status == 'approved':
+            queryset = queryset.filter(approved=True)
+        elif approval_status == 'rejected':
+            queryset = queryset.filter(rejected=True)
+        
+        # Filter by specific organisation
+        org_filter = request.query_params.get('organisation')
+        if org_filter:
+            queryset = queryset.filter(organisation__id=org_filter)
+        
+        # Filter by area
+        area_filter = request.query_params.get('area')
+        if area_filter:
+            queryset = queryset.filter(areas_involved__id=area_filter)
+        
+        # Search
+        search = request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) | Q(event_code__icontains=search)
+            )
+        
+        # Order by start date (newest first)
+        queryset = queryset.order_by('-start_date')
+        
+        # Serialize
+        serializer = UserAwareEventSerializer(queryset, many=True, context={'request': request})
+        
+        # Get all areas from allowed organisations for filtering
+        from apps.events.models import AreaLocation
+        allowed_areas = AreaLocation.objects.filter(
+            unit__chapter__cluster__world_location__country='GB'  # Adjust based on your needs
+        ).values('id', 'area_name').distinct()
+        
+        return Response({
+            'events': serializer.data,
+            'statistics': stats,
+            'allowed_organisations': [str(org_id) for org_id in set(allowed_org_ids)],
+            'allowed_areas': list(allowed_areas)
+        }, status=status.HTTP_200_OK)
 
         
 

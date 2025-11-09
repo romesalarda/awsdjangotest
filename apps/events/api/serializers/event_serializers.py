@@ -104,7 +104,9 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     areas_involved = serializers.SerializerMethodField(read_only=True)
     main_venue = serializers.SerializerMethodField(read_only=True)
     cost = serializers.SerializerMethodField(read_only=True)
-    
+    organisation = OrganisationSerializer(read_only=True)
+    chapter = serializers.CharField(source="created_by.area_from.unit.chapter.chapter_name")
+
     class Meta:
         model = Event
         fields = (
@@ -124,6 +126,14 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
             "main_venue",
             "registration_open",
             "cost",
+            "status",
+            "approved",
+            "rejected",
+            "rejection_reason",
+            "approval_notes",
+            "approved_at",
+            "organisation",
+            "chapter"
         )
         
     def get_main_venue(self, obj):
@@ -157,7 +167,7 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 "description": rep["sentence_description"],
                 "theme": rep.get("theme"),
                 "anchor_verse": rep.get("anchor_verse"),
-                "cost": rep.get("cost")
+                "cost": rep.get("cost"),
             },
             "media": {
                 "landing_image": rep.get("landing_image")
@@ -171,6 +181,16 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 "area_type": rep.get("area_type"),
                 "areas_involved": rep.get("areas_involved"),
                 "main_venue": rep.get("main_venue"),
+                "organisation": rep.get("organisation"),
+                "created_for_chapater": rep.get("chapter")
+            },
+            "admin": {
+                "approved": rep.get("approved"),
+                "status": rep.get("status"),
+                "rejected": rep.get("rejected"),
+                "rejection_reason": rep.get("rejection_reason"),
+                "approval_notes": rep.get("approval_notes"),
+                "approved_at": rep.get("approved_at")
             }
         }
 
@@ -347,6 +367,13 @@ class EventSerializer(serializers.ModelSerializer):
         help_text="UUID of the organisation to associate with this event. Required if force_participant_organisation is True."
     )
     
+    # Approval fields
+    approved_by = SimplifiedCommunityUserSerializer(read_only=True)
+    approved_at = serializers.DateTimeField(read_only=True)
+    approval_notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    rejected = serializers.BooleanField(read_only=True)
+    rejection_reason = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
     def to_internal_value(self, data):
         # Handle nested data structures sent from frontend
         
@@ -445,7 +472,13 @@ class EventSerializer(serializers.ModelSerializer):
             # Organisation fields
             "organisation",
             "organisation_id",
-            "force_participant_organisation"
+            "force_participant_organisation",
+            # Approval fields
+            "approved_by",
+            "approved_at",
+            "approval_notes",
+            "rejected",
+            "rejection_reason"
             ]
         read_only_fields = [
             "id",
@@ -526,7 +559,12 @@ class EventSerializer(serializers.ModelSerializer):
                 "format_verifier": rep["format_verifier"],
                 "existing_id_name": rep["existing_id_name"],
                 "existing_id_description": rep["existing_id_description"],
-                "approved": rep["approved"]
+                "approved": rep["approved"],
+                "approved_by": rep["approved_by"],
+                "approved_at": rep["approved_at"],
+                "approval_notes": rep["approval_notes"],
+                "rejected": rep["rejected"],
+                "rejection_reason": rep["rejection_reason"]
             },
             "organisation": {
                 "organisation": rep["organisation"],
