@@ -64,6 +64,7 @@ class ParticipantRefundListSerializer(serializers.ModelSerializer):
             'event_payment_amount',
             'product_payment_amount',
             'total_refund_amount',
+            'removal_reason',
             'currency',
             'status',
             'status_display',

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.events.models import ServiceTeamPermission
 from django.utils.translation import gettext_lazy as _
+from apps.events.models import EventServiceTeamMember
 
 
 class ServiceTeamPermissionSerializer(serializers.ModelSerializer):
@@ -44,6 +45,12 @@ class ServiceTeamPermissionSerializer(serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     granted_by_name = serializers.SerializerMethodField(read_only=True)
     service_team_member_id = serializers.UUIDField(source='service_team_member.id', read_only=True)
+    
+    # Make service_team_member not required for updates (only required for creation)
+    service_team_member = serializers.PrimaryKeyRelatedField(
+        queryset=EventServiceTeamMember.objects.all(),  # Will be set in __init__
+        required=False
+    )
     
     class Meta:
         model = ServiceTeamPermission

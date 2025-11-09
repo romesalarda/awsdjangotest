@@ -276,10 +276,12 @@ class EventViewSet(viewsets.ModelViewSet):
                 try:
                     # Try to get existing permissions
                     permissions = service_member.permissions
+                    # Don't use partial=True for permissions - we need all fields to properly update booleans
+                    # Frontend sends all permission fields, so this is safe
                     permission_serializer = ServiceTeamPermissionSerializer(
                         permissions,
                         data=permission_data,
-                        partial=True,
+                        partial=False,
                         context={'request': request}
                     )
                 except:
@@ -370,10 +372,12 @@ class EventViewSet(viewsets.ModelViewSet):
                 # Update permissions
                 try:
                     permissions = service_member.permissions
+                    # Don't use partial=True for permissions - we need all fields to properly update booleans
+                    # Frontend sends all permission fields, so this is safe
                     serializer = ServiceTeamPermissionSerializer(
                         permissions,
                         data=request.data,
-                        partial=True,
+                        partial=False,
                         context={'request': request}
                     )
                 except:
@@ -2119,7 +2123,7 @@ class EventViewSet(viewsets.ModelViewSet):
         event.approved_by = None
         event.approved_at = None
         event.approval_notes = f"Unapproved by {user.get_full_name()}. Reason: {unapproval_reason}"
-        event.status = Event.EventStatus.CANCELLED
+        event.status = Event.EventStatus.POSTPONED
         event.is_public = False
         event.registration_open = False
         event.save()

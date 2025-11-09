@@ -26,7 +26,7 @@ from apps.users.models import CommunityUser, MedicalCondition, Allergy, Emergenc
 from .location_serializers import EventVenueSerializer, AreaLocationSerializer
 from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
 from .payment_serializers import EventPaymentPackageSerializer, EventPaymentMethodSerializer, EventPaymentSerializer
-from .permission_serializers import ServiceTeamPermissionSummarySerializer
+from .permission_serializers import ServiceTeamPermissionSummarySerializer, ServiceTeamPermissionSerializer
 from .organisation_serializers import OrganisationSerializer
 
 from apps.shop.api import serializers as shop_serializers
@@ -53,7 +53,7 @@ class EventServiceTeamMemberSerializer(serializers.ModelSerializer):
     '''
     user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
     role_details = EventRoleSerializer(source='roles', many=True, read_only=True)
-    permission_details = ServiceTeamPermissionSummarySerializer(source='permissions', read_only=True)
+    permission_details = ServiceTeamPermissionSerializer(source='permissions', read_only=True)
     
     class Meta:
         model = EventServiceTeamMember
@@ -106,6 +106,7 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     cost = serializers.SerializerMethodField(read_only=True)
     organisation = OrganisationSerializer(read_only=True)
     chapter = serializers.CharField(source="created_by.area_from.unit.chapter.chapter_name")
+    created_by = SimplifiedCommunityUserSerializer()
 
     class Meta:
         model = Event
@@ -133,7 +134,8 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
             "approval_notes",
             "approved_at",
             "organisation",
-            "chapter"
+            "chapter",
+            "created_by"
         )
         
     def get_main_venue(self, obj):
@@ -190,7 +192,8 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 "rejected": rep.get("rejected"),
                 "rejection_reason": rep.get("rejection_reason"),
                 "approval_notes": rep.get("approval_notes"),
-                "approved_at": rep.get("approved_at")
+                "approved_at": rep.get("approved_at"),
+                "created_by": rep.get("created_by")
             }
         }
 
@@ -373,6 +376,7 @@ class EventSerializer(serializers.ModelSerializer):
     approval_notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     rejected = serializers.BooleanField(read_only=True)
     rejection_reason = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    created_by = SimplifiedCommunityUserSerializer()
     
     def to_internal_value(self, data):
         # Handle nested data structures sent from frontend
@@ -447,6 +451,7 @@ class EventSerializer(serializers.ModelSerializer):
             "payment_packages_data",
             "payment_methods_data",
             "organisers",
+            "created_by",
             "service_team",
             "important_information",
             "what_to_bring",
@@ -564,7 +569,8 @@ class EventSerializer(serializers.ModelSerializer):
                 "approved_at": rep["approved_at"],
                 "approval_notes": rep["approval_notes"],
                 "rejected": rep["rejected"],
-                "rejection_reason": rep["rejection_reason"]
+                "rejection_reason": rep["rejection_reason"],
+                "created_by": rep["created_by"]
             },
             "organisation": {
                 "organisation": rep["organisation"],
