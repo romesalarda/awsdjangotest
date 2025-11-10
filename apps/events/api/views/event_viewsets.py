@@ -2495,30 +2495,189 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
         
     def create(self, request, *args, **kwargs):
+        """
+        Create a new event participant registration.
+        
+        Supports two payment flows:
+        1. Stripe: Returns stripe_client_secret for frontend payment completion
+        2. Other methods: Creates payment record in PENDING state
+        
+        Expected payload includes optional donation_amount for combined payment.
+        """
+        # First, create the participant using parent serializer
         response = super().create(request, *args, **kwargs)
         data = response.data
         
-        # Send booking confirmation email with QR code
         try:
             # Get the created participant
             event_user_id = data.get("event_user_id")
-            if event_user_id:
-                participant = EventParticipant.objects.get(event_pax_id=event_user_id)
-                # Send email asynchronously (non-blocking)
+            if not event_user_id:
+                return Response(response.data, status=response.status_code)
+            
+            participant = EventParticipant.objects.get(event_pax_id=event_user_id)
+            
+            # Check if there are any event payments created
+            event_payments = data.get('event_payments', [])
+            if not event_payments:
+                # No payment required, just send confirmation
                 from threading import Thread
                 email_thread = Thread(target=send_booking_confirmation_email, args=(participant,))
                 email_thread.start()
                 print(f"📧 Booking confirmation email queued for {event_user_id}")
+                
+                return Response({
+                    "event_user_id": data["event_user_id"],
+                    "is_paid": False,
+                    "payment_method": None,
+                    "needs_verification": False
+                }, status=response.status_code)
+            
+            # Get the first event payment (should only be one during registration)
+            event_payment = EventPayment.objects.filter(user=participant).first()
+            
+            if not event_payment:
+                # Send standard confirmation email
+                from threading import Thread
+                email_thread = Thread(target=send_booking_confirmation_email, args=(participant,))
+                email_thread.start()
+                print(f"📧 Booking confirmation email queued for {event_user_id}")
+                
+                return Response({
+                    "event_user_id": data["event_user_id"],
+                    "is_paid": False,
+                    "payment_method": None,
+                    "needs_verification": False
+                }, status=response.status_code)
+            
+            # Handle optional donation
+            donation_payment = None
+            donation_amount = request.data.get('donation_amount')
+            
+            if donation_amount and float(donation_amount) > 0:
+                # Create donation payment with same method as event payment
+                donation_payment = DonationPayment.objects.create(
+                    user=participant,
+                    event=participant.event,
+                    method=event_payment.method,
+                    amount=float(donation_amount),
+                    currency=event_payment.currency,
+                    status=DonationPayment.PaymentStatus.PENDING,
+                    pay_to_event=request.data.get('pay_to_event', True)
+                )
+                print(f"💝 Donation payment created: £{donation_amount} for {event_user_id}")
+            
+            # Check if payment method is Stripe
+            payment_method = event_payment.method
+            stripe_client_secret = None
+            
+            if payment_method and payment_method.method == 'STRIPE':
+                # Create Stripe PaymentIntent
+                from apps.shop.stripe_service import StripePaymentService
+                
+                try:
+                    stripe_service = StripePaymentService()
+                    payment_intent = stripe_service.create_event_payment_intent(
+                        event_payment=event_payment,
+                        donation_payment=donation_payment,
+                        metadata={
+                            'participant_name': f"{participant.user.first_name} {participant.user.last_name}",
+                            'participant_email': participant.user.primary_email,
+                        }
+                    )
+                    
+                    if payment_intent:
+                        stripe_client_secret = payment_intent['client_secret']
+                        print(f"💳 Stripe PaymentIntent created for {event_user_id}: {payment_intent['id']}")
+                    else:
+                        raise Exception("Failed to create Stripe PaymentIntent")
+                        
+                except Exception as e:
+                    print(f"⚠️ Stripe PaymentIntent creation failed: {e}")
+                    # Clean up participant if Stripe fails
+                    participant.delete()
+                    if donation_payment:
+                        donation_payment.delete()
+                    return Response(
+                        {"error": f"Failed to initialize payment: {str(e)}"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+                
+                # Return response with stripe_client_secret for frontend
+                return Response({
+                    "event_user_id": data["event_user_id"],
+                    "participant_id": str(participant.id),
+                    "is_paid": False,
+                    "payment_method": payment_method.get_method_display(),
+                    "needs_verification": False,
+                    "requires_payment_completion": True,
+                    "payment": {
+                        "stripe_client_secret": stripe_client_secret,
+                        "event_payment_id": event_payment.id,
+                        "donation_payment_id": str(donation_payment.id) if donation_payment else None,
+                        "event_payment_tracking": event_payment.event_payment_tracking_number,
+                        "donation_tracking": donation_payment.event_payment_tracking_number if donation_payment else None,
+                        "total_amount": float(event_payment.amount + (donation_payment.amount if donation_payment else 0)),
+                        "event_amount": float(event_payment.amount),
+                        "donation_amount": float(donation_payment.amount) if donation_payment else 0,
+                        "currency": event_payment.currency,
+                        "bank_reference": event_payment.bank_reference,
+                    }
+                }, status=response.status_code)
+            
+            else:
+                # Non-Stripe payment method - send standard confirmation email
+                from threading import Thread
+                email_thread = Thread(target=send_booking_confirmation_email, args=(participant,))
+                email_thread.start()
+                print(f"📧 Booking confirmation email queued for {event_user_id}")
+                
+                # Get payment instructions
+                instructions = payment_method.instructions if payment_method else None
+                if payment_method and payment_method.method == 'BANK':
+                    bank_instructions = {
+                        "account_name": payment_method.account_name,
+                        "account_number": payment_method.account_number,
+                        "sort_code": payment_method.sort_code,
+                        "reference": event_payment.bank_reference,
+                        "reference_instruction": payment_method.reference_instruction,
+                        "important_information": payment_method.important_information,
+                    }
+                    instructions = bank_instructions
+                
+                return Response({
+                    "event_user_id": data["event_user_id"],
+                    "participant_id": str(participant.id),
+                    "is_paid": all(p['status'] == 'SUCCEEDED' for p in event_payments),
+                    "payment_method": payment_method.get_method_display() if payment_method else None,
+                    "needs_verification": any(not p['verified'] for p in event_payments),
+                    "requires_payment_completion": False,
+                    "payment": {
+                        "event_payment_id": event_payment.id,
+                        "donation_payment_id": str(donation_payment.id) if donation_payment else None,
+                        "event_payment_tracking": event_payment.event_payment_tracking_number,
+                        "donation_tracking": donation_payment.event_payment_tracking_number if donation_payment else None,
+                        "total_amount": float(event_payment.amount + (donation_payment.amount if donation_payment else 0)),
+                        "event_amount": float(event_payment.amount),
+                        "donation_amount": float(donation_payment.amount) if donation_payment else 0,
+                        "currency": event_payment.currency,
+                        "bank_reference": event_payment.bank_reference,
+                        "instructions": instructions,
+                    }
+                }, status=response.status_code)
+                
         except Exception as e:
-            # Don't fail the registration if email fails
-            print(f"⚠️ Failed to queue booking confirmation email: {e}")
-        
-        return Response(
-            {   
-             "event_user_id": data["event_user_id"], 
-             "is_paid": all(p['status'] == 'SUCCEEDED' for p in data['event_payments']), 
-             "payment_method": data['event_payments'][0]['method'] if data['event_payments'] else 'No payment method', 
-             "needs_verification": any(not p['verified'] for p in data['event_payments'])
+            # Log error but don't fail the registration completely
+            print(f"⚠️ Error processing payment for registration: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Return basic registration info
+            return Response({
+                "event_user_id": data.get("event_user_id"),
+                "is_paid": False,
+                "payment_method": None,
+                "needs_verification": True,
+                "error": str(e)
             }, status=response.status_code)
         
     @action(detail=True, methods=['post'], url_name="confirm-payment", url_path="confirm-payment")

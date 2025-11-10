@@ -56,19 +56,31 @@ def stripe_webhook(request):
     try:
         if event_type == 'payment_intent.succeeded':
             intent = event['data']['object']
-            success = StripePaymentService.handle_payment_intent_succeeded(intent)
-            if success:
-                return Response({'status': 'success', 'message': 'Payment processed'}, status=status.HTTP_200_OK)
+            metadata = intent.get('metadata', {})
+            payment_type = metadata.get('payment_type', 'product')  # Default to product for backward compatibility
+            
+            if payment_type == 'event_registration':
+                # Handle event payment (registration + optional donation)
+                StripePaymentService.handle_event_payment_succeeded(intent)
+                return Response({'status': 'success', 'message': 'Event payment processed'}, status=status.HTTP_200_OK)
             else:
-                return Response({'status': 'error', 'message': 'Failed to process payment'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                # Handle product payment (existing flow)
+                StripePaymentService.handle_payment_intent_succeeded(intent)
+                return Response({'status': 'success', 'message': 'Product payment processed'}, status=status.HTTP_200_OK)
         
         elif event_type == 'payment_intent.payment_failed':
             intent = event['data']['object']
-            success = StripePaymentService.handle_payment_intent_failed(intent)
-            if success:
-                return Response({'status': 'success', 'message': 'Failure recorded'}, status=status.HTTP_200_OK)
+            metadata = intent.get('metadata', {})
+            payment_type = metadata.get('payment_type', 'product')
+            
+            if payment_type == 'event_registration':
+                # Handle event payment failure
+                StripePaymentService.handle_event_payment_failed(intent)
+                return Response({'status': 'success', 'message': 'Event payment failure recorded'}, status=status.HTTP_200_OK)
             else:
-                return Response({'status': 'error', 'message': 'Failed to record failure'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                # Handle product payment failure
+                StripePaymentService.handle_payment_intent_failed(intent)
+                return Response({'status': 'success', 'message': 'Product payment failure recorded'}, status=status.HTTP_200_OK)
         
         elif event_type == 'charge.refunded':
             # Handle refunds
