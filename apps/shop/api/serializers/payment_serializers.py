@@ -181,6 +181,7 @@ class ProductPaymentSerializer(serializers.ModelSerializer):
         model = ProductPayment
         fields = [
             "id", "payment_reference_id", "bank_reference", "user", "user_email", "cart", "cart_id", 
+            "first_name", "last_name", "email", "phone",  # Contact info fields
             "package", "package_name", "method", "method_display", "stripe_payment_intent", 
             "amount", "amount_display", "currency", "status", "status_display", 
             "approved", "paid_at", "created_at", "updated_at"

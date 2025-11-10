@@ -78,14 +78,14 @@ class EventViewSet(viewsets.ModelViewSet):
         print(f"🔧 DEBUG get_queryset - user: {user}, is_superuser: {user.is_superuser}, is_encoder: {getattr(user, 'is_encoder', False)}")
         
         if user.is_superuser:
-            queryset = Event.objects.filter(approved=True)
+            queryset = Event.objects.all()
             print(f"🔧 DEBUG get_queryset - superuser queryset count: {queryset.count()}")
             return queryset
         
         if user.is_authenticated and user.is_encoder:
             # Encoder users can access events they created OR public events
             queryset = Event.objects.filter(
-               Q(Q(created_by=user) | Q(is_public=True), Q(approved=True))
+               Q(created_by=user) | Q(is_public=True)
             ).distinct()
             print(f"🔧 DEBUG get_queryset - encoder queryset count: {queryset.count()}")
             # print(f"🔧 DEBUG get_queryset - encoder queryset SQL: {queryset.query}")

@@ -104,6 +104,12 @@ class ProductPayment(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="product_payments", null=True)
     cart = models.ForeignKey(EventCart, on_delete=models.SET_NULL, null=True, blank=True, related_name="product_payments")
     
+    # Contact information for order fulfillment
+    first_name = models.CharField(_("First Name"), max_length=100, blank=True)
+    last_name = models.CharField(_("Last Name"), max_length=100, blank=True)
+    email = models.EmailField(_("Email"), blank=True, help_text=_("Email for order confirmation and communication"))
+    phone = models.CharField(_("Phone Number"), max_length=20, blank=True)
+    
     package = models.ForeignKey(
         ProductPaymentPackage,
         on_delete=models.SET_NULL,
@@ -206,3 +212,74 @@ class ProductPayment(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.cart} - {self.get_status_display()}"
+
+
+class ProductPaymentLog(models.Model):
+    """
+    Audit log for all payment state changes and operations.
+    Critical for security, debugging, and compliance.
+    """
+    payment = models.ForeignKey(
+        ProductPayment,
+        on_delete=models.CASCADE,
+        related_name="logs",
+        verbose_name=_("payment")
+    )
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    action = models.CharField(
+        max_length=50,
+        verbose_name=_("action"),
+        help_text=_("E.g., 'created', 'status_changed', 'approved', 'refunded'")
+    )
+    old_status = models.CharField(max_length=50, blank=True, null=True)
+    new_status = models.CharField(max_length=50, blank=True, null=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payment_logs",
+        verbose_name=_("user who performed action")
+    )
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True)
+    notes = models.TextField(blank=True, help_text=_("Additional context or details"))
+    metadata = models.JSONField(default=dict, blank=True, help_text=_("Additional structured data"))
+
+    class Meta:
+        ordering = ['-timestamp']
+        verbose_name = _("Product Payment Log")
+        verbose_name_plural = _("Product Payment Logs")
+        indexes = [
+            models.Index(fields=['payment', '-timestamp']),
+            models.Index(fields=['action', '-timestamp']),
+        ]
+
+    def __str__(self):
+        return f"{self.payment.payment_reference_id} - {self.action} at {self.timestamp}"
+    
+    @classmethod
+    def log_action(cls, payment, action, user=None, old_status=None, new_status=None, notes="", metadata=None, request=None):
+        """Helper method to create a log entry"""
+        log_data = {
+            'payment': payment,
+            'action': action,
+            'old_status': old_status,
+            'new_status': new_status,
+            'amount': payment.amount,
+            'user': user,
+            'notes': notes,
+            'metadata': metadata or {}
+        }
+        
+        # Extract IP and user agent from request if provided
+        if request:
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                log_data['ip_address'] = x_forwarded_for.split(',')[0]
+            else:
+                log_data['ip_address'] = request.META.get('REMOTE_ADDR')
+            log_data['user_agent'] = request.META.get('HTTP_USER_AGENT', '')[:500]
+        
+        return cls.objects.create(**log_data)

@@ -55,6 +55,7 @@ class EventProductSerializer(serializers.ModelSerializer):
     imageUrl = serializers.SerializerMethodField()
     sizes = serializers.SerializerMethodField()
     in_stock = serializers.BooleanField(read_only=True)
+    user_purchased_count = serializers.SerializerMethodField()
     
     # Write-only fields for creating/updating
     image_uploads = serializers.ListField(
@@ -97,6 +98,19 @@ class EventProductSerializer(serializers.ModelSerializer):
         """Get list of available sizes"""
         return obj.available_sizes
     
+    def get_user_purchased_count(self, obj):
+        """Get the count of how many of this product the requesting user has purchased"""
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return 0
+        
+        from apps.shop.models.shop_models import ProductPurchaseTracker
+        try:
+            tracker = ProductPurchaseTracker.objects.get(user=request.user, product=obj)
+            return tracker.total_purchased
+        except ProductPurchaseTracker.DoesNotExist:
+            return 0
+    
     class Meta:
         model = EventProduct
         fields = [
@@ -104,9 +118,11 @@ class EventProductSerializer(serializers.ModelSerializer):
             "price", "discount", "seller", "seller_email", "category", "stock", "featured", 
             "in_stock", "imageUrl", "sizes", "colors",
             "categories", "materials", "images", "product_sizes", "maximum_order_quantity",
+            "max_purchase_per_person",  # New field for purchase limits
+            "user_purchased_count",  # New field for frontend validation
             "image_uploads", "size_list", "category_ids", "material_ids"
         ]
-        read_only_fields = ["seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes"]
+        read_only_fields = ["seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes", "user_purchased_count"]
         
     def create(self, validated_data):
         # Extract related data
@@ -536,10 +552,12 @@ class EventCartSerializer(serializers.ModelSerializer):
         fields = [
             "uuid", "user", "user_email", "event", "event_name", "order_reference_id",
             "total", "shipping_cost", "created", "updated", "approved", "submitted", 
-            "active", "notes", "shipping_address", "orders", "product_orders", "bank_reference", "created_via_admin"
+            "active", "cart_status", "locked_at", "lock_expires_at",  # New cart locking fields
+            "notes", "shipping_address", "orders", "product_orders", "bank_reference", "created_via_admin"
         ]
         
-        read_only_fields = ["uuid", "user", "user_email", "event_name", "order_reference_id", "created", "updated"]
+        read_only_fields = ["uuid", "user", "user_email", "event_name", "order_reference_id", "created", "updated", 
+                          "cart_status", "locked_at", "lock_expires_at"]
         
     def create(self, validated_data):
         from apps.shop.models.shop_models import EventProductOrder

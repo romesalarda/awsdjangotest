@@ -66,6 +66,11 @@ class EventProduct(models.Model):
     categories = models.ManyToManyField(ProductCategory, blank=True, verbose_name=_("Categories"))
     materials = models.ManyToManyField(ProductMaterial, blank=True, verbose_name=_("Materials"))
     maximum_order_quantity = models.IntegerField(_("Maximum Order Quantity"), default=10)
+    max_purchase_per_person = models.IntegerField(
+        _("Maximum Purchase Per Person"), 
+        default=-1,
+        help_text=_("Maximum quantity a person can purchase across all orders. Set to -1 for unlimited.")
+    )
 
     class Meta:
         ordering = ['title']
@@ -112,6 +117,14 @@ class EventCart(models.Model):
     
     Represents a full order. Once a cart is approved and submitted, it should not be modified.
     """
+    
+    class CartStatus(models.TextChoices):
+        ACTIVE = "active", _("Active")
+        LOCKED = "locked", _("Locked - In Checkout")
+        COMPLETED = "completed", _("Completed")
+        EXPIRED = "expired", _("Expired")
+        CANCELLED = "cancelled", _("Cancelled")
+    
     uuid = models.UUIDField(_("Cart UUID"), default=uuid.uuid4, editable=False, primary_key=True)
     order_reference_id = models.CharField(_("Order ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking order references
     
@@ -129,6 +142,27 @@ class EventCart(models.Model):
     submitted = models.BooleanField(default=False, help_text=_("Flags if the cart has been submitted"))
     active = models.BooleanField(default=True, help_text=_("Flags if the cart is active"))
     created_via_admin = models.BooleanField(default=False, help_text=_("Flags if the cart was created by an admin/event organiser"))
+    
+    # New fields for cart locking and checkout
+    cart_status = models.CharField(
+        _("Cart Status"),
+        max_length=20,
+        choices=CartStatus.choices,
+        default=CartStatus.ACTIVE,
+        help_text=_("Current status of the cart")
+    )
+    locked_at = models.DateTimeField(
+        _("Locked At"), 
+        null=True, 
+        blank=True,
+        help_text=_("When the cart was locked for checkout")
+    )
+    lock_expires_at = models.DateTimeField(
+        _("Lock Expires At"),
+        null=True,
+        blank=True,
+        help_text=_("When the cart lock expires (typically 15 minutes)")
+    )
 
     products = models.ManyToManyField(
         "shop.EventProduct",
@@ -225,3 +259,85 @@ class EventProductOrder(models.Model):
     def __str__(self) -> str:
         return f"{self.product.title} ({self.cart.user.member_id})"
     
+
+class ProductPurchaseTracker(models.Model):
+    """
+    Tracks product purchases per user to enforce max_purchase_per_person limits globally.
+    This ensures a user cannot exceed the purchase limit across multiple orders.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="product_purchase_trackers",
+        verbose_name=_("User")
+    )
+    product = models.ForeignKey(
+        EventProduct,
+        on_delete=models.CASCADE,
+        related_name="purchase_trackers",
+        verbose_name=_("Product")
+    )
+    total_purchased = models.PositiveIntegerField(
+        _("Total Purchased"),
+        default=0,
+        help_text=_("Total quantity purchased by this user for this product")
+    )
+    last_purchase_date = models.DateTimeField(
+        _("Last Purchase Date"),
+        auto_now=True,
+        help_text=_("When the user last purchased this product")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'product')
+        ordering = ['-updated_at']
+        verbose_name = _("Product Purchase Tracker")
+        verbose_name_plural = _("Product Purchase Trackers")
+        indexes = [
+            models.Index(fields=['user', 'product']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.email} - {self.product.title} ({self.total_purchased})"
+    
+    @classmethod
+    def get_user_purchased_quantity(cls, user, product):
+        """Get total quantity purchased by user for this product"""
+        tracker = cls.objects.filter(user=user, product=product).first()
+        return tracker.total_purchased if tracker else 0
+    
+    @classmethod
+    def can_purchase(cls, user, product, quantity):
+        """
+        Check if user can purchase the specified quantity of this product.
+        Returns (can_purchase: bool, remaining_quantity: int, error_message: str)
+        """
+        # If product has no limit, allow purchase
+        if product.max_purchase_per_person == -1:
+            return True, float('inf'), None
+        
+        current_purchased = cls.get_user_purchased_quantity(user, product)
+        remaining = product.max_purchase_per_person - current_purchased
+        
+        if remaining <= 0:
+            return False, 0, f"You have already purchased the maximum allowed ({product.max_purchase_per_person}) of this product."
+        
+        if quantity > remaining:
+            return False, remaining, f"You can only purchase {remaining} more of this product (limit: {product.max_purchase_per_person}, already purchased: {current_purchased})."
+        
+        return True, remaining, None
+    
+    @classmethod
+    def record_purchase(cls, user, product, quantity):
+        """Record or update purchase tracking when order is completed"""
+        tracker, created = cls.objects.get_or_create(
+            user=user,
+            product=product,
+            defaults={'total_purchased': quantity}
+        )
+        if not created:
+            tracker.total_purchased += quantity
+            tracker.save()
+        return tracker

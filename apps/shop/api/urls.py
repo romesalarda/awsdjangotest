@@ -1,4 +1,7 @@
 from rest_framework.routers import DefaultRouter
+from django.urls import path
+from django.urls import include
+
 from apps.shop.api.views.product_payment_views import (
     ProductPaymentMethodViewSet,
     ProductPaymentPackageViewSet,
@@ -17,6 +20,8 @@ from apps.shop.api.views.shop_views import (
     EventProductOrderViewSet,   
 )
 
+from apps.shop.api.views.stripe_views import stripe_webhook, create_payment_intent
+
 production_payment_router = DefaultRouter()
 production_payment_router.register(r'payment-methods', ProductPaymentMethodViewSet, basename='productpaymentmethod')
 production_payment_router.register(r'payment-packages', ProductPaymentPackageViewSet, basename='productpaymentpackage')
@@ -32,3 +37,14 @@ shop = DefaultRouter()
 shop.register(r'products', EventProductViewSet, basename='eventproduct')
 shop.register(r'carts', EventCartViewSet, basename='eventcart')
 shop.register(r'orders', EventProductOrderViewSet, basename='eventproductorder')
+
+# Stripe webhook endpoint (must be added to urlpatterns)
+stripe_urls = [
+    path('stripe/webhook/', stripe_webhook, name='stripe-webhook'),
+    path('stripe/create-intent/<uuid:cart_id>/', create_payment_intent, name='create-payment-intent'),
+]
+
+shop_url_patterns = [
+    path('', include(shop.urls)),          # include all router endpoints
+    *stripe_urls,                          # unpack stripe urls
+]

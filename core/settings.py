@@ -379,6 +379,15 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_SAMESITE = 'Strict'
 
+# Stripe Payment Configuration
+# TEST MODE by default - set to False for production
+STRIPE_TEST_MODE = os.getenv('STRIPE_TEST_MODE', 'True') == 'True'
+STRIPE_SECRET_KEY_TEST = os.getenv('STRIPE_SECRET_KEY_TEST', '')
+STRIPE_SECRET_KEY_LIVE = os.getenv('STRIPE_SECRET_KEY_LIVE', '')
+STRIPE_PUBLISHABLE_KEY_TEST = os.getenv('STRIPE_PUBLISHABLE_KEY_TEST', '')
+STRIPE_PUBLISHABLE_KEY_LIVE = os.getenv('STRIPE_PUBLISHABLE_KEY_LIVE', '')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+
 # Email Configuration
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')

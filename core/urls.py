@@ -65,7 +65,7 @@ urlpatterns = [
     path('api/events/payments/', include(payment_routers.urls)),
     path('api/organisations/', include(organisation_router.urls)),
     
-    path('api/shop/', include(shop.urls)),
+    path('api/shop/', include(shop_url_patterns)),
     path('api/shop/metadata/', include(metadata.urls)),
     path('api/shop/payments/', include(production_payment_router.urls)),
     # Swagger and ReDoc documentation

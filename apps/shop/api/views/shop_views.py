@@ -6,9 +6,10 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction, models
-from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
+from datetime import timedelta
+from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder, ProductPurchaseTracker
 from apps.shop.models.metadata_models import ProductSize
-from apps.shop.models.payments import ProductPaymentMethod, ProductPayment
+from apps.shop.models.payments import ProductPaymentMethod, ProductPayment, ProductPaymentLog
 from apps.shop.api.serializers.shop_serializers import (
     EventProductSerializer,
     EventCartSerializer,
@@ -84,7 +85,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_name='add', url_path='add')
     def add_to_cart(self, request, *args, **kwargs):
         '''
-        Bulk add products to the cart.
+        Bulk add products to the cart with max purchase validation and stock locking.
         E.g. {"products": [{"product_id": "uuid1", "quantity": 2, "size": "M"}, {"product_id": "uuid2", "quantity": 1}]}
         '''
         cart: EventCart = self.get_object()
@@ -94,6 +95,10 @@ class EventCartViewSet(viewsets.ModelViewSet):
         if not (cart.user == request.user or request.user.is_superuser or getattr(request.user, 'is_encoder', False)):
             raise exceptions.PermissionDenied("You can only modify your own carts.")
         
+        # Check cart status
+        if cart.cart_status in [EventCart.CartStatus.LOCKED, EventCart.CartStatus.COMPLETED]:
+            raise serializers.ValidationError("Cannot modify a locked or completed cart.")
+        
         if cart.approved or cart.submitted:
             raise serializers.ValidationError("Cannot modify an approved or submitted cart.")
         
@@ -101,47 +106,92 @@ class EventCartViewSet(viewsets.ModelViewSet):
         
         if not products:
             raise serializers.ValidationError("No products provided to add to cart.")
-        # {product_id: ..., quantity: ..., size: ...}
         
-        for product in products:
-
-            product_id = product.get("uuid")
-            quantity = product.get("quantity", 1)
-            size = product.get("size", None)
+        # Use atomic transaction with row-level locking for concurrency safety
+        with transaction.atomic():
+            added_products = []
             
-            product_object = get_object_or_404(EventProduct, uuid=product_id)
-            # ensure product belongs to the same event as the cart
-            if product_object.event != cart.event:
-                raise serializers.ValidationError(f"Product {product_object.title} does not belong to the same event as the cart.")
-            # check size is valid for product
-            if size:
-                size_object = ProductSize.objects.filter(size=size, product=product_object).first()
-                if not size_object:
-                    raise serializers.ValidationError(f"Size {size} not available for product {product_object.title}")
-            else:
+            for product in products:
+                product_id = product.get("uuid")
+                quantity = product.get("quantity", 1)
+                size = product.get("size", None)
+                
+                # Lock the product row for update to prevent race conditions
+                product_object = EventProduct.objects.select_for_update().get(uuid=product_id)
+                
+                # Ensure product belongs to the same event as the cart
+                if product_object.event != cart.event:
+                    raise serializers.ValidationError(
+                        f"Product {product_object.title} does not belong to the same event as the cart."
+                    )
+                
+                # Check stock availability
+                if product_object.stock < quantity:
+                    raise serializers.ValidationError(
+                        f"Insufficient stock for {product_object.title}. Available: {product_object.stock}, Requested: {quantity}"
+                    )
+                
+                # Check max purchase per person limit
+                can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
+                    user=cart.user,
+                    product=product_object,
+                    quantity=quantity
+                )
+                
+                if not can_purchase:
+                    raise serializers.ValidationError(error_msg)
+                
+                # Check size is valid for product
                 size_object = None
-            # create an order but ensure it does not already exist for this product in the cart
-            order, created = EventProductOrder.objects.get_or_create(
-                product=product_object,
-                cart=cart,
-                quantity=quantity,
-                size=size_object
-            )    
-            if not created:
-                raise serializers.ValidationError(f"Order for product {product_object.title} already exists in cart.")
-            order.save()
-            cart.products.add(product_object)
-            cart.orders.add(order)
+                if size:
+                    size_object = ProductSize.objects.filter(size=size, product=product_object).first()
+                    if not size_object:
+                        raise serializers.ValidationError(
+                            f"Size {size} not available for product {product_object.title}"
+                        )
+                
+                # Check if order already exists for this product in the cart
+                existing_order = EventProductOrder.objects.filter(
+                    product=product_object,
+                    cart=cart,
+                    size=size_object
+                ).first()
+                
+                if existing_order:
+                    raise serializers.ValidationError(
+                        f"Order for product {product_object.title} already exists in cart. Use update endpoint to modify quantity."
+                    )
+                
+                # Create the order
+                order = EventProductOrder.objects.create(
+                    product=product_object,
+                    cart=cart,
+                    quantity=quantity,
+                    size=size_object,
+                    price_at_purchase=product_object.price
+                )
+                
+                cart.products.add(product_object)
+                added_products.append({
+                    'product': product_object.title,
+                    'quantity': quantity,
+                    'size': size_object.size if size_object else None
+                })
             
-        # update cart information
-        total = 0
-        for order in cart.orders.all():
-            total += (order.price_at_purchase or order.product.price) * order.quantity
-            
-        cart.total = total
-        cart.save()     
+            # Update cart total
+            total = 0
+            for order in cart.orders.all():
+                total += (order.price_at_purchase or order.product.price) * order.quantity
+                
+            cart.total = total
+            cart.save()
+        
         serialized = self.get_serializer(cart)
-        return Response({"status": "cart added" if len(products) > 0 else "no changes", "product": serialized.data}, status=200)
+        return Response({
+            "status": "products added to cart",
+            "added": added_products,
+            "cart": serialized.data
+        }, status=200)
 
     @action(detail=True, methods=['post'], url_name='remove', url_path='remove')
     def remove_from_cart(self, request, *args, **kwargs):
@@ -156,6 +206,10 @@ class EventCartViewSet(viewsets.ModelViewSet):
         if not (cart.user == request.user or request.user.is_superuser or getattr(request.user, 'is_encoder', False)):
             raise exceptions.PermissionDenied("You can only modify your own carts.")
         
+        # Check cart status
+        if cart.cart_status in [EventCart.CartStatus.LOCKED, EventCart.CartStatus.COMPLETED]:
+            raise serializers.ValidationError(f"Cannot modify a {cart.cart_status} cart.")
+        
         if cart.approved or cart.submitted:
             raise serializers.ValidationError("Cannot modify an approved or submitted cart.")
         
@@ -163,13 +217,15 @@ class EventCartViewSet(viewsets.ModelViewSet):
         
         if not products:
             raise serializers.ValidationError("No products provided to remove from cart.")
-        for prod_id in products:
-            product = get_object_or_404(EventProduct, uuid=prod_id)
-            cart.products.remove(product)
-            orders = EventProductOrder.objects.filter(cart=cart, product=product)
-            orders.delete()  # check if it was removed
+        
+        with transaction.atomic():
+            for prod_id in products:
+                product = get_object_or_404(EventProduct, uuid=prod_id)
+                cart.products.remove(product)
+                orders = EventProductOrder.objects.filter(cart=cart, product=product)
+                orders.delete()  # check if it was removed
 
-        cart.save()
+            cart.save()
         
         serialized = self.get_serializer(cart)
         return Response({"status": "product removed" if len(products) > 0 else "no changes", "product": serialized.data}, status=200)
@@ -177,10 +233,14 @@ class EventCartViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_name='checkout', url_path='checkout')
     def checkout_cart(self, request, *args, **kwargs):
         '''
-        Process cart checkout with payment method validation and payment tracking.
+        Process cart checkout with payment method validation, cart locking, inventory reservation, and contact info.
         Expected payload: {
             "payment_method_id": 1,
-            "amount": 125.50  // Amount in pounds, optional - will be validated against cart total
+            "amount": 125.50,  // Amount in pounds, optional - will be validated against cart total
+            "first_name": "John",
+            "last_name": "Doe",
+            "email": "john@example.com",
+            "phone": "+44123456789"
         }
         '''
         cart: EventCart = self.get_object()
@@ -190,12 +250,36 @@ class EventCartViewSet(viewsets.ModelViewSet):
         if not (cart.user == request.user or request.user.is_superuser or getattr(request.user, 'is_encoder', False)):
             raise exceptions.PermissionDenied("You can only checkout your own carts.")
         
+        # Check cart status
+        if cart.cart_status in [EventCart.CartStatus.COMPLETED, EventCart.CartStatus.EXPIRED]:
+            raise serializers.ValidationError(f"Cannot checkout a {cart.cart_status} cart.")
+        
+        if cart.cart_status == EventCart.CartStatus.LOCKED:
+            # Check if lock has expired
+            if cart.lock_expires_at and timezone.now() > cart.lock_expires_at:
+                cart.cart_status = EventCart.CartStatus.EXPIRED
+                cart.save()
+                raise serializers.ValidationError("Cart lock has expired. Please try again.")
+            raise serializers.ValidationError("Cart is currently locked for checkout.")
+        
         if cart.approved or cart.submitted:
             raise serializers.ValidationError("Cannot checkout an approved or submitted cart.")
         
         if not cart.orders.exists():
             raise serializers.ValidationError("Cannot checkout an empty cart.")
-            
+        
+        # Extract contact information
+        first_name = request.data.get('first_name', '').strip()
+        last_name = request.data.get('last_name', '').strip()
+        email = request.data.get('email', '').strip()
+        phone = request.data.get('phone', '').strip()
+        
+        # Validate contact info
+        if not first_name or not last_name:
+            raise serializers.ValidationError("First name and last name are required.")
+        if not email:
+            raise serializers.ValidationError("Email is required for order confirmation.")
+        
         # Get and validate payment method
         payment_method_id = request.data.get('payment_method_id')
         if not payment_method_id:
@@ -215,49 +299,144 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 f"Payment method '{payment_method.get_method_display()}' is not available for this event."
             )
         
-        # Calculate and validate cart total
-        calculated_total = 0
-        for order in cart.orders.all():
-            if not order.product.in_stock:
-                raise serializers.ValidationError(
-                    f"Product '{order.product.title}' is no longer in stock."
-                )
-            calculated_total += (order.price_at_purchase or order.product.price) * order.quantity
-        
-        # Keep total in decimal format (pounds)
-        calculated_total_decimal = calculated_total
-        
-        # Validate provided amount if given
-        provided_amount = request.data.get('amount')
-        if provided_amount is not None:
-            if provided_amount != calculated_total_decimal:
-                raise serializers.ValidationError(
-                    f"Provided amount (£{provided_amount:.2f}) does not match cart total (£{calculated_total_decimal:.2f})."
-                )
-        
-        # Use atomic transaction for checkout process
+        # Use atomic transaction with row-level locking for checkout process
         with transaction.atomic():
-            # Create payment record
+            # Lock the cart
+            cart = EventCart.objects.select_for_update().get(pk=cart.pk)
+            
+            # Re-check status after acquiring lock
+            if cart.cart_status != EventCart.CartStatus.ACTIVE:
+                raise serializers.ValidationError(f"Cart status changed to {cart.cart_status}. Cannot proceed.")
+            
+            # Lock cart for 15 minutes
+            cart.cart_status = EventCart.CartStatus.LOCKED
+            cart.locked_at = timezone.now()
+            cart.lock_expires_at = timezone.now() + timedelta(minutes=15)
+            cart.save()
+            
+            # Calculate and validate cart total with stock checks
+            calculated_total = 0
+            stock_issues = []
+            
+            for order in cart.orders.select_related('product').select_for_update():
+                product = order.product
+                
+                # Check stock availability
+                if not product.in_stock or product.stock < order.quantity:
+                    stock_issues.append(
+                        f"{product.title} (requested: {order.quantity}, available: {product.stock})"
+                    )
+                    continue
+                
+                # Check max purchase limit hasn't been exceeded
+                can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
+                    user=cart.user,
+                    product=product,
+                    quantity=order.quantity
+                )
+                
+                if not can_purchase:
+                    stock_issues.append(f"{product.title}: {error_msg}")
+                    continue
+                
+                # Reserve inventory (we don't deduct yet - that happens on payment success)
+                calculated_total += (order.price_at_purchase or product.price) * order.quantity
+            
+            if stock_issues:
+                # Unlock cart if there are stock issues
+                cart.cart_status = EventCart.CartStatus.ACTIVE
+                cart.locked_at = None
+                cart.lock_expires_at = None
+                cart.save()
+                raise serializers.ValidationError({
+                    "stock_issues": stock_issues,
+                    "message": "Some products are no longer available or exceed purchase limits."
+                })
+            
+            # Keep total in decimal format (pounds)
+            calculated_total_decimal = calculated_total
+            
+            # Validate provided amount if given
+            provided_amount = request.data.get('amount')
+            if provided_amount is not None:
+                if float(provided_amount) != float(calculated_total_decimal):
+                    # Unlock cart
+                    cart.cart_status = EventCart.CartStatus.ACTIVE
+                    cart.locked_at = None
+                    cart.lock_expires_at = None
+                    cart.save()
+                    raise serializers.ValidationError(
+                        f"Provided amount (£{provided_amount:.2f}) does not match cart total (£{calculated_total_decimal:.2f})."
+                    )
+            
+            # Create payment record with contact info
             payment = ProductPayment.objects.create(
                 user=cart.user,
                 cart=cart,
                 method=payment_method,
                 amount=calculated_total_decimal,
                 currency=getattr(cart.event, 'currency', 'gbp'),
-                status=ProductPayment.PaymentStatus.PENDING
+                status=ProductPayment.PaymentStatus.PENDING,
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                phone=phone
+            )
+            
+            # Log payment creation
+            ProductPaymentLog.log_action(
+                payment=payment,
+                action='created',
+                user=request.user,
+                new_status=ProductPayment.PaymentStatus.PENDING,
+                notes=f"Payment created for cart {cart.order_reference_id}",
+                request=request
             )
             
             # Update cart status
             cart.submitted = True
             cart.active = False
             cart.total = calculated_total  # Ensure total is correctly set
+            cart.cart_status = EventCart.CartStatus.LOCKED  # Keep locked until payment completes
             cart.save()
-                        
-            # For non-Stripe payments, they might need manual approval
+            
+            # Create Stripe PaymentIntent if using Stripe
+            stripe_client_secret = None
             if payment_method.method == ProductPaymentMethod.MethodType.STRIPE:
-                # Stripe payments will be handled by webhook/frontend
-                payment_status = "Payment intent created - complete payment on frontend"
+                from apps.shop.stripe_service import StripePaymentService
+                try:
+                    stripe_service = StripePaymentService()
+                    
+                    # Create PaymentIntent with the payment object
+                    payment_intent = stripe_service.create_payment_intent(
+                        payment=payment,
+                        metadata={
+                            'cart_id': str(cart.uuid),
+                            'user_email': email,
+                            'order_reference': cart.order_reference_id
+                        }
+                    )
+                    
+                    # Get client secret for frontend
+                    stripe_client_secret = payment_intent['client_secret']
+                    
+                    payment_status = "Stripe PaymentIntent created - complete payment on frontend"
+                    
+                    ProductPaymentLog.log_action(
+                        payment=payment,
+                        action='stripe_intent_created',
+                        user=request.user,
+                        notes=f"Stripe PaymentIntent created: {payment_intent['id']}",
+                        request=request
+                    )
+                except Exception as e:
+                    # Rollback if Stripe fails
+                    cart.cart_status = EventCart.CartStatus.ACTIVE
+                    cart.submitted = False
+                    cart.save()
+                    raise serializers.ValidationError(f"Failed to create Stripe payment: {str(e)}")
             else:
+                # For non-Stripe payments, they might need manual approval
                 payment_status = f"Payment recorded - please follow {payment_method.get_method_display()} instructions"
         
         # Get detailed instructions for bank transfers
@@ -270,7 +449,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
         # Send order confirmation email in background thread
         def send_email():
             try:
-                send_order_confirmation_email(cart, payment)
+                # send_order_confirmation_email(cart, payment)
                 print(f"📧 Order confirmation email queued for order {cart.order_reference_id}")
             except Exception as e:
                 print(f"⚠️ Failed to send order confirmation email: {e}")
@@ -290,7 +469,9 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 "amount": calculated_total_decimal,
                 "currency": payment.currency,
                 "status": payment.get_status_display(),
-                "instructions": instructions
+                "instructions": instructions,
+                "lock_expires_at": cart.lock_expires_at.isoformat() if cart.lock_expires_at else None,
+                "stripe_client_secret": stripe_client_secret  # Add this for frontend Stripe integration
             },
             "message": payment_status
         }, status=200)
@@ -306,6 +487,11 @@ class EventCartViewSet(viewsets.ModelViewSet):
         products = request.data.get("products", [])
         
         self.check_object_permissions(request, cart)
+        
+        # Check cart status
+        if cart.cart_status in [EventCart.CartStatus.LOCKED, EventCart.CartStatus.COMPLETED]:
+            raise serializers.ValidationError(f"Cannot modify a {cart.cart_status} cart.")
+        
         if cart.approved or cart.submitted:
             raise serializers.ValidationError("Cannot modify an approved or submitted cart.")
 
@@ -329,78 +515,96 @@ class EventCartViewSet(viewsets.ModelViewSet):
         removed_products = []
         updated_orders = []
         added_orders = []
+        
+        # Use transaction for atomicity
+        with transaction.atomic():
+            # Remove orders not in new list (compare product and size)
+            for order in list(cart.orders.all()):
+                key = (str(order.product.uuid), order.size.size if order.size else None)
+                if key not in new_product_keys:
+                    removed_products.append(
+                        f"Removed {order.product.title} (size: {order.size.size if order.size else 'N/A'})"
+                    )
+                    order.delete()
 
-        # Remove orders not in new list (compare product and size)
-        for order in list(cart.orders.all()):
-            key = (str(order.product.uuid), order.size.size if order.size else None)
-            if key not in new_product_keys:
-                removed_products.append(
-                    f"Removed {order.product.title} (size: {order.size.size if order.size else 'N/A'})"
-                )
-                # cart.products.remove(order.product)
-                order.delete()
+            # Add/update products/orders from new list
+            for prod in products:
+                product_id = prod.get("id")
+                quantity = prod.get("quantity", 1)
+                size = prod.get("size", None)
 
-        # Add/update products/orders from new list
-        for prod in products:
-            product_id = prod.get("id")
-            quantity = prod.get("quantity", 1)
-            size = prod.get("size", None)
-
-            product_object = get_object_or_404(EventProduct, uuid=product_id)
-            if product_object.event != cart.event:
-                raise serializers.ValidationError(
-                    f"Product {product_object.title} does not belong to the same event as the cart."
-                )
-
-            size_object = None
-            if size:
-                size_object = ProductSize.objects.filter(size=size, product=product_object).first()
-                if not size_object:
+                # Lock product for update
+                product_object = EventProduct.objects.select_for_update().get(uuid=product_id)
+                
+                if product_object.event != cart.event:
                     raise serializers.ValidationError(
-                        f"Size {size} not available for product {product_object.title}"
+                        f"Product {product_object.title} does not belong to the same event as the cart."
                     )
-
-            # Only look for existing order by product, cart, size
-            order = EventProductOrder.objects.filter(
-                product=product_object,
-                cart=cart,
-                size=size_object
-            ).first()
-            
-            if quantity > product_object.maximum_order_quantity:
-                raise serializers.ValidationError(
-                    f"Quantity {quantity} exceeds maximum order quantity of {product_object.maximum_order_quantity} for product {product_object.title}"
+                
+                # Check stock
+                if product_object.stock < quantity:
+                    raise serializers.ValidationError(
+                        f"Insufficient stock for {product_object.title}. Available: {product_object.stock}"
+                    )
+                
+                # Check max purchase per person
+                can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
+                    user=cart.user,
+                    product=product_object,
+                    quantity=quantity
                 )
-            order.price_at_purchase = product_object.price
-            if order:
-                # Update quantity if changed
-                if order.quantity != quantity:
-                    order.quantity = quantity
-                    order.save()
-                    updated_orders.append(
-                        f"Updated {product_object.title} (size: {size_object.size if size_object else 'N/A'}, quantity: {quantity})"
-                    )
-            else:
-                # Create new order only if not found
-                order, created = EventProductOrder.objects.get_or_create(
+                
+                if not can_purchase:
+                    raise serializers.ValidationError(error_msg)
+
+                size_object = None
+                if size:
+                    size_object = ProductSize.objects.filter(size=size, product=product_object).first()
+                    if not size_object:
+                        raise serializers.ValidationError(
+                            f"Size {size} not available for product {product_object.title}"
+                        )
+
+                # Only look for existing order by product, cart, size
+                order = EventProductOrder.objects.filter(
                     product=product_object,
                     cart=cart,
-                    quantity=quantity,
                     size=size_object
-                )
-                if created:
+                ).first()
+                
+                if quantity > product_object.maximum_order_quantity:
+                    raise serializers.ValidationError(
+                        f"Quantity {quantity} exceeds maximum order quantity of {product_object.maximum_order_quantity} for product {product_object.title}"
+                    )
+                    
+                if order:
+                    # Update quantity if changed
+                    if order.quantity != quantity:
+                        order.quantity = quantity
+                        order.price_at_purchase = product_object.price
+                        order.save()
+                        updated_orders.append(
+                            f"Updated {product_object.title} (size: {size_object.size if size_object else 'N/A'}, quantity: {quantity})"
+                        )
+                else:
+                    # Create new order only if not found
+                    order = EventProductOrder.objects.create(
+                        product=product_object,
+                        cart=cart,
+                        quantity=quantity,
+                        size=size_object,
+                        price_at_purchase=product_object.price
+                    )
                     added_orders.append(
                         f"Added {product_object.title} (size: {size_object.size if size_object else 'N/A'}, quantity: {quantity})"
                     )
-            # cart.products.add(product_object) # add if not already present
-            cart.orders.add(order)
 
-        # Recalculate total
-        total = 0
-        for order in cart.orders.all():
-            total += (order.price_at_purchase or order.product.price) * order.quantity
-        cart.total = total
-        cart.save()
+            # Recalculate total
+            total = 0
+            for order in cart.orders.all():
+                total += (order.price_at_purchase or order.product.price) * order.quantity
+            cart.total = total
+            cart.save()
 
         summary = []
         if removed_products:
