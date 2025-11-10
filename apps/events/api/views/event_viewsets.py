@@ -78,21 +78,21 @@ class EventViewSet(viewsets.ModelViewSet):
         print(f"🔧 DEBUG get_queryset - user: {user}, is_superuser: {user.is_superuser}, is_encoder: {getattr(user, 'is_encoder', False)}")
         
         if user.is_superuser:
-            queryset = Event.objects.all()
+            queryset = Event.objects.filter(approved=True)
             print(f"🔧 DEBUG get_queryset - superuser queryset count: {queryset.count()}")
             return queryset
         
         if user.is_authenticated and user.is_encoder:
             # Encoder users can access events they created OR public events
             queryset = Event.objects.filter(
-                Q(created_by=user) | Q(is_public=True)
+               Q(Q(created_by=user) | Q(is_public=True), Q(approved=True))
             ).distinct()
             print(f"🔧 DEBUG get_queryset - encoder queryset count: {queryset.count()}")
             # print(f"🔧 DEBUG get_queryset - encoder queryset SQL: {queryset.query}")
             return queryset
         
         # For normal authenticated users, only show public events
-        queryset = Event.objects.filter(is_public=True)
+        queryset = Event.objects.filter(is_public=True, approved=True)
         print(f"🔧 DEBUG get_queryset - regular user queryset count: {queryset.count()}")
         return queryset
     
@@ -2558,6 +2558,8 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
             email_thread.start()
         
         serializer = self.get_serializer(participant)
+        participant.status = EventParticipant.ParticipantStatus.CONFIRMED
+        participant.save()
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'], url_name="confirm-merch-payment", url_path="confirm-merch-payment")
@@ -2593,6 +2595,10 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         
         cart_instance.approved = True
         cart_instance.save()
+        
+        for order in cart_instance.orders.all():
+            order.status = EventProductOrder.Status.PURCHASED
+            order.save()
         
         # Send confirmation email in background if newly approved
         if not already_approved:

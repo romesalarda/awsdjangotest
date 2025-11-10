@@ -107,6 +107,7 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     organisation = OrganisationSerializer(read_only=True)
     chapter = serializers.CharField(source="created_by.area_from.unit.chapter.chapter_name")
     created_by = SimplifiedCommunityUserSerializer()
+    spots_left = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -135,16 +136,23 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
             "approved_at",
             "organisation",
             "chapter",
-            "created_by"
+            "created_by",
+            "maximum_attendees",
+            "spots_left"
         )
         
-    def get_main_venue(self, obj):
+    def get_spots_left(self, obj: Event):
+        if obj.maximum_attendees is not None:
+            return obj.maximum_attendees - obj.number_of_pax
+        
+                    
+    def get_main_venue(self, obj: Event):
         primary_venue = obj.venues.filter(Q(primary_venue=True) | Q(venue_type=EventVenue.VenueType.MAIN_VENUE)).first()
         if primary_venue:
             return primary_venue.name
         return None
         
-    def get_cost(self, obj):
+    def get_cost(self, obj: Event):
         packages = obj.payment_packages.all().order_by("price")
         if packages.exists():
             pkg = packages.first()
@@ -155,7 +163,7 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 pkg_text = pkg_text + "+"
             return pkg_text
         
-    def get_areas_involved(self, obj):
+    def get_areas_involved(self, obj: Event):
         return [area.area_name for area in obj.areas_involved.all()]
         
     def to_representation(self, instance):
@@ -170,6 +178,8 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 "theme": rep.get("theme"),
                 "anchor_verse": rep.get("anchor_verse"),
                 "cost": rep.get("cost"),
+                "maximum_attendees": rep.get("maximum_attendees"),
+                "spots_left": rep.get("spots_left")
             },
             "media": {
                 "landing_image": rep.get("landing_image")
@@ -184,7 +194,7 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 "areas_involved": rep.get("areas_involved"),
                 "main_venue": rep.get("main_venue"),
                 "organisation": rep.get("organisation"),
-                "created_for_chapater": rep.get("chapter")
+                "created_for_chapter": rep.get("chapter")
             },
             "admin": {
                 "approved": rep.get("approved"),
@@ -1434,6 +1444,12 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             
 
             pprint.pprint(changes)
+        if event.maximum_attendees is not None and event.number_of_pax is not None:
+            event.maximum_attendees - event.number_of_pax
+            event.save()
+        if event.number_of_pax is not None:
+            event.number_of_pax += 1
+            event.save()
         return participant
 
     #? A little note for the update method, most likely users will need to submit change requests to admins so they can verifiy changes manually    

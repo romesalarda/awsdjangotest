@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Sum, Count, Q
-from apps.events.models import EventPaymentMethod, EventPaymentPackage, EventPayment, DonationPayment
+from apps.events.models import EventPaymentMethod, EventPaymentPackage, EventPayment, DonationPayment, EventParticipant
 from apps.events.api.serializers import (
     EventPaymentMethodSerializer,
     EventPaymentPackageSerializer,
@@ -62,6 +62,8 @@ class EventPaymentViewSet(viewsets.ModelViewSet):
         email_thread.start()
         
         serializer = self.get_serializer(payment)
+        participant.status = EventParticipant.ParticipantStatus.CONFIRMED
+        participant.save()
         return Response({
             "status": "payment verified",
             "message": f"Payment for participant {participant.event_pax_id} has been verified. Confirmation email sent to user.",
