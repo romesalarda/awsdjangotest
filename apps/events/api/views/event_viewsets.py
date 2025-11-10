@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from django.db.models import Q
 from rest_framework import serializers
 from django.conf import settings
+from decimal import Decimal
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils.translation import gettext_lazy as _
@@ -2616,7 +2617,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                         "donation_payment_id": str(donation_payment.id) if donation_payment else None,
                         "event_payment_tracking": event_payment.event_payment_tracking_number,
                         "donation_tracking": donation_payment.event_payment_tracking_number if donation_payment else None,
-                        "total_amount": float(event_payment.amount + (donation_payment.amount if donation_payment else 0)),
+                        "total_amount": float(event_payment.amount + Decimal(donation_payment.amount if donation_payment else 0)),
                         "event_amount": float(event_payment.amount),
                         "donation_amount": float(donation_payment.amount) if donation_payment else 0,
                         "currency": event_payment.currency,

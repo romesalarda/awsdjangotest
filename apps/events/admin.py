@@ -8,7 +8,7 @@ from .models import (
     EventResource, EventVenue, SearchAreaSupportLocation,
     ExtraQuestion, QuestionChoice, QuestionAnswer,
     EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance, ParticipantQuestion,
-    ParticipantRefund, ServiceTeamPermission, Organisation, OrganisationSocialMediaLink
+    ParticipantRefund, ServiceTeamPermission, Organisation, OrganisationSocialMediaLink, DonationPayment
 )
 
 
@@ -459,6 +459,7 @@ class ParticipantQuestionAdmin(admin.ModelAdmin):
 
 admin.site.register(Organisation)
 admin.site.register(OrganisationSocialMediaLink)
+admin.site.register(DonationPayment)
 
 @admin.register(ParticipantRefund)
 class ParticipantRefundAdmin(admin.ModelAdmin):

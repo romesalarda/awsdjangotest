@@ -310,7 +310,7 @@ class StripePaymentService:
             # Calculate total amount (event + optional donation)
             total_amount = event_payment.amount
             if donation_payment:
-                total_amount += donation_payment.amount
+                total_amount += Decimal(donation_payment.amount)
             
             # Convert amount to cents (Stripe uses smallest currency unit)
             amount_cents = int(total_amount * 100)
