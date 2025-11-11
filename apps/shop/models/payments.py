@@ -45,6 +45,26 @@ class ProductPaymentMethod(models.Model):
         help_text=_("E.g., 'Reference your full name when making the transfer'"),
     )
 
+    # Refund control fields
+    supports_automatic_refunds = models.BooleanField(
+        default=False,
+        verbose_name=_("supports automatic refunds"),
+        help_text=_("Enable for Stripe/PayPal. Disable for manual methods like bank transfer or cash.")
+    )
+    refund_contact_email = models.EmailField(
+        blank=True,
+        null=True,
+        verbose_name=_("refund contact email"),
+        help_text=_("Email address participants should contact for refund inquiries (leave blank to use secretariat)")
+    )
+    refund_processing_time = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name=_("refund processing time"),
+        help_text=_("E.g., '5-7 business days' - displayed to participants")
+    )
+
     is_active = models.BooleanField(default=True, verbose_name=_("active"))
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

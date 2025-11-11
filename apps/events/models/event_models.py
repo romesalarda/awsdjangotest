@@ -197,6 +197,12 @@ class Event(models.Model):
     registration_open_date = models.DateTimeField(verbose_name=_("registration open date"), blank=True, null=True, auto_now=True)
     registration_deadline = models.DateTimeField(verbose_name=_("registration deadline"), blank=True, null=True)
     payment_deadline = models.DateTimeField(verbose_name=_("payment deadline"), blank=True, null=True)
+    refund_deadline = models.DateTimeField(
+        verbose_name=_("refund deadline"),
+        blank=True,
+        null=True,
+        help_text=_("Deadline for processing refunds. If not set, defaults to payment_deadline. No refunds after event starts.")
+    )
     
     class EventStatus(models.TextChoices):
         PLANNING = "PLANNING", _("Planning")

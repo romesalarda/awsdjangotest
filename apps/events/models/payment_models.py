@@ -65,6 +65,26 @@ class EventPaymentMethod(models.Model):
         validators=[validators.MinValueValidator(0.0)],
     )
 
+    # Refund control fields
+    supports_automatic_refunds = models.BooleanField(
+        default=False,
+        verbose_name=_("supports automatic refunds"),
+        help_text=_("Enable for Stripe/PayPal. Disable for manual methods like bank transfer or cash.")
+    )
+    refund_contact_email = models.EmailField(
+        blank=True,
+        null=True,
+        verbose_name=_("refund contact email"),
+        help_text=_("Email address participants should contact for refund inquiries (leave blank to use secretariat)")
+    )
+    refund_processing_time = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name=_("refund processing time"),
+        help_text=_("E.g., '5-7 business days' - displayed to participants")
+    )
+
     is_active = models.BooleanField(default=True, verbose_name=_("active"))
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -230,6 +250,7 @@ class ParticipantRefund(models.Model):
     """
     Tracks refunds owed to participants who have been cancelled/removed from events.
     Provides a clear audit trail for financial reconciliation.
+    Supports both automatic (Stripe) and manual (bank transfer) refunds.
     """
     
     class RefundStatus(models.TextChoices):
@@ -237,6 +258,15 @@ class ParticipantRefund(models.Model):
         IN_PROGRESS = "IN_PROGRESS", _("In Progress")
         PROCESSED = "PROCESSED", _("Refund Processed")
         CANCELLED = "CANCELLED", _("Refund Cancelled")
+        FAILED = "FAILED", _("Refund Failed")
+    
+    class RefundReason(models.TextChoices):
+        USER_REQUESTED = "USER_REQUESTED", _("User Requested")
+        EVENT_CANCELLED = "EVENT_CANCELLED", _("Event Cancelled")
+        ADMIN_DECISION = "ADMIN_DECISION", _("Administrative Decision")
+        DUPLICATE_PAYMENT = "DUPLICATE", _("Duplicate Payment")
+        PARTICIPANT_REMOVED = "REMOVED", _("Participant Removed")
+        OTHER = "OTHER", _("Other")
     
     # Core relationships
     participant = models.ForeignKey(
@@ -250,6 +280,22 @@ class ParticipantRefund(models.Model):
         on_delete=models.CASCADE,
         related_name="participant_refunds",
         verbose_name=_("event")
+    )
+    
+    # Link to original payments for tracking
+    event_payment = models.ForeignKey(
+        EventPayment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="refunds",
+        verbose_name=_("original event payment")
+    )
+    product_payments = models.ManyToManyField(
+        'shop.ProductPayment',
+        blank=True,
+        related_name="refunds",
+        verbose_name=_("original product payments")
     )
     
     # Refund tracking
@@ -292,21 +338,27 @@ class ParticipantRefund(models.Model):
         verbose_name=_("refund status")
     )
     
-    # Removal details
-    removal_reason = models.TextField(
-        verbose_name=_("reason for removal"),
-        help_text=_("Reason provided when participant was removed from event")
+    # Refund reason
+    refund_reason = models.CharField(
+        max_length=50,
+        choices=RefundReason.choices,
+        default=RefundReason.PARTICIPANT_REMOVED,
+        verbose_name=_("refund reason")
     )
+    removal_reason_details = models.TextField(
+        verbose_name=_("detailed reason"),
+        help_text=_("Detailed explanation for the refund")
+    )
+    
+    # Personnel tracking
     removed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="refunds_initiated",
-        verbose_name=_("removed by")
+        verbose_name=_("initiated by")
     )
-    
-    # Refund processing details
     processed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -327,11 +379,18 @@ class ParticipantRefund(models.Model):
         blank=True,
         null=True,
         verbose_name=_("participant email"),
-        help_text=_("Email address at time of removal")
+        help_text=_("Email address at time of refund creation")
     )
-    organizer_contact_email = models.EmailField(
-        verbose_name=_("organizer contact email"),
-        help_text=_("Email address for refund inquiries")
+    participant_name = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name=_("participant name"),
+        help_text=_("Full name at time of refund creation")
+    )
+    refund_contact_email = models.EmailField(
+        verbose_name=_("refund contact email"),
+        help_text=_("Email address participants should contact for refund inquiries (secretariat/organizer)")
     )
     
     # Payment method details (for refund processing)
@@ -342,12 +401,54 @@ class ParticipantRefund(models.Model):
         verbose_name=_("original payment method"),
         help_text=_("Payment method used for original transaction")
     )
+    is_automatic_refund = models.BooleanField(
+        default=False,
+        verbose_name=_("automatic refund"),
+        help_text=_("True if refund can be processed automatically via Stripe/PayPal")
+    )
     refund_method = models.CharField(
         max_length=50,
         blank=True,
         null=True,
         verbose_name=_("refund method"),
-        help_text=_("Method used to process refund")
+        help_text=_("Method used to process refund (Stripe, Bank Transfer, etc.)")
+    )
+    
+    # Stripe-specific fields
+    stripe_refund_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        unique=True,
+        verbose_name=_("Stripe refund ID"),
+        help_text=_("Stripe refund ID if processed through Stripe")
+    )
+    stripe_failure_reason = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("Stripe failure reason"),
+        help_text=_("Reason if Stripe refund failed")
+    )
+    
+    # Bank transfer fields (for manual refunds)
+    bank_account_name = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name=_("bank account name"),
+        help_text=_("Participant's bank account name for manual refunds")
+    )
+    bank_account_number = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_("bank account number")
+    )
+    bank_sort_code = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name=_("bank sort code")
     )
     
     # Timestamps
@@ -358,6 +459,18 @@ class ParticipantRefund(models.Model):
         blank=True,
         verbose_name=_("processed at"),
         help_text=_("Date and time when refund was marked as processed")
+    )
+    
+    # Notification tracking
+    participant_notified = models.BooleanField(
+        default=False,
+        verbose_name=_("participant notified"),
+        help_text=_("Whether participant has been notified about the refund")
+    )
+    secretariat_notified = models.BooleanField(
+        default=False,
+        verbose_name=_("secretariat notified"),
+        help_text=_("Whether secretariat has been notified about manual refund")
     )
     
     def save(self, *args, **kwargs):
@@ -380,10 +493,29 @@ class ParticipantRefund(models.Model):
             models.Index(fields=['status', '-created_at']),
             models.Index(fields=['event', 'status']),
             models.Index(fields=['participant']),
+            models.Index(fields=['refund_reference']),
         ]
     
     def __str__(self):
         return f"{self.refund_reference} - £{self.total_refund_amount} - {self.get_status_display()}"
+    
+    def can_process_refund(self):
+        """Check if refund can be processed based on event dates and status"""
+        from django.utils import timezone
+        
+        if self.status in [self.RefundStatus.PROCESSED, self.RefundStatus.CANCELLED]:
+            return False, "Refund already processed or cancelled"
+        
+        # Check if event has started
+        if self.event.start_date and timezone.now() >= self.event.start_date:
+            return False, "Event has already started - refunds not allowed"
+        
+        # Check refund deadline
+        refund_deadline = self.event.refund_deadline or self.event.payment_deadline
+        if refund_deadline and timezone.now() > refund_deadline:
+            return False, f"Refund deadline passed ({refund_deadline.strftime('%Y-%m-%d')})"
+        
+        return True, "Refund can be processed"
 
 class DonationPayment(models.Model):
     """

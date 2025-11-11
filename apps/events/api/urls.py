@@ -32,6 +32,8 @@ payment_routers.register(r"payment-packages", EventPaymentPackageViewSet)
 payment_routers.register(r"payments", EventPaymentViewSet)
 payment_routers.register(r"donations", DonationPaymentViewSet)
 payment_routers.register(r"refunds", ParticipantRefundViewSet)
+payment_routers.register(r"overview", PaymentOverviewViewSet, basename="payment-overview")
+payment_routers.register(r"event-donations", DonationViewSet, basename="event-donations")
 
 organisation_router = DefaultRouter()
 organisation_router.register(r"organisations", OrganisationViewSet)

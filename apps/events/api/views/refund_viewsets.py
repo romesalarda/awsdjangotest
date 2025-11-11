@@ -10,7 +10,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 
-from apps.events.models import ParticipantRefund, EventParticipant
+from apps.events.models import ParticipantRefund, EventParticipant, Event
 from apps.events.api.serializers import (
     ParticipantRefundListSerializer,
     ParticipantRefundDetailSerializer,
@@ -18,6 +18,8 @@ from apps.events.api.serializers import (
     CreateRefundSerializer
 )
 from apps.events.email_utils import send_refund_processed_email
+from apps.events.services.refund_service import get_refund_service
+from core.event_permissions import has_event_permission
 import threading
 
 
@@ -328,3 +330,201 @@ class ParticipantRefundViewSet(viewsets.ModelViewSet):
             'message': _('Refund status updated successfully'),
             'refund': serializer.data
         })
+    
+    @action(detail=True, methods=['post'], url_name='process-automatic', url_path='process-automatic')
+    def process_automatic(self, request, pk=None):
+        """
+        Process automatic refund through Stripe.
+        
+        This action will:
+        1. Validate the refund can be processed
+        2. Create a Stripe refund
+        3. Update refund status based on Stripe response
+        4. Send notifications to participant
+        
+        No request body required - all information comes from the refund record.
+        """
+        refund = self.get_object()
+        
+        # Check event permission
+        if not has_event_permission(request.user, refund.event, 'can_process_refunds'):
+            return Response(
+                {'error': 'You do not have permission to process refunds for this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get refund service
+        refund_service = get_refund_service()
+        
+        # Process refund
+        success, message = refund_service.process_automatic_refund(refund)
+        
+        if success:
+            serializer = ParticipantRefundDetailSerializer(refund)
+            return Response({
+                'message': message,
+                'refund': serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': message,
+                'refund_id': str(refund.id),
+                'status': refund.status
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'], url_name='process-manual', url_path='process-manual')
+    def process_manual(self, request, pk=None):
+        """
+        Mark manual refund as processing (bank transfer initiated).
+        
+        Request body:
+        {
+            "processor_notes": "Bank transfer initiated via HSBC"
+        }
+        """
+        refund = self.get_object()
+        
+        # Check event permission
+        if not has_event_permission(request.user, refund.event, 'can_process_refunds'):
+            return Response(
+                {'error': 'You do not have permission to process refunds for this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        processor_notes = request.data.get('processor_notes')
+        
+        # Get refund service
+        refund_service = get_refund_service()
+        
+        # Process manual refund
+        success, message = refund_service.process_manual_refund(refund, processor_notes)
+        
+        if success:
+            serializer = ParticipantRefundDetailSerializer(refund)
+            return Response({
+                'message': message,
+                'refund': serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': message,
+                'refund_id': str(refund.id)
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'], url_name='complete-manual', url_path='complete-manual')
+    def complete_manual(self, request, pk=None):
+        """
+        Mark manual refund as completed after bank transfer.
+        
+        Request body:
+        {
+            "processor_notes": "Bank transfer completed and confirmed"
+        }
+        """
+        refund = self.get_object()
+        
+        # Check event permission
+        if not has_event_permission(request.user, refund.event, 'can_process_refunds'):
+            return Response(
+                {'error': 'You do not have permission to process refunds for this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        processor_notes = request.data.get('processor_notes')
+        
+        # Get refund service
+        refund_service = get_refund_service()
+        
+        # Complete manual refund
+        success, message = refund_service.complete_manual_refund(refund, processor_notes)
+        
+        if success:
+            serializer = ParticipantRefundDetailSerializer(refund)
+            return Response({
+                'message': message,
+                'refund': serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': message,
+                'refund_id': str(refund.id)
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'], url_name='retry-failed', url_path='retry-failed')
+    def retry_failed(self, request, pk=None):
+        """
+        Retry a failed automatic refund.
+        
+        This will reset the refund status and attempt to process it again through Stripe.
+        """
+        refund = self.get_object()
+        
+        # Check event permission
+        if not has_event_permission(request.user, refund.event, 'can_process_refunds'):
+            return Response(
+                {'error': 'You do not have permission to process refunds for this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get refund service
+        refund_service = get_refund_service()
+        
+        # Retry refund
+        success, message = refund_service.retry_failed_refund(refund)
+        
+        if success:
+            serializer = ParticipantRefundDetailSerializer(refund)
+            return Response({
+                'message': message,
+                'refund': serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': message,
+                'refund_id': str(refund.id)
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'], url_name='cancel-refund', url_path='cancel')
+    def cancel_refund(self, request, pk=None):
+        """
+        Cancel a pending refund.
+        
+        Request body:
+        {
+            "cancellation_reason": "Participant changed mind"
+        }
+        """
+        refund = self.get_object()
+        
+        # Check event permission
+        if not has_event_permission(request.user, refund.event, 'can_process_refunds'):
+            return Response(
+                {'error': 'You do not have permission to cancel refunds for this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        cancellation_reason = request.data.get('cancellation_reason')
+        
+        if not cancellation_reason:
+            return Response(
+                {'error': 'Cancellation reason is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get refund service
+        refund_service = get_refund_service()
+        
+        # Cancel refund
+        success, message = refund_service.cancel_refund(refund, cancellation_reason)
+        
+        if success:
+            serializer = ParticipantRefundDetailSerializer(refund)
+            return Response({
+                'message': message,
+                'refund': serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': message,
+                'refund_id': str(refund.id)
+            }, status=status.HTTP_400_BAD_REQUEST)
