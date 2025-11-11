@@ -182,13 +182,33 @@ class SecureLogoutView(APIView):
             'message': 'Logout successful'
         }, status=status.HTTP_200_OK)
 
-        # Clear all auth cookies
-        response.delete_cookie('access_token', path='/')
-        response.delete_cookie('refresh_token', path='/')
-        response.delete_cookie('csrftoken', path='/')
+        # Clear all auth cookies - using set_cookie with max_age=0 for more reliable deletion
+        # This is more reliable than delete_cookie() in some browsers
+        cookie_settings = {
+            'value': '',
+            'max_age': 0,
+            'expires': 'Thu, 01 Jan 1970 00:00:00 GMT',
+            'path': '/',
+            'httponly': True,
+            'secure': not settings.DEBUG,
+            'samesite': 'Strict'
+        }
+        
+        # Delete access token
+        response.set_cookie('access_token', **cookie_settings)
+        
+        # Delete refresh token
+        response.set_cookie('refresh_token', **cookie_settings)
+        
+        # Delete CSRF token (not httponly)
+        csrf_settings = cookie_settings.copy()
+        csrf_settings['httponly'] = False
+        response.set_cookie('csrftoken', **csrf_settings)
+        
+        # Also clear any Django session cookie if it exists
+        response.set_cookie('sessionid', **cookie_settings)
 
         return response
-
 
 class CurrentUserView(APIView):
     """
