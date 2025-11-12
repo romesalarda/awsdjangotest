@@ -713,7 +713,7 @@ class DonationViewSet(viewsets.ReadOnlyModelViewSet):
     ).all()
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    
+    serializer_class = DonationDetailSerializer
     filterset_fields = {
         'event': ['exact'],
         'status': ['exact', 'in'],

@@ -86,3 +86,5 @@ class ProductSizeAdmin(admin.ModelAdmin):
     list_filter = ("size", "product")
     search_fields = ("product__title",)
     ordering = ("product", "size")
+    
+admin.site.register(ProductPaymentLog)

@@ -277,7 +277,9 @@ class EventServiceTeamMember(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, 
         related_name="assigned_event_members"  
     ) 
-    
+    # discount_price = models.FloatField(default=0, blank=True, null=True, validators=[validators.MinValueValidator(0)])
+    # discount_percentage = models.FloatField(default=0, blank=True, null=True, validators=[validators.MinValueValidator(0)])
+
     class Meta:
         unique_together = ("user", "event") 
         verbose_name = _("Event Service Team Member")

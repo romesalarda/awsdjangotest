@@ -234,6 +234,7 @@ class ProductPayment(models.Model):
         return f"{self.user} - {self.cart} - {self.get_status_display()}"
 
 
+
 class ProductPaymentLog(models.Model):
     """
     Audit log for all payment state changes and operations.

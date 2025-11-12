@@ -91,8 +91,8 @@ class EventPaymentMethod(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = _("Event Payment Method")
-        verbose_name_plural = _("Event Payment Methods")
+        verbose_name = _("Event Donations Method")
+        verbose_name_plural = _("Event Donations Methods")
 
     def __str__(self):
         return f"{self.get_method_display()} ({self.event})"

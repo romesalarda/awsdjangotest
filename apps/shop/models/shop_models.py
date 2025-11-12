@@ -71,6 +71,7 @@ class EventProduct(models.Model):
         default=-1,
         help_text=_("Maximum quantity a person can purchase across all orders. Set to -1 for unlimited.")
     )
+    
 
     class Meta:
         ordering = ['title']

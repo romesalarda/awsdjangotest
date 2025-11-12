@@ -13,11 +13,17 @@ from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email as django_validate_email
+from difflib import SequenceMatcher
+from datetime import date
+import re
 
 from apps.events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
     EventTalk, EventWorkshop, EventPayment
 )
+from apps.events.models.location_models import AreaLocation
+from apps.users.models import EmergencyContact
 
 from apps.events.api.serializers import *
 from apps.events.api.serializers.event_serializers import ParticipantManagementSerializer
@@ -2237,6 +2243,372 @@ class EventViewSet(viewsets.ModelViewSet):
             'allowed_organisations': [str(org_id) for org_id in set(allowed_org_ids)],
             'allowed_areas': list(allowed_areas)
         }, status=status.HTTP_200_OK)
+
+    # ==================== REGISTRATION SANITY CHECK ENDPOINTS ====================
+    
+    @action(detail=True, methods=['post'], url_path='registration/sanity-check')
+    def registration_sanity_check(self, request, id=None):
+        """
+        Sanity check endpoint for registration validation.
+        
+        Query params:
+            step: 'personal' | 'safeguarding' | 'area'
+        
+        POST body varies by step.
+        
+        Returns:
+            {
+                "valid": true/false,
+                "errors": {...},  # Blocking errors
+                "warnings": {...}  # Non-blocking warnings
+            }
+        """
+        step = request.query_params.get('step')
+        
+        if not step:
+            return Response(
+                {'error': 'Step parameter required (personal, safeguarding, or area)'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        event = self.get_object()
+        
+        # Route to appropriate validation function
+        if step == 'personal':
+            return self._validate_personal_step(request, event)
+        elif step == 'safeguarding':
+            return self._validate_safeguarding_step(request, event)
+        elif step == 'area':
+            return self._validate_area_step(request, event)
+        else:
+            return Response(
+                {'error': f'Invalid step: {step}. Must be personal, safeguarding, or area'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=False, methods=['get'], url_path='registration/emergency-contact-relationships')
+    def get_emergency_contact_relationships(self, request):
+        """
+        Get list of available emergency contact relationship types.
+        
+        Returns:
+            [
+                {"value": "MOTHER", "label": "Mother"},
+                {"value": "FATHER", "label": "Father"},
+                ...
+            ]
+        """
+        relationships = [
+            {'value': choice[0], 'label': choice[1]}
+            for choice in EmergencyContact.ContactRelationshipType.choices
+        ]
+        
+        return Response(relationships)
+    
+    # Helper methods for sanity checks
+    
+    def _validate_phone_number(self, phone):
+        """Validate UK/international phone number format."""
+        if not phone:
+            return False
+        
+        # Remove spaces, hyphens, parentheses
+        cleaned = re.sub(r'[\s\-\(\)]', '', phone)
+        
+        # Check for valid patterns
+        patterns = [
+            r'^(\+44|0044|0)\d{10}$',  # UK
+            r'^\+\d{10,14}$',  # International
+            r'^\d{10,11}$'  # Simple 10-11 digit number
+        ]
+        
+        return any(re.match(pattern, cleaned) for pattern in patterns)
+    
+    def _calculate_age(self, dob):
+        """Calculate age from date of birth."""
+        if isinstance(dob, str):
+            try:
+                from datetime import datetime
+                dob = datetime.strptime(dob, '%Y-%m-%d').date()
+            except ValueError:
+                return None
+        
+        if not isinstance(dob, date):
+            return None
+        
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        return age
+    
+    def _name_similarity(self, name1, name2):
+        """Calculate similarity ratio between two names."""
+        if not name1 or not name2:
+            return 0.0
+        
+        name1_clean = name1.lower().strip()
+        name2_clean = name2.lower().strip()
+        
+        return SequenceMatcher(None, name1_clean, name2_clean).ratio()
+    
+    def _validate_external_id(self, external_id, event):
+        """Validate external/secondary reference ID."""
+        errors = {}
+        
+        if not external_id:
+            return errors
+        
+        # Check format
+        if not re.match(r'^[A-Za-z0-9\-_]{3,50}$', external_id):
+            errors['external_id'] = 'External ID must be 3-50 characters (letters, numbers, hyphens, underscores only)'
+            return errors
+        
+        # Check uniqueness
+        existing = EventParticipant.objects.filter(
+            event=event,
+            secondary_reference_id=external_id
+        ).exists()
+        
+        if existing:
+            errors['external_id'] = 'This external ID is already registered for this event'
+        
+        return errors
+    
+    def _validate_date_of_birth(self, dob_str):
+        """Validate date of birth."""
+        errors = {}
+        
+        if not dob_str:
+            errors['date_of_birth'] = 'Date of birth is required'
+            return errors
+        
+        try:
+            from datetime import datetime
+            dob = datetime.strptime(dob_str, '%Y-%m-%d').date()
+        except ValueError:
+            errors['date_of_birth'] = 'Invalid date format. Use YYYY-MM-DD'
+            return errors
+        
+        if dob > date.today():
+            errors['date_of_birth'] = 'Date of birth cannot be in the future'
+            return errors
+        
+        age = self._calculate_age(dob)
+        if age and age > 120:
+            errors['date_of_birth'] = 'Invalid date of birth (age exceeds 120 years)'
+        elif age and age < 0:
+            errors['date_of_birth'] = 'Invalid date of birth'
+        
+        return errors
+    
+    def _check_email_uniqueness(self, email, user_id=None):
+        """Check if email is already registered to another user."""
+        if not email:
+            return None
+        
+        User = get_user_model()
+        
+        # Check primary email
+        query = User.objects.filter(primary_email=email)
+        if user_id:
+            query = query.exclude(id=user_id)
+        
+        existing_user = query.first()
+        if existing_user:
+            return f'Email already registered to {existing_user.get_full_name()} ({existing_user.member_id})'
+        
+        # Check secondary email
+        query = User.objects.filter(secondary_email=email)
+        if user_id:
+            query = query.exclude(id=user_id)
+        
+        existing_user = query.first()
+        if existing_user:
+            return f'Email already registered as secondary email for {existing_user.get_full_name()} ({existing_user.member_id})'
+        
+        return None
+    
+    def _check_name_similarity(self, first_name, last_name, user_id=None):
+        """Check for similar names in the database."""
+        if not first_name or not last_name:
+            return []
+        
+        User = get_user_model()
+        warnings = []
+        threshold = 0.85  # 85% similarity threshold
+        
+        query = User.objects.all()
+        if user_id:
+            query = query.exclude(id=user_id)
+        
+        for user in query:
+            first_similarity = self._name_similarity(first_name, user.first_name)
+            last_similarity = self._name_similarity(last_name, user.last_name)
+            
+            if first_similarity >= threshold and last_similarity >= threshold:
+                warnings.append(
+                    f'Similar name found: {user.get_full_name()} ({user.primary_email or user.member_id})'
+                )
+        
+        return warnings
+    
+    def _validate_personal_step(self, request, event):
+        """Validate personal information step."""
+        data = request.data
+        errors = {}
+        warnings = {}
+        
+        user_id = request.user.id if request.user.is_authenticated else None
+        
+        # Validate external ID
+        external_id = data.get('external_id')
+        if external_id:
+            ext_errors = self._validate_external_id(external_id, event)
+            errors.update(ext_errors)
+        
+        # Validate date of birth
+        dob = data.get('date_of_birth')
+        dob_errors = self._validate_date_of_birth(dob)
+        errors.update(dob_errors)
+        
+        # Validate phone number
+        phone = data.get('phone_number')
+        if not phone:
+            errors['phone_number'] = 'Phone number is required'
+        elif not self._validate_phone_number(phone):
+            errors['phone_number'] = 'Invalid phone number format'
+        
+        # Validate email
+        email = data.get('email')
+        if not email:
+            errors['email'] = 'Email is required'
+        else:
+            try:
+                django_validate_email(email)
+            except ValidationError:
+                errors['email'] = 'Invalid email format'
+            
+            # Check uniqueness (warning only)
+            email_warning = self._check_email_uniqueness(email, user_id)
+            if email_warning:
+                warnings['email'] = email_warning
+        
+        # Validate names
+        first_name = data.get('first_name')
+        last_name = data.get('last_name')
+        
+        if not first_name:
+            errors['first_name'] = 'First name is required'
+        if not last_name:
+            errors['last_name'] = 'Last name is required'
+        
+        # Check name similarity (warnings only)
+        if first_name and last_name:
+            name_warnings = self._check_name_similarity(first_name, last_name, user_id)
+            if name_warnings:
+                warnings['name_similarity'] = name_warnings
+        
+        return Response({
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings
+        })
+    
+    def _validate_safeguarding_step(self, request, event):
+        """Validate safeguarding information step."""
+        data = request.data
+        errors = {}
+        warnings = {}
+        
+        # Calculate age
+        age = None
+        dob = data.get('date_of_birth')
+        if dob:
+            age = self._calculate_age(dob)
+        elif data.get('age'):
+            age = int(data.get('age'))
+        
+        if age is None:
+            errors['age'] = 'Unable to determine age. Please provide date of birth or age.'
+            return Response({
+                'valid': False,
+                'errors': errors,
+                'warnings': warnings
+            })
+        
+        # If under 18, require at least one emergency contact detail
+        if age < 18:
+            ec_first = data.get('emergency_contact_first_name')
+            ec_last = data.get('emergency_contact_last_name')
+            ec_relationship = data.get('emergency_contact_relationship')
+            ec_phone = data.get('emergency_contact_phone')
+            ec_email = data.get('emergency_contact_email')
+            
+            has_any_contact = any([ec_first, ec_last, ec_phone, ec_email])
+            
+            if not has_any_contact:
+                errors['emergency_contact'] = 'At least one emergency contact detail is required for participants under 18'
+            else:
+                # Validate individual fields if provided
+                if ec_first and len(ec_first.strip()) < 2:
+                    errors['emergency_contact_first_name'] = 'First name must be at least 2 characters'
+                
+                if ec_last and len(ec_last.strip()) < 2:
+                    errors['emergency_contact_last_name'] = 'Last name must be at least 2 characters'
+                
+                if ec_phone and not self._validate_phone_number(ec_phone):
+                    errors['emergency_contact_phone'] = 'Invalid phone number format'
+                
+                if ec_email:
+                    try:
+                        django_validate_email(ec_email)
+                    except ValidationError:
+                        errors['emergency_contact_email'] = 'Invalid email format'
+                
+                # Validate relationship
+                if ec_relationship:
+                    valid_relationships = [choice[0] for choice in EmergencyContact.ContactRelationshipType.choices]
+                    if ec_relationship not in valid_relationships:
+                        errors['emergency_contact_relationship'] = f'Invalid relationship type. Must be one of: {", ".join(valid_relationships)}'
+        
+        return Response({
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings,
+            'age': age,
+            'requires_emergency_contact': age < 18
+        })
+    
+    def _validate_area_step(self, request, event):
+        """Validate area selection step."""
+        data = request.data
+        errors = {}
+        warnings = {}
+        
+        area_id = data.get('area_id')
+        
+        if not area_id:
+            errors['area_id'] = 'Area selection is required'
+        else:
+            try:
+                area = AreaLocation.objects.get(area_name=area_id)
+            except AreaLocation.DoesNotExist:
+                errors['area_id'] = 'Selected area does not exist'
+        
+        # Get suggested area from user profile
+        suggested_area = None
+        if request.user.is_authenticated and hasattr(request.user, 'area_from') and request.user.area_from:
+            suggested_area = {
+                'id': str(request.user.area_from.id),
+                'name': request.user.area_from.area_name,
+                'chapter': request.user.area_from.unit.chapter.chapter_name if request.user.area_from.unit.chapter else None
+            }
+        
+        return Response({
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings,
+            'suggested_area': suggested_area
+        })
 
         
 

@@ -504,10 +504,10 @@ class ParticipantRefundAdmin(admin.ModelAdmin):
             )
         }),
         ('Contact Information', {
-            'fields': ('participant_email', 'organizer_contact_email')
+            'fields': ('participant_email', 'refund_contact_email')
         }),
         ('Removal Details', {
-            'fields': ('removal_reason', 'removed_by', 'created_at')
+            'fields': ('removal_reason_details', 'removed_by', 'created_at')
         }),
         ('Processing Details', {
             'fields': ('processing_notes', 'processed_by', 'processed_at', 'days_pending_display'),
