@@ -150,11 +150,56 @@ class EventViewSet(viewsets.ModelViewSet):
             head_of_role = request.data.get('head_of_role', False)
             permission_data = request.data.get('permissions', {})
             
+            # Discount fields (optional)
+            registration_discount_type = request.data.get('registration_discount_type')
+            registration_discount_value = request.data.get('registration_discount_value')
+            product_discount_type = request.data.get('product_discount_type')
+            product_discount_value = request.data.get('product_discount_value')
+            
             if not user_id:
                 return Response(
                     {'error': 'user_id is required'}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
+            
+            # Validate discount values if provided
+            if registration_discount_type and registration_discount_value is not None:
+                try:
+                    reg_discount_val = Decimal(str(registration_discount_value))
+                    if reg_discount_val < 0:
+                        return Response(
+                            {'error': 'Registration discount value must be non-negative'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    if registration_discount_type == 'PERCENTAGE' and reg_discount_val > 100:
+                        return Response(
+                            {'error': 'Registration discount percentage cannot exceed 100%'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except (ValueError, TypeError):
+                    return Response(
+                        {'error': 'Invalid registration discount value'}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            if product_discount_type and product_discount_value is not None:
+                try:
+                    prod_discount_val = Decimal(str(product_discount_value))
+                    if prod_discount_val < 0:
+                        return Response(
+                            {'error': 'Product discount value must be non-negative'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    if product_discount_type == 'PERCENTAGE' and prod_discount_val > 100:
+                        return Response(
+                            {'error': 'Product discount percentage cannot exceed 100%'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except (ValueError, TypeError):
+                    return Response(
+                        {'error': 'Invalid product discount value'}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             
             try:
                 user = get_user_model().objects.get(id=user_id)
@@ -166,15 +211,17 @@ class EventViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
-                # Create service team member
+                # Create service team member with discount fields
                 service_member = EventServiceTeamMember.objects.create(
                     event=event,
                     user=user,
                     head_of_role=head_of_role,
-                    assigned_by=request.user
-                )
-                
-                # Add roles if provided
+                    assigned_by=request.user,
+                    registration_discount_type=registration_discount_type,
+                    registration_discount_value=registration_discount_value,
+                    product_discount_type=product_discount_type,
+                    product_discount_value=product_discount_value
+                )                # Add roles if provided
                 if role_ids:
                     roles = EventRole.objects.filter(id__in=role_ids)
                     service_member.roles.set(roles)
@@ -253,7 +300,7 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch'], url_name="update_service_member", url_path="service-team/(?P<member_id>[^/.]+)")
     def update_service_member(self, request, id=None, member_id=None):
         '''
-        Update a specific service team member's roles, head_of_role status, or permissions
+        Update a specific service team member's roles, head_of_role status, permissions, or discounts
         '''
         event = self.get_object()
         
@@ -267,10 +314,69 @@ class EventViewSet(viewsets.ModelViewSet):
         try:
             service_member = EventServiceTeamMember.objects.get(event=event, id=member_id)
             
+            # Validate discount fields if provided
+            if 'registration_discount_type' in request.data or 'registration_discount_value' in request.data:
+                reg_type = request.data.get('registration_discount_type', service_member.registration_discount_type)
+                reg_value = request.data.get('registration_discount_value', service_member.registration_discount_value)
+                
+                if reg_type and reg_value is not None:
+                    try:
+                        reg_val = Decimal(str(reg_value))
+                        if reg_val < 0:
+                            return Response(
+                                {'error': 'Registration discount value must be non-negative'}, 
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                        if reg_type == 'PERCENTAGE' and reg_val > 100:
+                            return Response(
+                                {'error': 'Registration discount percentage cannot exceed 100%'}, 
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                    except (ValueError, TypeError):
+                        return Response(
+                            {'error': 'Invalid registration discount value'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+            
+            if 'product_discount_type' in request.data or 'product_discount_value' in request.data:
+                prod_type = request.data.get('product_discount_type', service_member.product_discount_type)
+                prod_value = request.data.get('product_discount_value', service_member.product_discount_value)
+                
+                if prod_type and prod_value is not None:
+                    try:
+                        prod_val = Decimal(str(prod_value))
+                        if prod_val < 0:
+                            return Response(
+                                {'error': 'Product discount value must be non-negative'}, 
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                        if prod_type == 'PERCENTAGE' and prod_val > 100:
+                            return Response(
+                                {'error': 'Product discount percentage cannot exceed 100%'}, 
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                    except (ValueError, TypeError):
+                        return Response(
+                            {'error': 'Invalid product discount value'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+            
             # Update fields if provided
             if 'head_of_role' in request.data:
                 service_member.head_of_role = request.data['head_of_role']
-                service_member.save()
+            
+            # Update discount fields
+            if 'registration_discount_type' in request.data:
+                service_member.registration_discount_type = request.data['registration_discount_type']
+            if 'registration_discount_value' in request.data:
+                service_member.registration_discount_value = request.data['registration_discount_value']
+            if 'product_discount_type' in request.data:
+                service_member.product_discount_type = request.data['product_discount_type']
+            if 'product_discount_value' in request.data:
+                service_member.product_discount_value = request.data['product_discount_value']
+            
+            # Save updates
+            service_member.save()
             
             if 'role_ids' in request.data:
                 roles = EventRole.objects.filter(id__in=request.data['role_ids'])
@@ -411,6 +517,61 @@ class EventViewSet(viewsets.ModelViewSet):
                 {'error': 'Service team member not found'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
+
+    @action(detail=True, methods=['get'], url_name="my_discounts", url_path="my-discounts")
+    def get_my_discounts(self, request, id=None):
+        '''
+        Get the current user's applicable discounts for this event
+        Returns discount information for both registration and products
+        '''
+        event = self.get_object()
+        user = request.user
+        
+        if not user.is_authenticated:
+            return Response(
+                {'error': 'Authentication required'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        try:
+            service_member = EventServiceTeamMember.objects.get(event=event, user=user)
+            
+            response_data = {
+                'is_service_team': True,
+                'registration_discount': None,
+                'product_discount': None
+            }
+            
+            # Registration discount details
+            if service_member.has_registration_discount:
+                # Get event registration price (assumes event has a price field)
+                # You may need to adjust this based on your Event model
+                original_price = getattr(event, 'price', None) or getattr(event, 'registration_fee', Decimal('0.00'))
+                
+                response_data['registration_discount'] = {
+                    'type': service_member.registration_discount_type,
+                    'value': float(service_member.registration_discount_value),
+                    'original_price': float(original_price),
+                    'discounted_price': float(service_member.get_discounted_registration_price(original_price)),
+                    'savings': float(service_member.calculate_registration_discount(original_price))
+                }
+            
+            # Product discount details
+            if service_member.has_product_discount:
+                response_data['product_discount'] = {
+                    'type': service_member.product_discount_type,
+                    'value': float(service_member.product_discount_value),
+                    'description': f"{service_member.product_discount_value}{'%' if service_member.product_discount_type == 'PERCENTAGE' else '£'} off all products"
+                }
+            
+            return Response(response_data)
+            
+        except EventServiceTeamMember.DoesNotExist:
+            return Response({
+                'is_service_team': False,
+                'registration_discount': None,
+                'product_discount': None
+            })
 
     @action(detail=True, methods=['get'], url_name="booking", url_path="booking")
     def booking(self, request, id=None):

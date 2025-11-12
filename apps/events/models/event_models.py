@@ -277,8 +277,44 @@ class EventServiceTeamMember(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, 
         related_name="assigned_event_members"  
     ) 
-    # discount_price = models.FloatField(default=0, blank=True, null=True, validators=[validators.MinValueValidator(0)])
-    # discount_percentage = models.FloatField(default=0, blank=True, null=True, validators=[validators.MinValueValidator(0)])
+    
+    # Discount fields for service team members
+    registration_discount_type = models.CharField(
+        max_length=20,
+        choices=[('PERCENTAGE', 'Percentage'), ('FIXED', 'Fixed Amount')],
+        blank=True,
+        null=True,
+        verbose_name=_("discount type"),
+        help_text=_("Type of discount for event registration")
+    )
+    registration_discount_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        blank=True,
+        null=True,
+        validators=[validators.MinValueValidator(0)],
+        verbose_name=_("discount value"),
+        help_text=_("Discount value (percentage or fixed amount in currency)")
+    )
+    product_discount_type = models.CharField(
+        max_length=20,
+        choices=[('PERCENTAGE', 'Percentage'), ('FIXED', 'Fixed Amount')],
+        blank=True,
+        null=True,
+        verbose_name=_("product discount type"),
+        help_text=_("Type of discount for products")
+    )
+    product_discount_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        blank=True,
+        null=True,
+        validators=[validators.MinValueValidator(0)],
+        verbose_name=_("product discount value"),
+        help_text=_("Discount value for products (percentage or fixed amount)")
+    )
 
     class Meta:
         unique_together = ("user", "event") 
@@ -287,6 +323,102 @@ class EventServiceTeamMember(models.Model):
 
     def __str__(self):
         return f"ST: {self.user}"
+    
+    def calculate_registration_discount(self, original_price):
+        """
+        Calculate the discount amount for event registration.
+        
+        Args:
+            original_price (Decimal): The original registration price
+            
+        Returns:
+            Decimal: The discount amount to subtract from the original price
+        """
+        from decimal import Decimal
+        
+        if not self.registration_discount_type or not self.registration_discount_value:
+            return Decimal('0')
+        
+        original_price = Decimal(str(original_price))
+        discount_value = Decimal(str(self.registration_discount_value))
+        
+        if self.registration_discount_type == 'PERCENTAGE':
+            # Calculate percentage discount
+            discount_amount = (original_price * discount_value) / Decimal('100')
+        else:  # FIXED
+            # Use fixed discount amount (capped at original price)
+            discount_amount = min(discount_value, original_price)
+        
+        return discount_amount.quantize(Decimal('0.01'))
+    
+    def calculate_product_discount(self, original_price):
+        """
+        Calculate the discount amount for products.
+        
+        Args:
+            original_price (Decimal): The original product price
+            
+        Returns:
+            Decimal: The discount amount to subtract from the original price
+        """
+        from decimal import Decimal
+        
+        if not self.product_discount_type or not self.product_discount_value:
+            return Decimal('0')
+        
+        original_price = Decimal(str(original_price))
+        discount_value = Decimal(str(self.product_discount_value))
+        
+        if self.product_discount_type == 'PERCENTAGE':
+            # Calculate percentage discount
+            discount_amount = (original_price * discount_value) / Decimal('100')
+        else:  # FIXED
+            # Use fixed discount amount (capped at original price)
+            discount_amount = min(discount_value, original_price)
+        
+        return discount_amount.quantize(Decimal('0.01'))
+    
+    def get_discounted_registration_price(self, original_price):
+        """
+        Get the final price after applying registration discount.
+        
+        Args:
+            original_price (Decimal): The original registration price
+            
+        Returns:
+            Decimal: The final price after discount
+        """
+        from decimal import Decimal
+        
+        discount = self.calculate_registration_discount(original_price)
+        final_price = Decimal(str(original_price)) - discount
+        return max(final_price, Decimal('0')).quantize(Decimal('0.01'))
+    
+    def get_discounted_product_price(self, original_price):
+        """
+        Get the final price after applying product discount.
+        
+        Args:
+            original_price (Decimal): The original product price
+            
+        Returns:
+            Decimal: The final price after discount
+        """
+        from decimal import Decimal
+        
+        discount = self.calculate_product_discount(original_price)
+        final_price = Decimal(str(original_price)) - discount
+        return max(final_price, Decimal('0')).quantize(Decimal('0.01'))
+    
+    @property
+    def has_registration_discount(self):
+        """Check if this service team member has a registration discount."""
+        return bool(self.registration_discount_type and self.registration_discount_value and self.registration_discount_value > 0)
+    
+    @property
+    def has_product_discount(self):
+        """Check if this service team member has a product discount."""
+        return bool(self.product_discount_type and self.product_discount_value and self.product_discount_value > 0)
     
 class EventRole(models.Model):
     '''

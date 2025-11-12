@@ -43,6 +43,30 @@ class EventProduct(models.Model):
     
     price = models.DecimalField(_("Product Cost (£)"), max_digits=10, decimal_places=2)
     discount = models.DecimalField(_("Product Discount (£)"), max_digits=10, decimal_places=2, null=True, blank=True)
+    
+    # Role-based discount fields
+    discount_for_service_team = models.BooleanField(
+        _("Discount for Service Team"),
+        default=False,
+        help_text=_("Enable special discount for service team members")
+    )
+    service_team_discount_type = models.CharField(
+        max_length=20,
+        choices=[('PERCENTAGE', 'Percentage'), ('FIXED', 'Fixed Amount')],
+        blank=True,
+        null=True,
+        verbose_name=_("service team discount type"),
+        help_text=_("Type of discount for service team members")
+    )
+    service_team_discount_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        blank=True,
+        null=True,
+        verbose_name=_("service team discount value"),
+        help_text=_("Discount value for service team (percentage or fixed amount)")
+    )
 
     seller = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -110,6 +134,68 @@ class EventProduct(models.Model):
     def available_sizes(self):
         """Get list of available sizes for this product"""
         return [size.size for size in self.product_sizes.all()]
+    
+    def calculate_service_team_discount(self, original_price=None):
+        """
+        Calculate the service team discount amount for this product.
+        
+        Args:
+            original_price (Decimal, optional): Price to calculate discount from. 
+                                               Defaults to self.price if not provided.
+            
+        Returns:
+            Decimal: The discount amount to subtract from the original price
+        """
+        from decimal import Decimal
+        
+        if not self.discount_for_service_team or not self.service_team_discount_type or not self.service_team_discount_value:
+            return Decimal('0')
+        
+        price = Decimal(str(original_price if original_price is not None else self.price))
+        discount_value = Decimal(str(self.service_team_discount_value))
+        
+        if self.service_team_discount_type == 'PERCENTAGE':
+            discount_amount = (price * discount_value) / Decimal('100')
+        else:  # FIXED
+            discount_amount = min(discount_value, price)
+        
+        return discount_amount.quantize(Decimal('0.01'))
+    
+    def get_price_for_user(self, user):
+        """
+        Get the final price for a specific user, applying service team discount if applicable.
+        
+        Args:
+            user: The user making the purchase
+            
+        Returns:
+            Decimal: The final price after applicable discounts
+        """
+        from decimal import Decimal
+        from apps.events.models import EventServiceTeamMember
+        
+        # Check if user is a service team member for this event
+        is_service_team = EventServiceTeamMember.objects.filter(
+            user=user,
+            event=self.event
+        ).exists()
+        
+        if is_service_team and self.discount_for_service_team:
+            discount = self.calculate_service_team_discount()
+            final_price = Decimal(str(self.price)) - discount
+            return max(final_price, Decimal('0')).quantize(Decimal('0.01'))
+        
+        return Decimal(str(self.price)).quantize(Decimal('0.01'))
+    
+    @property
+    def has_service_team_discount(self):
+        """Check if this product has a service team discount configured."""
+        return bool(
+            self.discount_for_service_team and 
+            self.service_team_discount_type and 
+            self.service_team_discount_value and 
+            self.service_team_discount_value > 0
+        )
 
 
 class EventCart(models.Model):

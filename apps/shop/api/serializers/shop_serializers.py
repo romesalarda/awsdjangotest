@@ -57,6 +57,10 @@ class EventProductSerializer(serializers.ModelSerializer):
     in_stock = serializers.BooleanField(read_only=True)
     user_purchased_count = serializers.SerializerMethodField()
     
+    # Service team discount fields
+    has_service_team_discount = serializers.BooleanField(read_only=True)
+    user_specific_price = serializers.SerializerMethodField()
+    
     # Write-only fields for creating/updating
     image_uploads = serializers.ListField(
         child=serializers.ImageField(),
@@ -111,6 +115,14 @@ class EventProductSerializer(serializers.ModelSerializer):
         except ProductPurchaseTracker.DoesNotExist:
             return 0
     
+    def get_user_specific_price(self, obj):
+        """Get the price for the current user (accounting for service team discounts)"""
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return float(obj.price)
+        
+        return float(obj.get_price_for_user(request.user))
+    
     class Meta:
         model = EventProduct
         fields = [
@@ -120,9 +132,13 @@ class EventProductSerializer(serializers.ModelSerializer):
             "categories", "materials", "images", "product_sizes", "maximum_order_quantity",
             "max_purchase_per_person",  # New field for purchase limits
             "user_purchased_count",  # New field for frontend validation
-            "image_uploads", "size_list", "category_ids", "material_ids"
+            "image_uploads", "size_list", "category_ids", "material_ids",
+            # Service team discount fields
+            "discount_for_service_team", "service_team_discount_type", "service_team_discount_value",
+            "has_service_team_discount", "user_specific_price"
         ]
-        read_only_fields = ["seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes", "user_purchased_count"]
+        read_only_fields = ["seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes", "user_purchased_count", 
+                            "has_service_team_discount", "user_specific_price"]
         
     def create(self, validated_data):
         # Extract related data

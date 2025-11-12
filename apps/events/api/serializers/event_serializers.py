@@ -54,6 +54,8 @@ class EventServiceTeamMemberSerializer(serializers.ModelSerializer):
     user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
     role_details = EventRoleSerializer(source='roles', many=True, read_only=True)
     permission_details = ServiceTeamPermissionSerializer(source='permissions', read_only=True)
+    has_registration_discount = serializers.BooleanField(read_only=True)
+    has_product_discount = serializers.BooleanField(read_only=True)
     
     class Meta:
         model = EventServiceTeamMember
