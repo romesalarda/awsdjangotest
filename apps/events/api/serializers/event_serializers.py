@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from apps.events.models import (
-    Event, EventServiceTeamMember, EventRole, EventParticipant,
+    Event, EventServiceTeamMember, EventRole, EventRoleDiscount, EventParticipant,
     EventTalk, EventWorkshop, EventResource, ParticipantQuestion,
     AreaLocation, EventVenue
 )
@@ -39,6 +39,36 @@ class EventRoleSerializer(serializers.ModelSerializer):
         model = EventRole
         fields = ['id', 'role_name', 'display_name', 'description']
         read_only_fields = ['display_name']
+
+class EventRoleDiscountSerializer(serializers.ModelSerializer):
+    """
+    Serializer for EventRoleDiscount model - role-based discounts per event.
+    """
+    role_name = serializers.CharField(source='role.get_role_name_display', read_only=True)
+    role_id = serializers.PrimaryKeyRelatedField(
+        source='role',
+        queryset=EventRole.objects.all(),
+        write_only=True
+    )
+    event_name = serializers.CharField(source='event.name', read_only=True)
+    
+    class Meta:
+        model = EventRoleDiscount
+        fields = [
+            'id',
+            'event',
+            'role',
+            'role_id',
+            'role_name',
+            'event_name',
+            'registration_discount_type',
+            'registration_discount_value',
+            'product_discount_type',
+            'product_discount_value',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'role_name', 'event_name']
 
 class SimplifiedEventServiceTeamMemberSerializer(serializers.ModelSerializer):
     user_details = SimplifiedCommunityUserSerializer(source='user', read_only=True)
@@ -417,6 +447,12 @@ class EventSerializer(serializers.ModelSerializer):
         if 'payment_methods' in data and isinstance(data['payment_methods'], list):
             data['payment_methods_data'] = data.pop('payment_methods')
         
+        # Handle discounts nested structure
+        if 'discounts' in data:
+            discounts_data = data.pop('discounts')
+            for key, value in discounts_data.items():
+                data[key] = value
+        
         # Handle resource data sent from frontend
         if 'resource_data' in data and isinstance(data['resource_data'], list):
             # Keep the resource_data as is, it's already in the correct format
@@ -490,6 +526,9 @@ class EventSerializer(serializers.ModelSerializer):
             "organisation",
             "organisation_id",
             "force_participant_organisation",
+            # Event-level discount fields
+            "registration_discount_type",
+            "registration_discount_value",
             # Approval fields
             "approved_by",
             "approved_at",
@@ -571,6 +610,10 @@ class EventSerializer(serializers.ModelSerializer):
             "extra_questions": rep["extra_questions"],
             "payment_packages": rep["payment_packages"],
             "payment_methods": rep["payment_methods"],
+            "discounts": {
+                "registration_discount_type": rep["registration_discount_type"],
+                "registration_discount_value": rep["registration_discount_value"],
+            },
             "admin": {
                 "require_existing_id": rep["required_existing_id"],
                 "format_verifier": rep["format_verifier"],

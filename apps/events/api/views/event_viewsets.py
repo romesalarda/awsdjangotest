@@ -521,8 +521,14 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_name="my_discounts", url_path="my-discounts")
     def get_my_discounts(self, request, id=None):
         '''
-        Get the current user's applicable discounts for this event
-        Returns discount information for both registration and products
+        Get the current user's applicable discounts for this event.
+        
+        Discount Priority (cascading):
+        1. EventServiceTeamMember discount (individual override)
+        2. EventRoleDiscount (role-based for this event)
+        3. Event.registration_discount (event-level default)
+        
+        Returns discount information for both registration and products.
         '''
         event = self.get_object()
         user = request.user
@@ -533,21 +539,39 @@ class EventViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED
             )
         
-        try:
-            service_member = EventServiceTeamMember.objects.get(event=event, user=user)
-            
-            response_data = {
-                'is_service_team': True,
-                'registration_discount': None,
-                'product_discount': None
+        from apps.shop.models import ProductPaymentPackage
+        from apps.events.models import EventRoleDiscount
+        
+        response_data = {
+            'is_service_team': False,
+            'registration_discount': None,
+            'product_discount': None,
+            'event_level_discount': None,
+            'role_based_discount': None,
+            'discount_source': None  # 'individual', 'role', 'event', or None
+        }
+        
+        # Get original price from first payment package
+        payment_packages = ProductPaymentPackage.objects.filter(event=event, is_active=True).order_by('price')
+        original_price = Decimal(payment_packages.first().price) if payment_packages.exists() else Decimal('0.00')
+        
+        # Check for event-level discount (lowest priority)
+        if event.has_registration_discount and original_price > 0:
+            response_data['event_level_discount'] = {
+                'type': event.registration_discount_type,
+                'value': float(event.registration_discount_value),
+                'original_price': float(original_price),
+                'discounted_price': float(event.get_discounted_registration_price(original_price)),
+                'savings': float(event.calculate_registration_discount(original_price))
             }
+        
+        # Check if user is a service team member
+        try:
+            service_member = EventServiceTeamMember.objects.prefetch_related('roles').get(event=event, user=user)
+            response_data['is_service_team'] = True
             
-            # Registration discount details
-            if service_member.has_registration_discount:
-                # Get event registration price (assumes event has a price field)
-                # You may need to adjust this based on your Event model
-                original_price = getattr(event, 'price', None) or getattr(event, 'registration_fee', Decimal('0.00'))
-                
+            # Priority 1: Check for individual service team member discount (highest priority)
+            if service_member.has_registration_discount and original_price > 0:
                 response_data['registration_discount'] = {
                     'type': service_member.registration_discount_type,
                     'value': float(service_member.registration_discount_value),
@@ -555,23 +579,168 @@ class EventViewSet(viewsets.ModelViewSet):
                     'discounted_price': float(service_member.get_discounted_registration_price(original_price)),
                     'savings': float(service_member.calculate_registration_discount(original_price))
                 }
+                response_data['discount_source'] = 'individual'
             
-            # Product discount details
+            # Priority 2: Check for role-based discount (if no individual discount)
+            if not response_data['registration_discount'] and service_member.roles.exists() and original_price > 0:
+                # Get all roles for this service team member
+                role_ids = service_member.roles.values_list('id', flat=True)
+                
+                # Find role discounts for this event (prioritize by discount value - highest first)
+                role_discount = EventRoleDiscount.objects.filter(
+                    event=event,
+                    role__id__in=role_ids,
+                    registration_discount_type__isnull=False,
+                    registration_discount_value__gt=0
+                ).order_by('-registration_discount_value').first()
+                
+                if role_discount:
+                    response_data['role_based_discount'] = {
+                        'type': role_discount.registration_discount_type,
+                        'value': float(role_discount.registration_discount_value),
+                        'original_price': float(original_price),
+                        'discounted_price': float(role_discount.get_discounted_registration_price(original_price)),
+                        'savings': float(role_discount.calculate_registration_discount(original_price)),
+                        'role_name': role_discount.role.get_role_name_display()
+                    }
+                    response_data['registration_discount'] = response_data['role_based_discount']
+                    response_data['discount_source'] = 'role'
+            
+            # Priority 3: Use event-level discount if no individual or role discount
+            if not response_data['registration_discount'] and response_data['event_level_discount']:
+                response_data['registration_discount'] = response_data['event_level_discount']
+                response_data['discount_source'] = 'event'
+            
+            # Product discount details - check individual, then role-based
             if service_member.has_product_discount:
                 response_data['product_discount'] = {
                     'type': service_member.product_discount_type,
                     'value': float(service_member.product_discount_value),
-                    'description': f"{service_member.product_discount_value}{'%' if service_member.product_discount_type == 'PERCENTAGE' else '£'} off all products"
+                    'description': f"{service_member.product_discount_value}{'%' if service_member.product_discount_type == 'PERCENTAGE' else '£'} off all products",
+                    'source': 'individual'
                 }
-            
-            return Response(response_data)
+            elif service_member.roles.exists():
+                # Check for role-based product discount
+                role_ids = service_member.roles.values_list('id', flat=True)
+                role_discount = EventRoleDiscount.objects.filter(
+                    event=event,
+                    role__id__in=role_ids,
+                    product_discount_type__isnull=False,
+                    product_discount_value__gt=0
+                ).order_by('-product_discount_value').first()
+                
+                if role_discount:
+                    response_data['product_discount'] = {
+                        'type': role_discount.product_discount_type,
+                        'value': float(role_discount.product_discount_value),
+                        'description': f"{role_discount.product_discount_value}{'%' if role_discount.product_discount_type == 'PERCENTAGE' else '£'} off all products",
+                        'source': 'role',
+                        'role_name': role_discount.role.get_role_name_display()
+                    }
             
         except EventServiceTeamMember.DoesNotExist:
+            # Not a service team member, use event-level discount if available
+            if response_data['event_level_discount']:
+                response_data['registration_discount'] = response_data['event_level_discount']
+                response_data['discount_source'] = 'event'
+        
+        return Response(response_data)
+
+    @action(detail=True, methods=['get', 'post'], url_name="role_discounts", url_path="role-discounts")
+    def role_discounts(self, request, id=None):
+        '''
+        Manage role-based discounts for this event.
+        GET: List all role discounts for this event
+        POST: Create or update role discounts for this event
+        '''
+        event = self.get_object()
+        
+        # Check permissions
+        if not has_full_event_access(request.user, event):
+            return Response(
+                {'error': 'You do not have permission to manage role discounts for this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        from apps.events.models import EventRoleDiscount
+        from apps.events.api.serializers import EventRoleDiscountSerializer
+        
+        if request.method == 'GET':
+            # Get all role discounts for this event
+            role_discounts = EventRoleDiscount.objects.filter(event=event).select_related('role')
+            serializer = EventRoleDiscountSerializer(role_discounts, many=True)
+            return Response(serializer.data)
+        
+        elif request.method == 'POST':
+            # Create or update role discounts
+            # Expected format: [{ role_id, registration_discount_type, registration_discount_value, ... }, ...]
+            role_discounts_data = request.data if isinstance(request.data, list) else [request.data]
+            
+            created = []
+            updated = []
+            errors = []
+            
+            for discount_data in role_discounts_data:
+                try:
+                    role_id = discount_data.get('role_id') or discount_data.get('role')
+                    if not role_id:
+                        errors.append({'error': 'role_id is required', 'data': discount_data})
+                        continue
+                    
+                    # Get or create the role discount
+                    role_discount, is_new = EventRoleDiscount.objects.get_or_create(
+                        event=event,
+                        role_id=role_id,
+                        defaults={
+                            'registration_discount_type': discount_data.get('registration_discount_type'),
+                            'registration_discount_value': discount_data.get('registration_discount_value', 0),
+                            'product_discount_type': discount_data.get('product_discount_type'),
+                            'product_discount_value': discount_data.get('product_discount_value', 0),
+                        }
+                    )
+                    
+                    if not is_new:
+                        # Update existing
+                        role_discount.registration_discount_type = discount_data.get('registration_discount_type', role_discount.registration_discount_type)
+                        role_discount.registration_discount_value = discount_data.get('registration_discount_value', role_discount.registration_discount_value)
+                        role_discount.product_discount_type = discount_data.get('product_discount_type', role_discount.product_discount_type)
+                        role_discount.product_discount_value = discount_data.get('product_discount_value', role_discount.product_discount_value)
+                        role_discount.save()
+                        updated.append(EventRoleDiscountSerializer(role_discount).data)
+                    else:
+                        created.append(EventRoleDiscountSerializer(role_discount).data)
+                        
+                except Exception as e:
+                    errors.append({'error': str(e), 'data': discount_data})
+            
             return Response({
-                'is_service_team': False,
-                'registration_discount': None,
-                'product_discount': None
-            })
+                'created': created,
+                'updated': updated,
+                'errors': errors
+            }, status=status.HTTP_200_OK if not errors or (created or updated) else status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['delete'], url_name="delete_role_discount", url_path="role-discounts/(?P<discount_id>[^/.]+)")
+    def delete_role_discount(self, request, id=None, discount_id=None):
+        '''
+        Delete a specific role discount for this event.
+        '''
+        event = self.get_object()
+        
+        # Check permissions
+        if not has_full_event_access(request.user, event):
+            return Response(
+                {'error': 'You do not have permission to manage role discounts for this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        from apps.events.models import EventRoleDiscount
+        
+        try:
+            role_discount = EventRoleDiscount.objects.get(id=discount_id, event=event)
+            role_discount.delete()
+            return Response({'message': 'Role discount deleted successfully'}, status=status.HTTP_200_OK)
+        except EventRoleDiscount.DoesNotExist:
+            return Response({'error': 'Role discount not found'}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['get'], url_name="booking", url_path="booking")
     def booking(self, request, id=None):
@@ -1731,10 +1900,10 @@ class EventViewSet(viewsets.ModelViewSet):
         products = event.products.all()
         page = self.paginate_queryset(products)
         if page is not None:
-            serializer = EventProductSerializer(page, many=True)
+            serializer = EventProductSerializer(page, many=True, context={'request': request})
             return self.get_paginated_response(serializer.data)
 
-        serializer = EventProductSerializer(products, many=True)
+        serializer = EventProductSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
 
     @action(detail=True, methods=['get'], url_name="payment-methods", url_path="payment-methods")

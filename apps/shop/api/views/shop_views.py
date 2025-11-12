@@ -40,6 +40,12 @@ class EventProductViewSet(viewsets.ModelViewSet):
         #     return self.queryset
         return self.queryset
     
+    def get_serializer_context(self):
+        """Add request to serializer context for user-specific pricing"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
     def perform_create(self, serializer):
         """Set the seller to the current user when creating a product"""
         serializer.save(seller=self.request.user)
@@ -168,7 +174,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                     cart=cart,
                     quantity=quantity,
                     size=size_object,
-                    price_at_purchase=product_object.price
+                    price_at_purchase=product_object.get_price_for_user(cart.user)
                 )
                 
                 cart.products.add(product_object)
@@ -581,7 +587,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                     # Update quantity if changed
                     if order.quantity != quantity:
                         order.quantity = quantity
-                        order.price_at_purchase = product_object.price
+                        order.price_at_purchase = product_object.get_price_for_user(cart.user)
                         order.save()
                         updated_orders.append(
                             f"Updated {product_object.title} (size: {size_object.size if size_object else 'N/A'}, quantity: {quantity})"
@@ -593,7 +599,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                         cart=cart,
                         quantity=quantity,
                         size=size_object,
-                        price_at_purchase=product_object.price
+                        price_at_purchase=product_object.get_price_for_user(cart.user)
                     )
                     added_orders.append(
                         f"Added {product_object.title} (size: {size_object.size if size_object else 'N/A'}, quantity: {quantity})"
