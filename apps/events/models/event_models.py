@@ -237,14 +237,14 @@ class Event(models.Model):
             "set to False to allow people from other organisations to define themelves on registration"
             ))
     
-    # Event-level registration discount fields
+    # Event-level registration discount fields (for service team members only)
     registration_discount_type = models.CharField(
         max_length=20,
         choices=[('PERCENTAGE', 'Percentage'), ('FIXED', 'Fixed Amount')],
         blank=True,
         null=True,
         verbose_name=_("registration discount type"),
-        help_text=_("Default discount type for event registration (can be overridden per service team member)")
+        help_text=_("Default discount type for event registration for service team members (can be overridden per role or individual)")
     )
     registration_discount_value = models.DecimalField(
         max_digits=10,
@@ -254,7 +254,27 @@ class Event(models.Model):
         null=True,
         validators=[validators.MinValueValidator(0)],
         verbose_name=_("registration discount value"),
-        help_text=_("Default discount value for registration (percentage 0-100 or fixed amount in currency)")
+        help_text=_("Default discount value for registration for service team members (percentage 0-100 or fixed amount in currency)")
+    )
+    
+    # Event-level product discount fields (for service team members only)
+    product_discount_type = models.CharField(
+        max_length=20,
+        choices=[('PERCENTAGE', 'Percentage'), ('FIXED', 'Fixed Amount')],
+        blank=True,
+        null=True,
+        verbose_name=_("product discount type"),
+        help_text=_("Default discount type for products for service team members (lowest priority fallback)")
+    )
+    product_discount_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        blank=True,
+        null=True,
+        validators=[validators.MinValueValidator(0)],
+        verbose_name=_("product discount value"),
+        help_text=_("Default discount value for products for service team members (percentage 0-100 or fixed amount)")
     )
     
     
@@ -324,8 +344,56 @@ class Event(models.Model):
     
     @property
     def has_registration_discount(self):
-        """Check if this event has a default registration discount."""
+        """Check if this event has a default registration discount for service team members."""
         return bool(self.registration_discount_type and self.registration_discount_value and self.registration_discount_value > 0)
+    
+    def calculate_product_discount(self, original_price):
+        """
+        Calculate the event-level discount amount for products.
+        
+        Args:
+            original_price (Decimal): The original product price
+            
+        Returns:
+            Decimal: The discount amount to subtract from the original price
+        """
+        from decimal import Decimal
+        
+        if not self.product_discount_type or not self.product_discount_value:
+            return Decimal('0')
+        
+        original_price = Decimal(str(original_price))
+        discount_value = Decimal(str(self.product_discount_value))
+        
+        if self.product_discount_type == 'PERCENTAGE':
+            # Calculate percentage discount
+            discount_amount = (original_price * discount_value) / Decimal('100')
+        else:  # FIXED
+            # Use fixed discount amount (capped at original price)
+            discount_amount = min(discount_value, original_price)
+        
+        return discount_amount.quantize(Decimal('0.01'))
+    
+    def get_discounted_product_price(self, original_price):
+        """
+        Get the final product price after applying event-level discount.
+        
+        Args:
+            original_price (Decimal): The original product price
+            
+        Returns:
+            Decimal: The final price after discount
+        """
+        from decimal import Decimal
+        
+        discount = self.calculate_product_discount(original_price)
+        final_price = Decimal(str(original_price)) - discount
+        return max(final_price, Decimal('0')).quantize(Decimal('0.01'))
+    
+    @property
+    def has_product_discount(self):
+        """Check if this event has a default product discount for service team members."""
+        return bool(self.product_discount_type and self.product_discount_value and self.product_discount_value > 0)
 
 class EventServiceTeamMember(models.Model):
     '''

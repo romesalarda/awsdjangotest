@@ -8,7 +8,8 @@ from .models import (
     EventResource, EventVenue, SearchAreaSupportLocation,
     ExtraQuestion, QuestionChoice, QuestionAnswer,
     EventPaymentMethod, EventPaymentPackage, EventPayment, EventDayAttendance, ParticipantQuestion,
-    ParticipantRefund, ServiceTeamPermission, Organisation, OrganisationSocialMediaLink, DonationPayment
+    ParticipantRefund, ServiceTeamPermission, Organisation, OrganisationSocialMediaLink, DonationPayment,
+    EventRoleDiscount
 )
 
 
@@ -551,3 +552,4 @@ class ParticipantRefundAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         return qs.select_related('participant__user', 'event', 'removed_by', 'processed_by')
     
+admin.site.register(EventRoleDiscount)

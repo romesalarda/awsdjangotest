@@ -163,26 +163,62 @@ class EventCartViewSet(viewsets.ModelViewSet):
                     size=size_object
                 ).first()
                 
+                # Calculate discount for service team members
+                from decimal import Decimal
+                original_price = Decimal(str(product_object.price))
+                discounted_price = product_object.get_price_for_user(cart.user)
+                discount_amount = original_price - discounted_price
+                
                 if existing_order:
-                    raise serializers.ValidationError(
-                        f"Order for product {product_object.title} already exists in cart. Use update endpoint to modify quantity."
+                    # Update existing order quantity instead of throwing error
+                    new_quantity = existing_order.quantity + quantity
+                    
+                    # Re-check max purchase limit with new quantity
+                    can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
+                        user=cart.user,
+                        product=product_object,
+                        quantity=new_quantity - existing_order.quantity  # Only check the additional quantity
                     )
-                
-                # Create the order
-                order = EventProductOrder.objects.create(
-                    product=product_object,
-                    cart=cart,
-                    quantity=quantity,
-                    size=size_object,
-                    price_at_purchase=product_object.get_price_for_user(cart.user)
-                )
-                
-                cart.products.add(product_object)
-                added_products.append({
-                    'product': product_object.title,
-                    'quantity': quantity,
-                    'size': size_object.size if size_object else None
-                })
+                    
+                    if not can_purchase:
+                        raise serializers.ValidationError(error_msg)
+                    
+                    # Check stock for additional quantity
+                    if product_object.stock < quantity:
+                        raise serializers.ValidationError(
+                            f"Insufficient stock for additional {product_object.title}. Available: {product_object.stock}, Requested: {quantity}"
+                        )
+                    
+                    existing_order.quantity = new_quantity
+                    existing_order.price_at_purchase = discounted_price
+                    existing_order.discount_applied = discount_amount if discount_amount > 0 else Decimal('0')
+                    existing_order.save()
+                    
+                    added_products.append({
+                        'product': product_object.title,
+                        'quantity': quantity,
+                        'size': size_object.size if size_object else None,
+                        'updated': True,
+                        'total_quantity': new_quantity
+                    })
+                else:
+                    # Create the order with discount information
+                    order = EventProductOrder.objects.create(
+                        product=product_object,
+                        cart=cart,
+                        quantity=quantity,
+                        size=size_object,
+                        price_at_purchase=discounted_price,
+                        discount_applied=discount_amount if discount_amount > 0 else Decimal('0')
+                    )
+                    
+                    cart.products.add(product_object)
+                    added_products.append({
+                        'product': product_object.title,
+                        'quantity': quantity,
+                        'size': size_object.size if size_object else None,
+                        'updated': False
+                    })
             
             # Update cart total
             total = 0

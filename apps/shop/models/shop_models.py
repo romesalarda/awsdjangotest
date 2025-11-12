@@ -164,6 +164,11 @@ class EventProduct(models.Model):
     def get_price_for_user(self, user):
         """
         Get the final price for a specific user, applying service team discount if applicable.
+        Uses 4-tier cascading priority for service team members:
+        1. Individual product discount (EventServiceTeamMember.product_discount) - Highest
+        2. Role-based product discount (EventRoleDiscount.product_discount) - Best among all roles
+        3. Product-specific discount (EventProduct.discount_for_service_team)
+        4. Event-level product discount (Event.product_discount) - Final fallback
         
         Args:
             user: The user making the purchase
@@ -172,20 +177,61 @@ class EventProduct(models.Model):
             Decimal: The final price after applicable discounts
         """
         from decimal import Decimal
-        from apps.events.models import EventServiceTeamMember
+        from apps.events.models import EventServiceTeamMember, EventRoleDiscount
+        
+        original_price = Decimal(str(self.price)).quantize(Decimal('0.01'))
         
         # Check if user is a service team member for this event
-        is_service_team = EventServiceTeamMember.objects.filter(
-            user=user,
-            event=self.event
-        ).exists()
+        try:
+            service_team_member = EventServiceTeamMember.objects.get(
+                user=user,
+                event=self.event
+            )
+        except EventServiceTeamMember.DoesNotExist:
+            # Not a service team member - return full price
+            return original_price
         
-        if is_service_team and self.discount_for_service_team:
-            discount = self.calculate_service_team_discount()
-            final_price = Decimal(str(self.price)) - discount
-            return max(final_price, Decimal('0')).quantize(Decimal('0.01'))
+        # Priority 1: Individual product discount
+        if service_team_member.product_discount_type and service_team_member.product_discount_value:
+            discount_amount = service_team_member.calculate_product_discount(original_price)
+            if discount_amount > 0:
+                final_price = max(original_price - discount_amount, Decimal('0')).quantize(Decimal('0.01'))
+                return final_price
         
-        return Decimal(str(self.price)).quantize(Decimal('0.01'))
+        # Priority 2: Role-based product discount (find the best discount among all roles)
+        role_discounts = EventRoleDiscount.objects.filter(
+            event=self.event,
+            role__in=service_team_member.roles.all()
+        )
+        
+        best_discount_amount = Decimal('0')
+        for role_discount in role_discounts:
+            if role_discount.has_product_discount:
+                discount_amount = role_discount.calculate_product_discount(original_price)
+                if discount_amount > best_discount_amount:
+                    best_discount_amount = discount_amount
+        
+        if best_discount_amount > 0:
+            final_price = max(original_price - best_discount_amount, Decimal('0')).quantize(Decimal('0.01'))
+            return final_price
+        
+        # Priority 3: Product-specific discount
+        if self.has_service_team_discount:
+            discount_amount = self.calculate_service_team_discount()
+            if discount_amount > 0:
+                final_price = max(original_price - discount_amount, Decimal('0')).quantize(Decimal('0.01'))
+                return final_price
+        
+        # Priority 4: Event-level product discount (final fallback for service team members)
+        event = self.event
+        if event.has_product_discount:
+            discount_amount = event.calculate_product_discount(original_price)
+            if discount_amount > 0:
+                final_price = max(original_price - discount_amount, Decimal('0')).quantize(Decimal('0.01'))
+                return final_price
+        
+        # No applicable discounts found
+        return original_price
     
     @property
     def has_service_team_discount(self):

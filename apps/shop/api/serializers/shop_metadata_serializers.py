@@ -22,11 +22,30 @@ class ProductMaterialSerializer(serializers.ModelSerializer):
 class ProductImageSerializer(serializers.ModelSerializer):
     product_title = serializers.CharField(source="product.title", read_only=True)
     product_uuid = serializers.UUIDField(source="product.uuid", read_only=True)
-    image_url = serializers.ImageField(source="image", read_only=True)
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductImage
         fields = ["uuid", "product", "product_title", "product_uuid", "image", "image_url"]
+    
+    def get_image_url(self, obj):
+        """Return absolute URL for product image"""
+        if not obj.image:
+            return None
+        
+        url = obj.image.url
+        
+        # If already a full URL (http/https or S3), return as-is
+        if url.startswith('http://') or url.startswith('https://'):
+            return url
+        
+        # Build absolute URL for relative paths
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(url)
+        
+        # Fallback: return the URL as-is
+        return url
         
 class ProductSizeSerializer(serializers.ModelSerializer):
     '''

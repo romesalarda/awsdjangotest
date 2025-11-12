@@ -673,51 +673,74 @@ class EventViewSet(viewsets.ModelViewSet):
         
         elif request.method == 'POST':
             # Create or update role discounts
-            # Expected format: [{ role_id, registration_discount_type, registration_discount_value, ... }, ...]
-            role_discounts_data = request.data if isinstance(request.data, list) else [request.data]
+            # Expected format: { discounts: [{ id, role_id, registration_discount_type, ... }, ...] }
+            # If a role discount exists but is not in the list, it will be deleted
+            role_discounts_data = request.data
             
             created = []
             updated = []
+            deleted = []
             errors = []
             
-            for discount_data in role_discounts_data:
+            # Get all existing role discounts for this event
+            existing_discounts = EventRoleDiscount.objects.filter(event=event)
+            
+            # Track which discount IDs are in the incoming data
+            incoming_discount_ids = set()
+            incoming_role_ids = set()
+            
+            for discount_data in role_discounts_data.get("discounts", []):
                 try:
                     role_id = discount_data.get('role_id') or discount_data.get('role')
+                    discount_id = discount_data.get('id')
+                    
                     if not role_id:
                         errors.append({'error': 'role_id is required', 'data': discount_data})
                         continue
                     
-                    # Get or create the role discount
-                    role_discount, is_new = EventRoleDiscount.objects.get_or_create(
-                        event=event,
-                        role_id=role_id,
-                        defaults={
-                            'registration_discount_type': discount_data.get('registration_discount_type'),
-                            'registration_discount_value': discount_data.get('registration_discount_value', 0),
-                            'product_discount_type': discount_data.get('product_discount_type'),
-                            'product_discount_value': discount_data.get('product_discount_value', 0),
-                        }
-                    )
+                    incoming_role_ids.add(int(role_id))
                     
-                    if not is_new:
-                        # Update existing
-                        role_discount.registration_discount_type = discount_data.get('registration_discount_type', role_discount.registration_discount_type)
-                        role_discount.registration_discount_value = discount_data.get('registration_discount_value', role_discount.registration_discount_value)
-                        role_discount.product_discount_type = discount_data.get('product_discount_type', role_discount.product_discount_type)
-                        role_discount.product_discount_value = discount_data.get('product_discount_value', role_discount.product_discount_value)
-                        role_discount.save()
-                        updated.append(EventRoleDiscountSerializer(role_discount).data)
+                    # If ID is provided, update existing
+                    if discount_id:
+                        incoming_discount_ids.add(int(discount_id))
+                        try:
+                            role_discount = EventRoleDiscount.objects.get(id=discount_id, event=event)
+                            role_discount.role_id = role_id
+                            role_discount.registration_discount_type = discount_data.get('registration_discount_type')
+                            role_discount.registration_discount_value = discount_data.get('registration_discount_value', 0)
+                            role_discount.product_discount_type = discount_data.get('product_discount_type')
+                            role_discount.product_discount_value = discount_data.get('product_discount_value', 0)
+                            role_discount.save()
+                            updated.append(EventRoleDiscountSerializer(role_discount).data)
+                        except EventRoleDiscount.DoesNotExist:
+                            errors.append({'error': f'Role discount with id {discount_id} not found', 'data': discount_data})
                     else:
+                        # Create new discount
+                        role_discount = EventRoleDiscount.objects.create(
+                            event=event,
+                            role_id=role_id,
+                            registration_discount_type=discount_data.get('registration_discount_type'),
+                            registration_discount_value=discount_data.get('registration_discount_value', 0),
+                            product_discount_type=discount_data.get('product_discount_type'),
+                            product_discount_value=discount_data.get('product_discount_value', 0),
+                        )
                         created.append(EventRoleDiscountSerializer(role_discount).data)
                         
                 except Exception as e:
                     errors.append({'error': str(e), 'data': discount_data})
             
+            # Delete role discounts that were not included in the incoming data
+            discounts_to_delete = existing_discounts.exclude(role_id__in=incoming_role_ids)
+            for discount in discounts_to_delete:
+                deleted.append(EventRoleDiscountSerializer(discount).data)
+                discount.delete()
+            
             return Response({
                 'created': created,
                 'updated': updated,
+                'deleted': deleted,
                 'errors': errors
-            }, status=status.HTTP_200_OK if not errors or (created or updated) else status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_200_OK if not errors or (created or updated or deleted) else status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['delete'], url_name="delete_role_discount", url_path="role-discounts/(?P<discount_id>[^/.]+)")
     def delete_role_discount(self, request, id=None, discount_id=None):
@@ -1894,17 +1917,150 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_name="products", url_path="products")
     def products(self, request, id=None):
         '''
-        Retrieve a list of products for a specific event.
+        Retrieve a list of products for a specific event with user-specific discounts.
+        
+        For authenticated service team members, calculates discounts using cascading priority:
+        1. Individual product discount (EventServiceTeamMember.product_discount)
+        2. Role-based product discount (EventRoleDiscount.product_discount)
+        3. General product discount (EventProduct.discount_for_service_team)
         '''
+        from decimal import Decimal
+        from apps.events.models import EventServiceTeamMember, EventRoleDiscount
+        
         event = self.get_object()
         products = event.products.all()
+        
+        # Calculate user-specific discounts if user is authenticated service team member
+        discount_data = {}
+        if request.user and request.user.is_authenticated:
+            try:
+                service_team_member = EventServiceTeamMember.objects.get(
+                    user=request.user,
+                    event=event
+                )
+                
+                # Get user's role-based discounts for this event (user can have multiple roles)
+                role_discounts = EventRoleDiscount.objects.filter(
+                    event=event,
+                    role__in=service_team_member.roles.all()
+                )
+                # Calculate discount for each product
+                for product in products:
+                    discount_info = self._calculate_product_discount(
+                        product, 
+                        service_team_member, 
+                        role_discounts
+                    )
+                    if discount_info:
+                        discount_data[product.uuid] = discount_info
+                        
+            except EventServiceTeamMember.DoesNotExist:
+                # User is not a service team member - no discounts
+                pass
+        
+        # Serialize with discount data in context
         page = self.paginate_queryset(products)
         if page is not None:
-            serializer = EventProductSerializer(page, many=True, context={'request': request})
+            serializer = EventProductSerializer(
+                page, 
+                many=True, 
+                context={'request': request, 'product_discounts': discount_data}
+            )
             return self.get_paginated_response(serializer.data)
 
-        serializer = EventProductSerializer(products, many=True, context={'request': request})
+        serializer = EventProductSerializer(
+            products, 
+            many=True, 
+            context={'request': request, 'product_discounts': discount_data}
+        )
         return Response(serializer.data)
+    
+    def _calculate_product_discount(self, product, service_team_member, role_discounts):
+        """
+        Calculate the applicable discount for a product using cascading priority.
+        
+        Priority (Service Team Members Only):
+        1. Individual product discount (EventServiceTeamMember.product_discount) - Highest
+        2. Role-based product discount (EventRoleDiscount.product_discount) - Best among all roles
+        3. Product-specific discount (EventProduct.discount_for_service_team)
+        4. Event-level product discount (Event.product_discount) - Final fallback
+        
+        Returns:
+            dict: Discount information with keys:
+                - discount_amount: Decimal amount to subtract
+                - discounted_price: Final price after discount
+                - discount_type: 'PERCENTAGE' or 'FIXED'
+                - discount_value: The discount value
+                - source: 'individual', 'role', 'product', or 'event'
+                - role_name: Role display name (only for role-based discounts)
+        """
+        from decimal import Decimal
+        
+        original_price = Decimal(str(product.price))
+        
+        # Priority 1: Individual product discount
+        if service_team_member.product_discount_type and service_team_member.product_discount_value:
+            discount_amount = service_team_member.calculate_product_discount(original_price)
+            if discount_amount > 0:
+                final_price = max(original_price - discount_amount, Decimal('0')).quantize(Decimal('0.01'))
+                return {
+                    'discount_amount': discount_amount,
+                    'discounted_price': final_price,
+                    'discount_type': service_team_member.product_discount_type,
+                    'discount_value': service_team_member.product_discount_value,
+                    'source': 'individual'
+                }
+        
+        # Priority 2: Role-based product discount (find the best discount among all roles)
+        best_role_discount = None
+        best_role_discount_amount = Decimal('0')
+        
+        for role_discount in role_discounts:
+            if role_discount.has_product_discount:
+                discount_amount = role_discount.calculate_product_discount(original_price)
+                if discount_amount > best_role_discount_amount:
+                    best_role_discount_amount = discount_amount
+                    best_role_discount = role_discount
+        
+        if best_role_discount and best_role_discount_amount > 0:
+            final_price = max(original_price - best_role_discount_amount, Decimal('0')).quantize(Decimal('0.01'))
+            return {
+                'discount_amount': best_role_discount_amount,
+                'discounted_price': final_price,
+                'discount_type': best_role_discount.product_discount_type,
+                'discount_value': best_role_discount.product_discount_value,
+                'source': 'role',
+                'role_name': best_role_discount.role.get_role_name_display()
+            }
+        
+        # Priority 3: Product-specific discount
+        if product.has_service_team_discount:
+            discount_amount = product.calculate_service_team_discount()
+            if discount_amount > 0:
+                final_price = max(original_price - discount_amount, Decimal('0')).quantize(Decimal('0.01'))
+                return {
+                    'discount_amount': discount_amount,
+                    'discounted_price': final_price,
+                    'discount_type': product.service_team_discount_type,
+                    'discount_value': product.service_team_discount_value,
+                    'source': 'product'
+                }
+        
+        # Priority 4: Event-level product discount (final fallback for service team members)
+        event = product.event
+        if event.has_product_discount:
+            discount_amount = event.calculate_product_discount(original_price)
+            if discount_amount > 0:
+                final_price = max(original_price - discount_amount, Decimal('0')).quantize(Decimal('0.01'))
+                return {
+                    'discount_amount': discount_amount,
+                    'discounted_price': final_price,
+                    'discount_type': event.product_discount_type,
+                    'discount_value': event.product_discount_value,
+                    'source': 'event'
+                }
+        
+        return None
 
     @action(detail=True, methods=['get'], url_name="payment-methods", url_path="payment-methods")
     def product_payment_methods(self, request, pk=None):

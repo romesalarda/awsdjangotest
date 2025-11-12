@@ -57,8 +57,11 @@ class EventProductSerializer(serializers.ModelSerializer):
     in_stock = serializers.BooleanField(read_only=True)
     user_purchased_count = serializers.SerializerMethodField()
     
-    # Service team discount fields
-    has_service_team_discount = serializers.BooleanField(read_only=True)
+    # Service team discount fields - discount_info is the single source of truth
+    discount_info = serializers.SerializerMethodField()
+    
+    # DEPRECATED: Use discount_info instead - kept for backwards compatibility
+    has_service_team_discount = serializers.SerializerMethodField()
     user_specific_price = serializers.SerializerMethodField()
     
     # Write-only fields for creating/updating
@@ -85,17 +88,34 @@ class EventProductSerializer(serializers.ModelSerializer):
     )
     
     def get_imageUrl(self, obj):
-        """Get the primary image URL"""
+        """Get the primary image URL - always returns absolute URL"""
         url = obj.primary_image_url
         
-        if url and not url.startswith('http'):
+        if not url:
+            return None
+            
+        # If already a full URL (http/https or S3), return as-is
+        if url.startswith('http://') or url.startswith('https://'):
+            return url
+        
+        # Build absolute URL for relative paths
+        request = self.context.get('request')
+        if request:
+            # Use request to build absolute URI
             from django.conf import settings
-            # Check if URL already starts with media path to avoid duplication
+            if url.startswith('/media/') or url.startswith('media/'):
+                clean_url = url if url.startswith('/') else f"/{url}"
+                return request.build_absolute_uri(clean_url)
+            else:
+                return request.build_absolute_uri(f"{settings.MEDIA_URL}{url.lstrip('/')}")
+        else:
+            # Fallback: return relative URL with leading slash
             if url.startswith('/media/') or url.startswith('media/'):
                 return url if url.startswith('/') else f"/{url}"
-            # Make URL absolute if it's relative
-            absolute_url = f"{settings.MEDIA_URL}{url.lstrip('/')}"
-            return absolute_url
+            else:
+                from django.conf import settings
+                return f"{settings.MEDIA_URL}{url.lstrip('/')}"
+        
         return url
     
     def get_sizes(self, obj):
@@ -116,12 +136,59 @@ class EventProductSerializer(serializers.ModelSerializer):
             return 0
     
     def get_user_specific_price(self, obj):
-        """Get the price for the current user (accounting for service team discounts)"""
-        request = self.context.get('request')
-        if not request or not request.user or not request.user.is_authenticated:
-            return float(obj.price)
+        """
+        DEPRECATED: Use discount_info instead for detailed discount information.
+        Get the price for the current user (accounting for service team discounts).
+        Kept for backwards compatibility.
+        """
+        # Check if discount data was provided in context
+        product_discounts = self.context.get('product_discounts', {})
+        discount_info = product_discounts.get(obj.uuid)
         
-        return float(obj.get_price_for_user(request.user))
+        if discount_info:
+            # Use pre-calculated discount from context
+            return float(discount_info['discounted_price'])
+        
+        # Fallback to original price if no discount
+        return float(obj.price)
+    
+    def get_has_service_team_discount(self, obj):
+        """
+        DEPRECATED: Use discount_info instead for detailed discount information.
+        Returns True if user has any applicable discount.
+        Kept for backwards compatibility.
+        """
+        product_discounts = self.context.get('product_discounts', {})
+        discount_info = product_discounts.get(obj.uuid)
+        return discount_info is not None
+    
+    def get_discount_info(self, obj):
+        """
+        Get detailed discount information for this product.
+        Returns discount details if user has applicable discount, None otherwise.
+        """
+        product_discounts = self.context.get('product_discounts', {})
+        discount_info = product_discounts.get(obj.uuid)
+        
+        if not discount_info:
+            return None
+        
+        # Format the discount info for frontend
+        info = {
+            'has_discount': True,
+            'discount_type': discount_info['discount_type'],
+            'discount_value': float(discount_info['discount_value']),
+            'discount_amount': float(discount_info['discount_amount']),
+            'original_price': float(obj.price),
+            'discounted_price': float(discount_info['discounted_price']),
+            'source': discount_info['source']
+        }
+        
+        # Add role name if this is a role-based discount
+        if discount_info['source'] == 'role' and 'role_name' in discount_info:
+            info['role_name'] = discount_info['role_name']
+        
+        return info
     
     class Meta:
         model = EventProduct
@@ -135,10 +202,10 @@ class EventProductSerializer(serializers.ModelSerializer):
             "image_uploads", "size_list", "category_ids", "material_ids",
             # Service team discount fields
             "discount_for_service_team", "service_team_discount_type", "service_team_discount_value",
-            "has_service_team_discount", "user_specific_price"
+            "has_service_team_discount", "user_specific_price", "discount_info"
         ]
         read_only_fields = ["seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes", "user_purchased_count", 
-                            "has_service_team_discount", "user_specific_price"]
+                            "has_service_team_discount", "user_specific_price", "discount_info"]
         
     def create(self, validated_data):
         # Extract related data

@@ -526,9 +526,11 @@ class EventSerializer(serializers.ModelSerializer):
             "organisation",
             "organisation_id",
             "force_participant_organisation",
-            # Event-level discount fields
+            # Event-level discount fields (for service team members only)
             "registration_discount_type",
             "registration_discount_value",
+            "product_discount_type",
+            "product_discount_value",
             # Approval fields
             "approved_by",
             "approved_at",
@@ -613,6 +615,8 @@ class EventSerializer(serializers.ModelSerializer):
             "discounts": {
                 "registration_discount_type": rep["registration_discount_type"],
                 "registration_discount_value": rep["registration_discount_value"],
+                "product_discount_type": rep["product_discount_type"],
+                "product_discount_value": rep["product_discount_value"],
             },
             "admin": {
                 "require_existing_id": rep["required_existing_id"],
