@@ -315,6 +315,25 @@ class StripePaymentService:
             # Convert amount to cents (Stripe uses smallest currency unit)
             amount_cents = int(total_amount * 100)
             
+            # Get discount information if available
+            discount_metadata = {}
+            if event_payment.package and event_payment.user and event_payment.user.user:
+                package_discount_info = event_payment.package.get_user_discounted_price(event_payment.user.user)
+                
+                if package_discount_info['discount_amount'] > 0:
+                    discount_metadata.update({
+                        'has_discount': 'true',
+                        'discount_type': package_discount_info['discount_type'] or 'PACKAGE',
+                        'discount_value': str(package_discount_info['discount_value']) if package_discount_info['discount_value'] else 'N/A',
+                        'original_price': str(package_discount_info['original_price']),
+                        'discounted_price': str(package_discount_info['discounted_price']),
+                        'discount_amount': str(package_discount_info['discount_amount']),
+                        'discount_source': package_discount_info['discount_source'],
+                    })
+                    
+                    if package_discount_info['service_team_role']:
+                        discount_metadata['service_team_role'] = package_discount_info['service_team_role']
+            
             # Prepare metadata
             intent_metadata = {
                 'payment_type': 'event_registration',
@@ -327,6 +346,9 @@ class StripePaymentService:
                 'package_name': event_payment.package.name if event_payment.package else None,
                 'has_donation': 'true' if donation_payment else 'false',
             }
+            
+            # Add discount metadata
+            intent_metadata.update(discount_metadata)
             
             if donation_payment:
                 intent_metadata.update({

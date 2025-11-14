@@ -162,6 +162,134 @@ class EventPaymentPackage(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.price} {self.currency.upper()}"
+    
+    def get_user_discounted_price(self, user):
+        """
+        Calculate the discounted price for a specific user based on discount priority:
+        1. Individual EventServiceTeamMember discount (highest priority)
+        2. Role-based EventRoleDiscount
+        3. Event-wide discount
+        4. Package discounted_price (lowest priority)
+        
+        For FIXED discounts, return the fixed amount (overrides package price).
+        For PERCENTAGE discounts, apply to this package's price.
+        
+        Args:
+            user: The user (AUTH_USER_MODEL) to calculate pricing for
+            
+        Returns:
+            dict: {
+                'original_price': Decimal,
+                'discounted_price': Decimal,
+                'discount_amount': Decimal,
+                'discount_type': str or None,
+                'discount_value': Decimal or None,
+                'discount_source': str or None,  # 'individual', 'role', 'event', 'package'
+                'service_team_role': str or None,  # role display name if applicable
+            }
+        """
+        from decimal import Decimal
+        from apps.events.models import EventServiceTeamMember, EventRoleDiscount
+        
+        original_price = Decimal(str(self.price))
+        result = {
+            'original_price': original_price,
+            'discounted_price': original_price,
+            'discount_amount': Decimal('0'),
+            'discount_type': None,
+            'discount_value': None,
+            'discount_source': None,
+            'service_team_role': None,
+        }
+        
+        if not user or not user.is_authenticated:
+            # No user context, check for package-level discount
+            if self.discounted_price and self.discounted_price > 0 and self.discounted_price < original_price:
+                result['discounted_price'] = Decimal(str(self.discounted_price))
+                result['discount_amount'] = original_price - result['discounted_price']
+                result['discount_source'] = 'package'
+            return result
+        
+        # Priority 1: Check for individual service team member discount
+        try:
+            service_member = EventServiceTeamMember.objects.prefetch_related('roles').get(
+                event=self.event, 
+                user=user
+            )
+            
+            if service_member.has_registration_discount:
+                discount_type = service_member.registration_discount_type
+                discount_value = Decimal(str(service_member.registration_discount_value))
+                
+                if discount_type == 'FIXED':
+                    # Fixed price overrides package selection
+                    result['discounted_price'] = discount_value
+                    result['discount_amount'] = max(original_price - discount_value, Decimal('0'))
+                else:  # PERCENTAGE
+                    result['discount_amount'] = service_member.calculate_registration_discount(original_price)
+                    result['discounted_price'] = original_price - result['discount_amount']
+                
+                result['discount_type'] = discount_type
+                result['discount_value'] = discount_value
+                result['discount_source'] = 'individual'
+                return result
+            
+            # Priority 2: Check for role-based discount
+            if service_member.roles.exists():
+                role_ids = service_member.roles.values_list('id', flat=True)
+                
+                # Get the best role discount (highest discount value)
+                role_discount = EventRoleDiscount.objects.filter(
+                    event=self.event,
+                    role__id__in=role_ids,
+                    registration_discount_type__isnull=False,
+                    registration_discount_value__gt=0
+                ).select_related('role').order_by('-registration_discount_value').first()
+                
+                if role_discount and role_discount.has_registration_discount:
+                    discount_type = role_discount.registration_discount_type
+                    discount_value = Decimal(str(role_discount.registration_discount_value))
+                    
+                    if discount_type == 'FIXED':
+                        result['discounted_price'] = discount_value
+                        result['discount_amount'] = max(original_price - discount_value, Decimal('0'))
+                    else:  # PERCENTAGE
+                        result['discount_amount'] = role_discount.calculate_registration_discount(original_price)
+                        result['discounted_price'] = original_price - result['discount_amount']
+                    
+                    result['discount_type'] = discount_type
+                    result['discount_value'] = discount_value
+                    result['discount_source'] = 'role'
+                    result['service_team_role'] = role_discount.role.get_role_name_display()
+                    return result
+            
+            # Priority 3: Check for event-wide discount
+            if self.event.has_registration_discount:
+                discount_type = self.event.registration_discount_type
+                discount_value = Decimal(str(self.event.registration_discount_value))
+                
+                if discount_type == 'FIXED':
+                    result['discounted_price'] = discount_value
+                    result['discount_amount'] = max(original_price - discount_value, Decimal('0'))
+                else:  # PERCENTAGE
+                    result['discount_amount'] = self.event.calculate_registration_discount(original_price)
+                    result['discounted_price'] = original_price - result['discount_amount']
+                
+                result['discount_type'] = discount_type
+                result['discount_value'] = discount_value
+                result['discount_source'] = 'event'
+                return result
+                
+        except EventServiceTeamMember.DoesNotExist:
+            pass
+        
+        # Priority 4: Package-level discounted price (fallback)
+        if self.discounted_price and self.discounted_price > 0 and self.discounted_price < original_price:
+            result['discounted_price'] = Decimal(str(self.discounted_price))
+            result['discount_amount'] = original_price - result['discounted_price']
+            result['discount_source'] = 'package'
+        
+        return result
 
 class EventPayment(models.Model):
     """

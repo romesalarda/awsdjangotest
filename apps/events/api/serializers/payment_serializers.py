@@ -29,7 +29,7 @@ class EventPaymentPackageSerializer(serializers.ModelSerializer):
         "name": "Early Bird Package",
         "description": "Special discount for early registrations",
         "price": 50.00,  // Price in pounds (£50.00)
-        "discounted_price": 45.00,  // Discounted price in pounds (£45.00)
+        "discounted_price": 45.00,  // User-specific discounted price (£45.00)
         "currency": "gbp",
         "capacity": 100,
         "available_from": "2025-01-01T00:00:00Z",
@@ -39,6 +39,15 @@ class EventPaymentPackageSerializer(serializers.ModelSerializer):
         "whats_included": "Access to all sessions, meals, accommodation, welcome pack",
         "main_package": true,
         "is_active": true,
+        "user_discount_info": {  // Added for authenticated users with discounts
+            "original_price": 50.00,
+            "discounted_price": 45.00,
+            "discount_amount": 5.00,
+            "discount_type": "PERCENTAGE",
+            "discount_value": 10.00,
+            "discount_source": "role",
+            "service_team_role": "Volunteer"
+        },
         "resource_data": [
             {
                 "resource_name": "Package Information PDF",
@@ -50,6 +59,7 @@ class EventPaymentPackageSerializer(serializers.ModelSerializer):
     }
     """
     price_display = serializers.SerializerMethodField()
+    user_discount_info = serializers.SerializerMethodField(read_only=True)
     
     # Write-only fields for nested resource creation
     resource_data = serializers.ListField(
@@ -65,13 +75,68 @@ class EventPaymentPackageSerializer(serializers.ModelSerializer):
             "id", "event", "name", "description", "price", "price_display",
             "discounted_price", "currency", "capacity", "resources", "resource_data",
             "available_from", "available_until", "package_date_starts", "package_date_ends",
-            "is_active", "whats_included", "main_package", "created_at", "updated_at"
+            "is_active", "whats_included", "main_package", "created_at", "updated_at",
+            "user_discount_info"
         ]
         read_only_fields = ("id", "created_at", "updated_at")
 
     def get_price_display(self, obj):
         # Price is stored in pounds (DecimalField)
         return f"{obj.price:.2f} {obj.currency.upper()}"
+    
+    def get_user_discount_info(self, obj):
+        """
+        Get user-specific discount information for this package.
+        Returns discount details based on service team membership and role.
+        """
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            # For unauthenticated users, check package-level discount only
+            if obj.discounted_price and obj.discounted_price > 0 and obj.discounted_price < obj.price:
+                from decimal import Decimal
+                original = Decimal(str(obj.price))
+                discounted = Decimal(str(obj.discounted_price))
+                return {
+                    'original_price': float(original),
+                    'discounted_price': float(discounted),
+                    'discount_amount': float(original - discounted),
+                    'discount_type': None,
+                    'discount_value': None,
+                    'discount_source': 'package',
+                    'service_team_role': None,
+                }
+            return None
+        
+        # Get user-specific pricing with discount priority
+        discount_info = obj.get_user_discounted_price(request.user)
+        
+        # Only return if there's an actual discount
+        if discount_info['discount_amount'] > 0:
+            return {
+                'original_price': float(discount_info['original_price']),
+                'discounted_price': float(discount_info['discounted_price']),
+                'discount_amount': float(discount_info['discount_amount']),
+                'discount_type': discount_info['discount_type'],
+                'discount_value': float(discount_info['discount_value']) if discount_info['discount_value'] else None,
+                'discount_source': discount_info['discount_source'],
+                'service_team_role': discount_info['service_team_role'],
+            }
+        
+        return None
+    
+    def to_representation(self, instance):
+        """
+        Override discounted_price field to show user-specific pricing.
+        For authenticated service team members, show their calculated discounted price.
+        """
+        data = super().to_representation(instance)
+        
+        user_discount = data.get('user_discount_info')
+        if user_discount:
+            # Override discounted_price with user-specific value
+            data['discounted_price'] = user_discount['discounted_price']
+        
+        return data
     
     def create(self, validated_data):
         from apps.events.models import EventResource

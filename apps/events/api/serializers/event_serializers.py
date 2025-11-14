@@ -1431,6 +1431,10 @@ class EventParticipantSerializer(serializers.ModelSerializer):
             if payment_package:
                 payment_package.save()
                 
+                # Calculate user-specific discounted price
+                discount_info = payment_package.get_user_discounted_price(updated_user)
+                final_amount = discount_info['discounted_price']
+                
                 if payment_method:
                     status = (
                         EventPayment.PaymentStatus.PENDING if payment_method.method == EventPaymentMethod.MethodType.BANK_TRANSFER 
@@ -1438,14 +1442,14 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                     )
                     # if bank transfer, then we do not mark as paid until admin verifies payment
                 else:
-                    status = EventPayment.PaymentStatus.SUCCEEDED if payment_package.price == 0 else EventPayment.PaymentStatus.PENDING
+                    status = EventPayment.PaymentStatus.SUCCEEDED if final_amount == 0 else EventPayment.PaymentStatus.PENDING
                     # no need for payment method if the package is free, so we mark as paid if the package is free                    
                 EventPayment.objects.create(
                     user=participant,
                     event=event,
                     package=payment_package,
                     method=payment_method,
-                    amount=payment_package.price if payment_package else 0,
+                    amount=final_amount,  # Use discounted amount
                     currency=payment_package.currency if payment_package else "gbp",
                     status=status
                 )

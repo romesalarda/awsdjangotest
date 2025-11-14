@@ -33,12 +33,12 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         MALE = "MALE", _("Male")
         FEMALE = "FEMALE", _("Female")
         
-    class MaritalType(models.TextChoices):
+    class MaritalType(models.TextChoices):     # TODO: DEPRECATE
         SINGLE = "SINGLE", _("Single")
         MARRIED = "MARRIED", _("Married")
         WIDOWED = "WIDOWED", _("Widowed")
         
-    class BloodType(models.TextChoices):
+    class BloodType(models.TextChoices):     # TODO: DEPRECATE
         A_POS = "A+", _("A Positive")
         A_NEG = "A-", _("A Negative")
         B_POS = "B+", _("B Positive")
@@ -70,6 +70,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     area_from = models.ForeignKey("events.AreaLocation", on_delete=models.SET_NULL, 
                                   verbose_name=_("area of residence"), blank=True, null=True
                                   )
+    # TODO: DEPRECATE
     address_line_1 = models.CharField(verbose_name=_("address line 1"), blank=True, null=True)
     address_line_2 = models.CharField(verbose_name=_("address line 2"), blank=True, null=True)
     postcode = models.CharField(verbose_name=_("postcode"), blank=True, null=True)
@@ -90,6 +91,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         auto_now_add=True,
         verbose_name=_("profile picture uploaded at")
     )
+    # TODO: DEPRECATE
     marital_status = models.CharField(verbose_name=_("marital status"), 
                                       choices=MaritalType.choices, 
                                       default=MaritalType.SINGLE, 
@@ -110,7 +112,8 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         blank=True
     )
     
-    blood_type = models.CharField(
+    # TODO: DEPRECATE
+    blood_type = models.CharField( 
         max_length=3,
         choices=BloodType.choices,
         blank=True,
