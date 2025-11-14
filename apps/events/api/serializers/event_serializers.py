@@ -1832,10 +1832,9 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
                     size_value = None
                     try:
                         if hasattr(order, 'size') and order.size is not None:
-                            size_value = str(order.size)
+                            size_value = str(order.size.size)
                     except Exception:
                         size_value = None
-                        
                     order_data = {
                         "id": order.id,
                         "quantity": getattr(order, 'quantity', 1),

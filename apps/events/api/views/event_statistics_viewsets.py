@@ -639,6 +639,8 @@ class EventStatisticsViewSet(viewsets.ViewSet):
                     user=cart.user
                 ).first()
                 
+                print(participant)
+                
                 # Get all product orders in this cart
                 cart_orders = cart.orders.all()
                 
@@ -673,6 +675,7 @@ class EventStatisticsViewSet(viewsets.ViewSet):
                     'cart_id': str(cart.uuid),
                     'order_reference_id': cart.order_reference_id,
                     'participant_id': participant.id if participant else None,
+                    'participant_pax_id': participant.event_pax_id if participant else None,
                     'participant_name': f"{cart.user.first_name} {cart.user.last_name}",
                     'participant_email': cart.user.primary_email,
                     'participant_member_id': cart.user.member_id,
