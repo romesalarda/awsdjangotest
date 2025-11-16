@@ -400,6 +400,8 @@ class EventSerializer(serializers.ModelSerializer):
     organisers = serializers.SerializerMethodField(read_only=True)
     service_team = serializers.SerializerMethodField(read_only=True)
     has_merch = serializers.SerializerMethodField(read_only=True, default=False)
+    can_purchase_merch = serializers.SerializerMethodField(read_only=True)
+    merch_purchase_restriction_reason = serializers.SerializerMethodField(read_only=True)
     
     # Organisation fields
     organisation = OrganisationSerializer(read_only=True)
@@ -508,7 +510,11 @@ class EventSerializer(serializers.ModelSerializer):
             "registration_deadline",
             "registration_open",
             "registration_open_date",
-            "payment_deadline", 
+            "payment_deadline",
+            "refunds_enabled",
+            "refund_deadline",
+            "merch_sale_start_date",
+            "merch_sale_end_date", 
             # Participants / service team
             "participants_count",
             # Write-only supervisor fields
@@ -517,6 +523,8 @@ class EventSerializer(serializers.ModelSerializer):
             "supervising_CFC_coordinators",
             "cfc_coordinator_ids",
             "has_merch",
+            "can_purchase_merch",
+            "merch_purchase_restriction_reason",
             "format_verifier", 
             "required_existing_id",
             "existing_id_name",
@@ -557,6 +565,24 @@ class EventSerializer(serializers.ModelSerializer):
     def get_has_merch(self, obj):
         if isinstance(obj, Event):
             return obj.products.exists()
+    
+    def get_can_purchase_merch(self, obj):
+        """Check if the current user can purchase merch for this event"""
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        
+        can_purchase, _ = obj.can_purchase_merch(request.user)
+        return can_purchase
+    
+    def get_merch_purchase_restriction_reason(self, obj):
+        """Get the reason why user cannot purchase merch (if applicable)"""
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return "You must be logged in to purchase merchandise."
+        
+        _, reason = obj.can_purchase_merch(request.user)
+        return reason  # Will be None if can purchase
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
@@ -588,6 +614,10 @@ class EventSerializer(serializers.ModelSerializer):
                 "registration_open_date": rep["registration_open_date"],
                 "registration_deadline": rep["registration_deadline"],
                 "payment_deadline": rep["payment_deadline"],
+                "refunds_enabled": rep.get("refunds_enabled", False),
+                "refund_deadline": rep.get("refund_deadline"),
+                "merch_sale_start_date": rep.get("merch_sale_start_date"),
+                "merch_sale_end_date": rep.get("merch_sale_end_date"),
             },
             "venue": {
                 "venues": rep["venues"],

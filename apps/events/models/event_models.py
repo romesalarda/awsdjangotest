@@ -197,17 +197,40 @@ class Event(models.Model):
     registration_open_date = models.DateTimeField(verbose_name=_("registration open date"), blank=True, null=True, auto_now=True)
     registration_deadline = models.DateTimeField(verbose_name=_("registration deadline"), blank=True, null=True)
     payment_deadline = models.DateTimeField(verbose_name=_("payment deadline"), blank=True, null=True)
+    
+    # Refund policy
+    refunds_enabled = models.BooleanField(
+        verbose_name=_("refunds enabled"),
+        default=False,
+        help_text=_("Whether refunds are allowed for this event. If disabled, refund deadline is not applicable.")
+    )
     refund_deadline = models.DateTimeField(
         verbose_name=_("refund deadline"),
         blank=True,
         null=True,
-        help_text=_("Deadline for processing refunds. If not set, defaults to payment_deadline. No refunds after event starts.")
+        help_text=_("Deadline for requesting refunds. Only applicable if refunds are enabled. If not set, defaults to payment_deadline.")
     )
+    
+    # Merchandise sale dates
+    merch_sale_start_date = models.DateTimeField(
+        verbose_name=_("merchandise sale start date"),
+        blank=True,
+        null=True,
+        help_text=_("When merchandise becomes available for purchase. If not set, merch is available once registration opens.")
+    )
+    merch_sale_end_date = models.DateTimeField(
+        verbose_name=_("merchandise sale end date"),
+        blank=True,
+        null=True,
+        help_text=_("When merchandise sales close. If not set, defaults to payment_deadline or event end_date.")
+    )
+    
+    # Legacy field - kept for backward compatibility
     product_purchase_deadline = models.DateTimeField(
         verbose_name=_("product purchase deadline"),
         blank=True,
         null=True,
-        help_text=_("Deadline for purchasing products related to the event")
+        help_text=_("Deadline for purchasing products related to the event (deprecated - use merch_sale_end_date)")
     )
     
     class EventStatus(models.TextChoices):
@@ -400,6 +423,52 @@ class Event(models.Model):
     def has_product_discount(self):
         """Check if this event has a default product discount for service team members."""
         return bool(self.product_discount_type and self.product_discount_value and self.product_discount_value > 0)
+    
+    def can_purchase_merch(self, user):
+        """
+        Check if a user can purchase merchandise for this event.
+        
+        Args:
+            user: The user/participant attempting to purchase
+            
+        Returns:
+            tuple: (can_purchase: bool, reason: str or None)
+        """
+        from django.utils import timezone
+        now = timezone.now()
+        
+        # Check if event has ended
+        if self.end_date and now > self.end_date:
+            return False, "Event has ended. Merchandise sales are closed."
+        
+        # Check merch sale end date
+        if self.merch_sale_end_date and now > self.merch_sale_end_date:
+            return False, "Merchandise sales have ended for this event."
+        
+        # Check merch sale start date
+        if self.merch_sale_start_date and now < self.merch_sale_start_date:
+            return False, f"Merchandise sales start on {self.merch_sale_start_date.strftime('%B %d, %Y at %I:%M %p')}."
+        
+        # Check payment deadline
+        if self.payment_deadline and now > self.payment_deadline:
+            return False, "Payment deadline has passed. Merchandise sales are closed."
+        
+        # Check user's registration status
+        try:
+            participant = self.participants.get(user=user)
+            
+            # Cancelled registrations cannot purchase
+            if participant.status == EventParticipant.ParticipantStatus.CANCELLED:
+                return False, "Your registration has been cancelled. Please contact event organizers for assistance."
+            
+            # Only CONFIRMED participants can purchase merch
+            if participant.status != EventParticipant.ParticipantStatus.CONFIRMED:
+                return False, "Only confirmed participants can purchase merchandise. Please complete your registration and payment."
+                
+        except EventParticipant.DoesNotExist:
+            return False, "You must be registered for this event to purchase merchandise."
+        
+        return True, None
 
 class EventServiceTeamMember(models.Model):
     '''
@@ -780,7 +849,7 @@ class EventRoleDiscount(models.Model):
         discount = self.calculate_product_discount(original_price)
         final_price = Decimal(str(original_price)) - discount
         return max(final_price, Decimal('0')).quantize(Decimal('0.01'))
-    
+
 # * EVENT PARTICIPANT MODELS
     
 class EventParticipant(models.Model):

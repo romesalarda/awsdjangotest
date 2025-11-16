@@ -101,6 +101,11 @@ class EventCartViewSet(viewsets.ModelViewSet):
         if not (cart.user == request.user or request.user.is_superuser or getattr(request.user, 'is_encoder', False)):
             raise exceptions.PermissionDenied("You can only modify your own carts.")
         
+        # Check if user can purchase merch for this event
+        can_purchase, reason = cart.event.can_purchase_merch(cart.user)
+        if not can_purchase:
+            raise serializers.ValidationError(reason)
+        
         # Check cart status
         if cart.cart_status in [EventCart.CartStatus.LOCKED, EventCart.CartStatus.COMPLETED]:
             raise serializers.ValidationError("Cannot modify a locked or completed cart.")
