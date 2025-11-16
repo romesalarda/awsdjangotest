@@ -105,6 +105,12 @@ class EventProduct(models.Model):
         default=False,
         help_text=_("If checked, only service team members can purchase this product")
     )   
+    preview_date = models.DateTimeField(
+        _("Preview Date"),
+        null=True,
+        blank=True,
+        help_text=_("Date when product becomes visible but read-only. If not set, product is hidden until release_date.")
+    )
     release_date = models.DateTimeField(
         _("Release Date"),
         null=True,
@@ -270,6 +276,117 @@ class EventProduct(models.Model):
             self.service_team_discount_value and 
             self.service_team_discount_value > 0
         )
+    
+    def is_service_team_member(self, user):
+        """Check if user is a service team member for this product's event."""
+        from apps.events.models import EventServiceTeamMember
+        return EventServiceTeamMember.objects.filter(
+            event=self.event,
+            user=user
+        ).exists()
+    
+    def is_available_for_user(self, user):
+        """
+        Comprehensive availability check for a specific user.
+        Returns tuple: (is_available: bool, reason: str or None, is_preview: bool)
+        
+        Checks:
+        - Service team restriction (only_service_team)
+        - Time-based availability (preview_date, release_date, end_date)
+        - Stock availability
+        - Event merch purchase windows
+        """
+        from django.utils import timezone
+        now = timezone.now()
+        
+        # Check service team restriction first
+        if self.only_service_team:
+            if not self.is_service_team_member(user):
+                return False, "This product is only available to service team members.", False
+        
+        # Check if product is in preview mode (visible but not purchasable)
+        if self.preview_date and now >= self.preview_date:
+            if self.release_date and now < self.release_date:
+                return False, f"This product will be available for purchase on {self.release_date.strftime('%B %d, %Y at %I:%M %p')}.", True
+        
+        # Check if product hasn't been released yet (completely hidden)
+        if self.release_date and now < self.release_date:
+            if not self.preview_date or now < self.preview_date:
+                return False, "This product is not yet available.", False
+        
+        # Check if product has ended (visible but read-only)
+        if self.end_date and now > self.end_date:
+            return False, "This product is no longer available for purchase.", True
+        
+        # Check event-level merch purchase permissions
+        can_purchase, reason = self.event.can_purchase_merch(user)
+        if not can_purchase:
+            return False, reason, False
+        
+        # Check stock (if stock is 0, assume infinite - buy based on orders)
+        if self.stock > 0 and self.stock <= 0:
+            return False, "This product is currently out of stock.", False
+        
+        return True, None, False
+    
+    def is_purchasable(self, user):
+        """
+        Quick check if product can be added to cart right now.
+        Returns tuple: (can_purchase: bool, reason: str or None)
+        """
+        is_available, reason, is_preview = self.is_available_for_user(user)
+        
+        if not is_available:
+            return False, reason
+        
+        if is_preview:
+            return False, reason
+        
+        return True, None
+    
+    def decrement_stock(self, quantity):
+        """
+        Atomically decrement product stock.
+        Returns True if successful, False if insufficient stock.
+        Only applies if stock > 0 (0 means infinite/made-to-order).
+        """
+        if self.stock == 0:  # Infinite stock
+            return True
+        
+        from django.db.models import F
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # Lock the row and refresh from DB
+            product = EventProduct.objects.select_for_update().get(uuid=self.uuid)
+            
+            if product.stock < quantity:
+                return False
+            
+            product.stock = F('stock') - quantity
+            product.save(update_fields=['stock'])
+            product.refresh_from_db()
+            
+            return True
+    
+    def increment_stock(self, quantity):
+        """
+        Atomically increment product stock (when removing from cart or cancelling).
+        Only applies if stock was originally > 0.
+        """
+        if self.stock == 0:  # Was infinite stock, no need to increment
+            return True
+        
+        from django.db.models import F
+        from django.db import transaction
+        
+        with transaction.atomic():
+            product = EventProduct.objects.select_for_update().get(uuid=self.uuid)
+            product.stock = F('stock') + quantity
+            product.save(update_fields=['stock'])
+            product.refresh_from_db()
+            
+            return True
 
 
 class EventCart(models.Model):
@@ -465,14 +582,29 @@ class ProductPurchaseTracker(models.Model):
     
     @classmethod
     def get_user_purchased_quantity(cls, user, product):
-        """Get total quantity purchased by user for this product"""
-        tracker = cls.objects.filter(user=user, product=product).first()
-        return tracker.total_purchased if tracker else 0
+        """
+        Get total quantity across ALL orders (pending, verified, cancelled) for this user and product.
+        This enforces max_purchase_per_person event-wide, preventing users from circumventing 
+        limits by creating multiple carts or orders.
+        """
+        from django.db.models import Sum
+        
+        # Count all orders for this product, regardless of cart status
+        total = EventProductOrder.objects.filter(
+            product=product,
+            cart__user=user,
+            cart__event=product.event
+        ).aggregate(
+            total=Sum('quantity')
+        )['total']
+        
+        return total or 0
     
     @classmethod
     def can_purchase(cls, user, product, quantity):
         """
         Check if user can purchase the specified quantity of this product.
+        Counts ALL existing orders (pending, completed, cancelled) to enforce limits.
         Returns (can_purchase: bool, remaining_quantity: int, error_message: str)
         """
         # If product has no limit, allow purchase
@@ -483,10 +615,10 @@ class ProductPurchaseTracker(models.Model):
         remaining = product.max_purchase_per_person - current_purchased
         
         if remaining <= 0:
-            return False, 0, f"You have already purchased the maximum allowed ({product.max_purchase_per_person}) of this product."
+            return False, 0, f"You have already reached the maximum purchase limit ({product.max_purchase_per_person}) for this product across all orders."
         
         if quantity > remaining:
-            return False, remaining, f"You can only purchase {remaining} more of this product (limit: {product.max_purchase_per_person}, already purchased: {current_purchased})."
+            return False, remaining, f"You can only purchase {remaining} more of this product (limit: {product.max_purchase_per_person}, current orders total: {current_purchased})."
         
         return True, remaining, None
     

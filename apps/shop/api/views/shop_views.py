@@ -34,11 +34,61 @@ class EventProductViewSet(viewsets.ModelViewSet):
     ordering = ["title"]
     
     def get_queryset(self):
-        # TODO: add filters to show products via search queries
+        """
+        Filter products based on user permissions and product availability.
+        - Hides only_service_team products from non-service-team members
+        - Hides products before their preview_date (if no preview, before release_date)
+        - Shows products in preview mode or after release_date
+        
+        Special handling for management context:
+        - If ?context=manage is passed and user has proper permissions, bypass date restrictions
+        """
         user = self.request.user
-        # if user.is_superuser:
-        #     return self.queryset
-        return self.queryset
+        queryset = self.queryset
+        
+        from django.utils import timezone
+        from django.db.models import Q
+        from apps.events.models import EventServiceTeamMember
+        now = timezone.now()
+        
+        # Check if this is a management context request
+        context = self.request.query_params.get('context', None)
+        
+        # If context=manage and user has proper permissions, show all products (bypass date filters)
+        if context == 'manage':
+            # Check if user has event management permissions for the requested event
+            event_id = self.request.query_params.get('event', None)
+            if event_id:
+                # User must be superuser, encoder, or event organiser
+                if user.is_superuser or getattr(user, 'is_encoder', False):
+                    # Return all products for this event without date filtering
+                    return queryset
+        
+        # Get all events where user is service team member
+        service_team_events = EventServiceTeamMember.objects.filter(
+            user=user
+        ).values_list('event_id', flat=True)
+        
+        # Filter logic:
+        # 1. Show all products from events where user is service team
+        # 2. For other products:
+        #    - Hide if only_service_team=True
+        #    - Hide if not yet visible (before preview_date or release_date)
+        #    - Show if in preview mode or released
+        
+        queryset = queryset.filter(
+            Q(event_id__in=service_team_events) |  # Service team sees all products
+            Q(
+                only_service_team=False,  # Non-service-team products
+                # Visible products: either no dates set, past preview/release, or within valid period
+            ) & (
+                Q(preview_date__isnull=True, release_date__isnull=True) |  # No dates = always visible
+                Q(preview_date__lte=now) |  # Past preview date
+                Q(preview_date__isnull=True, release_date__lte=now)  # No preview but past release
+            )
+        )
+        
+        return queryset
     
     def get_serializer_context(self):
         """Add request to serializer context for user-specific pricing"""
@@ -136,8 +186,21 @@ class EventCartViewSet(viewsets.ModelViewSet):
                         f"Product {product_object.title} does not belong to the same event as the cart."
                     )
                 
-                # Check stock availability
-                if product_object.stock < quantity:
+                # NEW: Check product availability for this user
+                can_purchase_product, purchase_reason = product_object.is_purchasable(cart.user)
+                if not can_purchase_product:
+                    raise serializers.ValidationError(
+                        f"Cannot add {product_object.title}: {purchase_reason}"
+                    )
+                
+                # NEW: Check size requirement
+                if product_object.uses_sizes and not size:
+                    raise serializers.ValidationError(
+                        f"Product {product_object.title} requires a size selection."
+                    )
+                
+                # Check stock availability (only if stock > 0, else infinite/made-to-order)
+                if product_object.stock > 0 and product_object.stock < quantity:
                     raise serializers.ValidationError(
                         f"Insufficient stock for {product_object.title}. Available: {product_object.stock}, Requested: {quantity}"
                     )
@@ -188,11 +251,19 @@ class EventCartViewSet(viewsets.ModelViewSet):
                     if not can_purchase:
                         raise serializers.ValidationError(error_msg)
                     
-                    # Check stock for additional quantity
-                    if product_object.stock < quantity:
+                    # Check stock for additional quantity (only if stock tracking enabled)
+                    if product_object.stock > 0 and product_object.stock < quantity:
                         raise serializers.ValidationError(
                             f"Insufficient stock for additional {product_object.title}. Available: {product_object.stock}, Requested: {quantity}"
                         )
+                    
+                    # NEW: Decrement stock atomically (only if stock > 0)
+                    if product_object.stock > 0:
+                        stock_decremented = product_object.decrement_stock(quantity)
+                        if not stock_decremented:
+                            raise serializers.ValidationError(
+                                f"Failed to reserve stock for {product_object.title}. Please try again."
+                            )
                     
                     existing_order.quantity = new_quantity
                     existing_order.price_at_purchase = discounted_price
@@ -207,6 +278,14 @@ class EventCartViewSet(viewsets.ModelViewSet):
                         'total_quantity': new_quantity
                     })
                 else:
+                    # NEW: Decrement stock atomically before creating order (only if stock > 0)
+                    if product_object.stock > 0:
+                        stock_decremented = product_object.decrement_stock(quantity)
+                        if not stock_decremented:
+                            raise serializers.ValidationError(
+                                f"Insufficient stock for {product_object.title}. Please try again."
+                            )
+                    
                     # Create the order with discount information
                     order = EventProductOrder.objects.create(
                         product=product_object,
@@ -266,16 +345,42 @@ class EventCartViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError("No products provided to remove from cart.")
         
         with transaction.atomic():
+            removed_products = []
+            
             for prod_id in products:
                 product = get_object_or_404(EventProduct, uuid=prod_id)
-                cart.products.remove(product)
+                
+                # Get all orders for this product to restore stock
                 orders = EventProductOrder.objects.filter(cart=cart, product=product)
-                orders.delete()  # check if it was removed
-
+                
+                # Restore stock for each order (only if stock tracking enabled)
+                for order in orders:
+                    if product.stock > 0:  # Only restore if stock tracking was enabled
+                        product.increment_stock(order.quantity)
+                    
+                    removed_products.append({
+                        'product': product.title,
+                        'quantity': order.quantity,
+                        'stock_restored': product.stock > 0
+                    })
+                
+                # Remove product and delete orders
+                cart.products.remove(product)
+                orders.delete()
+            
+            # Recalculate cart total
+            total = 0
+            for order in cart.orders.all():
+                total += (order.price_at_purchase or order.product.price) * order.quantity
+            cart.total = total
             cart.save()
         
         serialized = self.get_serializer(cart)
-        return Response({"status": "product removed" if len(products) > 0 else "no changes", "product": serialized.data}, status=200)
+        return Response({
+            "status": "products removed from cart",
+            "removed": removed_products,
+            "cart": serialized.data
+        }, status=200)
         
     @action(detail=True, methods=['post'], url_name='checkout', url_path='checkout')
     def checkout_cart(self, request, *args, **kwargs):

@@ -1928,7 +1928,13 @@ class EventViewSet(viewsets.ModelViewSet):
         from apps.events.models import EventServiceTeamMember, EventRoleDiscount
         
         event = self.get_object()
-        products = event.products.all()
+        now = timezone.now()
+        
+        products = event.products.filter(
+                Q(preview_date__isnull=True, release_date__isnull=True) |
+                Q(preview_date__lte=now) |  
+                Q(preview_date__isnull=True, release_date__lte=now)
+                )
         
         # Calculate user-specific discounts if user is authenticated service team member
         discount_data = {}

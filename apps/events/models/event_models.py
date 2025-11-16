@@ -224,6 +224,11 @@ class Event(models.Model):
         null=True,
         help_text=_("When merchandise sales close. If not set, defaults to payment_deadline or event end_date.")
     )
+    merch_grace_period = models.BooleanField(
+        verbose_name=_("merchandise grace period"),
+        default=False,
+        help_text=_("If enabled, users cannot create a new order while they have a pending/unverified order. They must wait for the current order to complete.")
+    )
     
     # Legacy field - kept for backward compatibility
     product_purchase_deadline = models.DateTimeField(
@@ -468,7 +473,32 @@ class Event(models.Model):
         except EventParticipant.DoesNotExist:
             return False, "You must be registered for this event to purchase merchandise."
         
+        # Check grace period - if enabled, user cannot have pending orders
+        if self.merch_grace_period:
+            has_pending = self.has_pending_merch_order(user)
+            if has_pending:
+                return False, "You have a pending merchandise order. Please wait for it to be processed before creating a new order."
+        
         return True, None
+    
+    def has_pending_merch_order(self, user):
+        """
+        Check if user has any pending/unverified merchandise orders for this event.
+        Returns True if there are any active, unapproved, or unsubmitted carts.
+        """
+        from apps.shop.models import EventCart
+        
+        pending_carts = EventCart.objects.filter(
+            event=self,
+            user=user,
+            active=True,
+            cart_status__in=[EventCart.CartStatus.ACTIVE, EventCart.CartStatus.LOCKED]
+        ).exclude(
+            approved=True,
+            submitted=True
+        )
+        
+        return pending_carts.exists()
 
 class EventServiceTeamMember(models.Model):
     '''

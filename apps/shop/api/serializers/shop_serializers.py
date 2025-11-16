@@ -57,6 +57,14 @@ class EventProductSerializer(serializers.ModelSerializer):
     in_stock = serializers.BooleanField(read_only=True)
     user_purchased_count = serializers.SerializerMethodField()
     
+    # Product availability fields
+    can_purchase = serializers.SerializerMethodField()
+    availability_reason = serializers.SerializerMethodField()
+    remaining_purchase_quantity = serializers.SerializerMethodField()
+    is_available = serializers.SerializerMethodField()
+    is_preview = serializers.SerializerMethodField()
+    requires_size = serializers.BooleanField(source='uses_sizes', read_only=True)
+    
     # Service team discount fields - discount_info is the single source of truth
     discount_info = serializers.SerializerMethodField()
     
@@ -129,11 +137,56 @@ class EventProductSerializer(serializers.ModelSerializer):
             return 0
         
         from apps.shop.models.shop_models import ProductPurchaseTracker
-        try:
-            tracker = ProductPurchaseTracker.objects.get(user=request.user, product=obj)
-            return tracker.total_purchased
-        except ProductPurchaseTracker.DoesNotExist:
+        return ProductPurchaseTracker.get_user_purchased_quantity(request.user, obj)
+    
+    def get_can_purchase(self, obj):
+        """Check if the current user can purchase this product"""
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        
+        can_purchase, _ = obj.is_purchasable(request.user)
+        return can_purchase
+    
+    def get_availability_reason(self, obj):
+        """Get the reason why a product is unavailable, if any"""
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return "You must be logged in to purchase products."
+        
+        is_available, reason, is_preview = obj.is_available_for_user(request.user)
+        return reason
+    
+    def get_remaining_purchase_quantity(self, obj):
+        """Get how many more of this product the user can purchase"""
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
             return 0
+        
+        from apps.shop.models.shop_models import ProductPurchaseTracker
+        _, remaining, _ = ProductPurchaseTracker.can_purchase(request.user, obj, 1)
+        
+        if remaining == float('inf'):
+            return -1  # Unlimited
+        return int(remaining)
+    
+    def get_is_available(self, obj):
+        """Check if product is available (time-based and stock)"""
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        
+        is_available, _, _ = obj.is_available_for_user(request.user)
+        return is_available
+    
+    def get_is_preview(self, obj):
+        """Check if product is in preview mode (visible but not purchasable yet)"""
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        
+        _, _, is_preview = obj.is_available_for_user(request.user)
+        return is_preview
     
     def get_user_specific_price(self, obj):
         """
@@ -197,15 +250,26 @@ class EventProductSerializer(serializers.ModelSerializer):
             "price", "discount", "seller", "seller_email", "category", "stock", "featured", 
             "in_stock", "imageUrl", "sizes", "colors",
             "categories", "materials", "images", "product_sizes", "maximum_order_quantity",
-            "max_purchase_per_person",  # New field for purchase limits
-            "user_purchased_count",  # New field for frontend validation
+            "max_purchase_per_person", "user_purchased_count",
+            # Availability and purchase control fields
+            "can_purchase", "availability_reason", "remaining_purchase_quantity", 
+            "is_available", "is_preview", "requires_size",
+            # Time-based availability fields
+            "preview_date", "release_date", "end_date", "timezone",
+            # Service team fields
+            "only_service_team", "uses_sizes",
+            # Write-only fields for creation/update
             "image_uploads", "size_list", "category_ids", "material_ids",
             # Service team discount fields
             "discount_for_service_team", "service_team_discount_type", "service_team_discount_value",
             "has_service_team_discount", "user_specific_price", "discount_info"
         ]
-        read_only_fields = ["seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes", "user_purchased_count", 
-                            "has_service_team_discount", "user_specific_price", "discount_info"]
+        read_only_fields = [
+            "seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes", 
+            "user_purchased_count", "can_purchase", "availability_reason", 
+            "remaining_purchase_quantity", "is_available", "is_preview", "requires_size",
+            "has_service_team_discount", "user_specific_price", "discount_info"
+        ]
         
     def create(self, validated_data):
         # Extract related data
