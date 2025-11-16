@@ -638,9 +638,7 @@ class EventStatisticsViewSet(viewsets.ViewSet):
                     event=event,
                     user=cart.user
                 ).first()
-                
-                print(participant)
-                
+                                
                 # Get all product orders in this cart
                 cart_orders = cart.orders.all()
                 
