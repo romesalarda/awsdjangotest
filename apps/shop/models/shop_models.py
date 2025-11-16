@@ -20,15 +20,15 @@ class EventProduct(models.Model):
         ('other', _('Other')),
     ]
 
-    SIZE_CHOICES = [
-        ('XS', _('Extra Small')),
-        ('S', _('Small')),
-        ('M', _('Medium')),
-        ('L', _('Large')),
-        ('XL', _('Extra Large')),
-        ('XXL', _('Extra Extra Large')),
-        ('One Size', _('One Size')),
-    ]
+    # SIZE_CHOICES = [
+    #     ('XS', _('Extra Small')),
+    #     ('S', _('Small')),
+    #     ('M', _('Medium')),
+    #     ('L', _('Large')),
+    #     ('XL', _('Extra Large')),
+    #     ('XXL', _('Extra Extra Large')),
+    #     ('One Size', _('One Size')),
+    # ]
 
     uuid = models.UUIDField(_("Product UUID"), default=uuid.uuid4, editable=False, primary_key=True)
     title = models.CharField(_("Product Name"), max_length=100)
@@ -95,8 +95,36 @@ class EventProduct(models.Model):
         default=-1,
         help_text=_("Maximum quantity a person can purchase across all orders. Set to -1 for unlimited.")
     )
+    uses_sizes = models.BooleanField(
+        _("Uses Sizes"),
+        default=False,
+        help_text=_("Indicates if this product has size options")
+    )   
+    only_service_team = models.BooleanField(    
+        _("Only for Service Team"),
+        default=False,
+        help_text=_("If checked, only service team members can purchase this product")
+    )   
+    release_date = models.DateTimeField(
+        _("Release Date"),
+        null=True,
+        blank=True,
+        help_text=_("Date and time when the product becomes available for purchase")
+    )
+    end_date = models.DateTimeField(
+        _("End Date"),
+        null=True,
+        blank=True,
+        help_text=_("Date and time when the product is no longer available for purchase")
+    )
+    timezone = models.CharField(
+        _("Event Timezone"),    
+        max_length=50,
+        default='UTC',
+        help_text=_("Timezone for release and end dates")
+    )   
     
-
+    
     class Meta:
         ordering = ['title']
         verbose_name = _("Product")

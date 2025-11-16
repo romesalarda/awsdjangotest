@@ -203,6 +203,12 @@ class Event(models.Model):
         null=True,
         help_text=_("Deadline for processing refunds. If not set, defaults to payment_deadline. No refunds after event starts.")
     )
+    product_purchase_deadline = models.DateTimeField(
+        verbose_name=_("product purchase deadline"),
+        blank=True,
+        null=True,
+        help_text=_("Deadline for purchasing products related to the event")
+    )
     
     class EventStatus(models.TextChoices):
         PLANNING = "PLANNING", _("Planning")
@@ -793,6 +799,7 @@ class EventParticipant(models.Model):
         SERVICE_TEAM = "SERVICE_TEAM", _("Service_team")
         OBSERVER = "OBSERVER", _("Observer")
         GUEST = "GUEST", _("Guest")
+        VISITOR = "VISITOR", _("Visitor")
         SPEAKER = "SPEAKER", _("Speaker")
         VOLUNTEER = "VOLUNTEER", _("Volunteer")
     
@@ -848,6 +855,17 @@ class EventParticipant(models.Model):
         help_text=_("defines the organisation attached to the event"),
         related_name="event_participants"
         )
+    
+    allowed_to_buy_products = models.BooleanField(  
+        verbose_name=_("allowed to buy products"), 
+        default=True,
+        help_text=_("Defines if this participant is allowed to purchase products related to the event")
+    )
+    is_visible = models.BooleanField(
+        verbose_name=_("is visible"),
+        default=True,
+        help_text=_("Defines if this participant is visible in participant lists")
+    ) # when a user is banned or blacklisted from an event, set this to false to hide them from lists, delete later if needed
     
     class Meta:
         verbose_name = _("Event Participant")

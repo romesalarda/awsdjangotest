@@ -77,9 +77,15 @@ class ServiceTeamPermission(models.Model):
     
     # Granular Permissions - Payment Management
     can_view_payments = models.BooleanField(
-        _("can view payments"),
+        _("can view participant payments"),
         default=False,
-        help_text=_("Can view payment records")
+        help_text=_("Can view participant payment records")
+    )
+    
+    can_view_event_payment_statistics = models.BooleanField(
+        _("can view payment statistics"),
+        default=False,
+        help_text=_("Can view overall payment statistics and reports")
     )
     
     can_approve_payments = models.BooleanField(
@@ -145,6 +151,24 @@ class ServiceTeamPermission(models.Model):
         help_text=_("Can set permissions for other service team members")
     )
     
+    can_delete_event = models.BooleanField(
+        _("can delete event"),
+        default=False,  
+        help_text=_("Can delete the event entirely")
+    )
+    
+    can_view_management_dashboard = models.BooleanField(
+        _("can view management dashboard"),
+        default=False,
+        help_text=_("Can access the event management dashboard")
+    )
+    
+    can_publish_event = models.BooleanField(
+        _("can publish event"),
+        default=False,
+        help_text=_("Can publish the event to make it live")    
+    )
+
     # Granular Permissions - Resources & Q&A
     can_manage_resources = models.BooleanField(
         _("can manage resources"),
@@ -203,6 +227,11 @@ class ServiceTeamPermission(models.Model):
             self.can_manage_resources = True
             self.can_manage_questions = True
             
+            self.can_view_event_payment_statistics = True
+            self.can_publish_event = True
+            self.can_view_management_dashboard = True
+            self.can_delete_event = True
+            
         elif self.role == self.PermissionRole.MERCH_ONLY:
             # Merchandise management only
             self.can_view_participants = False
@@ -222,6 +251,11 @@ class ServiceTeamPermission(models.Model):
             self.can_manage_permissions = False
             self.can_manage_resources = False
             self.can_manage_questions = False
+            
+            self.can_view_payments_statistics = False
+            self.can_publish_event = False
+            self.can_view_management_dashboard = True
+            self.can_delete_event = False
             
         elif self.role == self.PermissionRole.SCANNER_ONLY:
             # Check-in and live dashboard only
@@ -243,6 +277,11 @@ class ServiceTeamPermission(models.Model):
             self.can_manage_resources = False
             self.can_manage_questions = False
             
+            self.can_view_payments_statistics = False
+            self.can_publish_event = False
+            self.can_view_management_dashboard = True
+            self.can_delete_event = False
+            
         elif self.role == self.PermissionRole.PARTICIPANT_MANAGEMENT:
             # Participant management with configurable payment approval
             self.can_view_participants = True
@@ -262,6 +301,11 @@ class ServiceTeamPermission(models.Model):
             self.can_manage_permissions = False
             self.can_manage_resources = False
             self.can_manage_questions = True  # Can handle participant questions
+            
+            self.can_view_payments_statistics = False
+            self.can_publish_event = False
+            self.can_view_management_dashboard = True
+            self.can_delete_event = False
     
     def save(self, *args, **kwargs):
         """
@@ -303,4 +347,8 @@ class ServiceTeamPermission(models.Model):
             self.can_manage_permissions,
             self.can_manage_resources,
             self.can_manage_questions,
+            self.can_view_event_payment_statistics, 
+            self.can_publish_event,
+            self.can_view_management_dashboard,
+            self.can_delete_events
         ])
