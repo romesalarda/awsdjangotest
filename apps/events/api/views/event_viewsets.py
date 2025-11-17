@@ -84,14 +84,17 @@ class EventViewSet(viewsets.ModelViewSet):
         user = self.request.user
         print(f"🔧 DEBUG get_queryset - user: {user}, is_superuser: {user.is_superuser}, is_encoder: {getattr(user, 'is_encoder', False)}")
         
+        # Base queryset - exclude DELETED events from all views (except Django admin)
+        base_queryset = Event.objects.exclude(status=Event.EventStatus.DELETED)
+        
         if user.is_superuser:
-            queryset = Event.objects.all()
+            queryset = base_queryset
             print(f"🔧 DEBUG get_queryset - superuser queryset count: {queryset.count()}")
             return queryset
         
         if user.is_authenticated and user.is_encoder:
             # Encoder users can access events they created OR public events
-            queryset = Event.objects.filter(
+            queryset = base_queryset.filter(
                Q(created_by=user) | Q(is_public=True)
             ).distinct()
             print(f"🔧 DEBUG get_queryset - encoder queryset count: {queryset.count()}")
@@ -99,7 +102,7 @@ class EventViewSet(viewsets.ModelViewSet):
             return queryset
         
         # For normal authenticated users, only show public events
-        queryset = Event.objects.filter(is_public=True, approved=True)
+        queryset = base_queryset.filter(is_public=True, approved=True)
         print(f"🔧 DEBUG get_queryset - regular user queryset count: {queryset.count()}")
         return queryset
     
@@ -115,7 +118,7 @@ class EventViewSet(viewsets.ModelViewSet):
             data['participant_count'] = EventParticipant.objects.filter(event=instance).count()
 
         return Response(data)
-        
+            
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
         super().perform_create(serializer)
@@ -131,6 +134,7 @@ class EventViewSet(viewsets.ModelViewSet):
         event = self.get_object()
         
         if request.method == 'GET':
+            # TODO: add improved searchs in query
             # Return all service team members with their roles
             service_team = EventServiceTeamMember.objects.filter(event=event).select_related('user').prefetch_related('roles')
             serializer = EventServiceTeamMemberSerializer(service_team, many=True)
@@ -960,7 +964,7 @@ class EventViewSet(viewsets.ModelViewSet):
             # models.Q(supervisors=user) |
             models.Q(participants__user=user) |
             models.Q(service_team_members__user=user)
-        ).distinct()
+        ).distinct().filter(date_for_deletion__isnull=True).order_by('-start_date')
         
         page = self.paginate_queryset(events)
         if page is not None:
@@ -2508,7 +2512,7 @@ class EventViewSet(viewsets.ModelViewSet):
     def reject_event(self, request, id=None):
         """
         Reject an event - only Event Approvers or Community Admins can do this
-        Rejecting an event sets status to CANCELLED
+        Rejecting an event sets status to REJECTED
         """
         event = self.get_object()
         user = request.user
@@ -2557,7 +2561,7 @@ class EventViewSet(viewsets.ModelViewSet):
         event.approved_by = None
         event.approved_at = None
         event.approval_notes = ''
-        event.status = Event.EventStatus.CANCELLED
+        event.status = Event.EventStatus.REJECTED
         event.is_public = False
         event.registration_open = False
         event.save()
@@ -2635,6 +2639,270 @@ class EventViewSet(viewsets.ModelViewSet):
             'event': serializer.data
         }, status=status.HTTP_200_OK)
     
+    @action(detail=True, methods=['post'], url_name="cancel", url_path="cancel")
+    def cancel_event_action(self, request, id=None):
+        """
+        Cancel an event - only event creators, event heads, or CFC coordinators can do this.
+        Requires confirmation input matching event name.
+        
+        Request body:
+        - reason: Optional cancellation reason
+        - confirmation: Must match event name exactly for confirmation
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check permissions - must have full event access
+        if not has_full_event_access(user, event):
+            return Response(
+                {'error': 'You do not have permission to cancel this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if event can be cancelled
+        can_cancel, reason = event.can_be_cancelled()
+        if not can_cancel:
+            return Response(
+                {'error': reason},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Require confirmation matching event name
+        confirmation = request.data.get('confirmation', '').strip()
+        if confirmation != event.name:
+            return Response(
+                {'error': f'Confirmation failed. Please type "{event.name}" exactly to confirm cancellation.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Cancel the event
+        cancellation_reason = request.data.get('reason', '')
+        
+        try:
+            event.cancel_event(reason=cancellation_reason)
+        except ValidationError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Serialize and return
+        serializer = self.get_serializer(event)
+        
+        return Response({
+            'message': 'Event cancelled successfully',
+            'event': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], url_name="postpone", url_path="postpone")
+    def postpone_event_action(self, request, id=None):
+        """
+        Postpone an event - only event creators, event heads, or CFC coordinators can do this.
+        
+        Request body:
+        - reason: Optional postponement reason
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check permissions - must have full event access
+        if not has_full_event_access(user, event):
+            return Response(
+                {'error': 'You do not have permission to postpone this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if event can be postponed
+        can_postpone, reason = event.can_be_postponed()
+        if not can_postpone:
+            return Response(
+                {'error': reason},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Postpone the event
+        postponement_reason = request.data.get('reason', '')
+        
+        try:
+            event.postpone_event(reason=postponement_reason)
+        except ValidationError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Serialize and return
+        serializer = self.get_serializer(event)
+        
+        return Response({
+            'message': 'Event postponed successfully',
+            'event': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['get'], url_name="check_deletion_safety", url_path="check-deletion-safety")
+    def check_deletion_safety(self, request, id=None):
+        """
+        Check if event can be safely deleted without data loss.
+        Returns deletion safety information.
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check permissions - must have full event access
+        if not has_full_event_access(user, event):
+            return Response(
+                {'error': 'You do not have permission to check deletion safety for this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check deletion safety
+        can_delete, reason, has_sensitive_data = event.can_safely_delete()
+        
+        return Response({
+            'can_safely_delete': can_delete,
+            'reason': reason,
+            'has_sensitive_data': has_sensitive_data,
+            'participant_count': event.participants.count(),
+            'event_payment_count': event.event_payments.count(),
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], url_name="request_deletion", url_path="request-deletion")
+    def request_deletion(self, request, id=None):
+        """
+        Request deletion of an event - marks it as PENDING_DELETION.
+        Only event creators, event heads, or CFC coordinators can do this.
+        Requires confirmation input matching event name.
+        
+        Request body:
+        - confirmation: Must match event name exactly
+        - deletion_date: Optional - when to permanently delete (ISO format)
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check permissions - must have full event access
+        if not has_full_event_access(user, event):
+            return Response(
+                {'error': 'You do not have permission to request deletion for this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Require confirmation matching event name
+        confirmation = request.data.get('confirmation', '').strip()
+        if confirmation != event.name:
+            return Response(
+                {'error': f'Confirmation failed. Please type "{event.name}" exactly to confirm deletion request.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if event has sensitive data
+        can_delete, reason, has_sensitive_data = event.can_safely_delete()
+        
+        # Parse deletion date if provided
+        deletion_date = None
+        if request.data.get('deletion_date'):
+            from django.utils.dateparse import parse_datetime
+            deletion_date = parse_datetime(request.data.get('deletion_date'))
+        
+        # Mark for deletion
+        try:
+            event.mark_for_deletion(deletion_date=deletion_date)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Serialize and return
+        serializer = self.get_serializer(event)
+        
+        return Response({
+            'message': 'Event marked for deletion. Community admins will review before permanent deletion.',
+            'event': serializer.data,
+            'has_sensitive_data': has_sensitive_data,
+            'deletion_date': event.date_for_deletion
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], url_name="admin_delete", url_path="admin-delete")
+    def admin_delete_event(self, request, id=None):
+        """
+        Admin action to delete an event.
+        - If event has sensitive data: soft-delete (mark as DELETED status)
+        - If event has no sensitive data: hard-delete (remove from database)
+        Only Community Admins can do this.
+        Requires confirmation input.
+        
+        Request body:
+        - confirmation: Must be "delete <event_name>" exactly
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check if user is Community Admin
+        from apps.users.models import UserCommunityRole, CommunityRole
+        
+        user_roles = UserCommunityRole.objects.filter(user=user).select_related('role')
+        
+        is_community_admin = any(
+            role.role.get_role_name_display() == 'Community Admin' 
+            for role in user_roles
+        )
+        
+        if not is_community_admin:
+            return Response(
+                {'error': 'Only Community Admins can permanently delete events'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Require strict confirmation
+        confirmation = request.data.get('confirmation', '').strip()
+        expected_confirmation = f"delete {event.name}"
+        
+        if confirmation != expected_confirmation:
+            return Response(
+                {'error': f'Confirmation failed. Please type "delete {event.name}" exactly to confirm deletion.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check deletion safety
+        can_delete, reason, has_sensitive_data = event.can_safely_delete()
+        
+        # Store event details for response
+        event_name = event.name
+        event_id = str(event.id)
+        
+        try:
+            if has_sensitive_data:
+                # Soft delete - mark as DELETED status (will be cleaned up later by Django admin)
+                event.mark_as_deleted()
+                
+                return Response({
+                    'message': f'Event "{event_name}" has been marked as DELETED. It will be permanently removed from the database after {event.date_for_deletion.strftime("%Y-%m-%d")}.',
+                    'event_id': event_id,
+                    'event_name': event_name,
+                    'deletion_type': 'soft_delete',
+                    'has_sensitive_data': True,
+                    'reason': reason,
+                    'deletion_date': event.date_for_deletion.isoformat() if event.date_for_deletion else None
+                }, status=status.HTTP_200_OK)
+            else:
+                # Hard delete - permanently remove from database
+                event.delete()
+                
+                return Response({
+                    'message': f'Event "{event_name}" (ID: {event_id}) has been permanently deleted from the database.',
+                    'deleted_event_id': event_id,
+                    'deleted_event_name': event_name,
+                    'deletion_type': 'hard_delete',
+                    'has_sensitive_data': False
+                }, status=status.HTTP_200_OK)
+                
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to delete event: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     @action(detail=False, methods=['get'], url_name="admin_events", url_path="admin-events")
     def admin_events(self, request):
         """
@@ -2671,7 +2939,7 @@ class EventViewSet(viewsets.ModelViewSet):
             )
         
         # Build base queryset - all events user can access
-        base_queryset = Event.objects.all()
+        base_queryset = Event.objects.filter(date_for_deletion__isnull=True)
         
         # Filter by allowed organisations (including events with no organisation)
         if allowed_org_ids:
@@ -2682,10 +2950,18 @@ class EventViewSet(viewsets.ModelViewSet):
         # Calculate statistics on BASE queryset (before other filters)
         stats = {
             'total_events': base_queryset.count(),
-            'pending_approval': base_queryset.filter(approved=False, rejected=False, status__in=['DRAFT', 'PLANNING']).exclude(status='CANCELLED').count(),
-            'approved': base_queryset.filter(approved=True).count(),
-            'rejected': base_queryset.filter(rejected=True).count(),
-            'cancelled': base_queryset.filter(status='CANCELLED', rejected=False).count(),
+            'pending_approval': base_queryset.filter(
+                approved=False, 
+                rejected=False, 
+                status__in=[Event.EventStatus.PLANNING, Event.EventStatus.CONFIRMED]
+            ).exclude(
+                status__in=[Event.EventStatus.CANCELLED, Event.EventStatus.REJECTED, Event.EventStatus.PENDING_DELETION, Event.EventStatus.DELETED]
+            ).count(),
+            'approved': base_queryset.filter(approved=True, rejected=False).count(),
+            'rejected': base_queryset.filter(rejected=True, status=Event.EventStatus.REJECTED).count(),
+            'cancelled': base_queryset.filter(status=Event.EventStatus.CANCELLED, rejected=False).count(),
+            'postponed': base_queryset.filter(status=Event.EventStatus.POSTPONED).count(),
+            'pending_deletion': base_queryset.filter(status=Event.EventStatus.PENDING_DELETION).count(),
         }
         
         # Now apply additional filters for display

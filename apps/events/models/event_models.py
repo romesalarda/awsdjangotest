@@ -2,6 +2,7 @@ from datetime import timedelta
 from django.db import models
 from django.core import validators
 from django.conf import settings
+from django.forms import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from .location_models import (
@@ -246,6 +247,10 @@ class Event(models.Model):
         CANCELLED = "CANCELLED", _("Cancelled")
         POSTPONED = "POSTPONED", _("Postponed") 
         
+        REJECTED = "REJECTED", _("Rejected")
+        PENDING_DELETION = "PENDING_DELETION", _("Pending Deletion")
+        DELETED = "DELETED", _("Deleted")
+        
     status = models.CharField(_("event status"), max_length=20, choices=EventStatus.choices, default=EventStatus.PLANNING)  
     
     auto_approve_participants = models.BooleanField(verbose_name=_("auto approve participants"), default=False)
@@ -254,6 +259,13 @@ class Event(models.Model):
     format_verifier = models.CharField(max_length=100, blank=True, null=True, help_text=_("For requiring existing id, this can be used to match a given format I.e. %%%%-%%%%-%%%%"))
     existing_id_name = models.CharField(max_length=100, blank=True, null=True, help_text=_("existing name for this id E.g. Members-ID"))
     existing_id_description = models.TextField(max_length=500, blank=True, null=True)
+    
+    date_for_deletion = models.DateTimeField(
+        verbose_name=_("date for deletion"),
+        blank=True,
+        null=True,
+        help_text=_("If event is marked for deletion, this is the date when it will be permanently deleted.")
+    )
     
     organisation = models.ForeignKey(
         Organisation, 
@@ -499,6 +511,209 @@ class Event(models.Model):
         )
         
         return pending_carts.exists()
+    
+    def can_safely_delete(self):
+        """
+        Check if event can be safely deleted without losing critical data.
+        
+        Safe deletion criteria:
+        - No participants registered
+        - No event payments
+        - No product payments/orders
+        
+        Returns:
+            tuple: (can_delete: bool, reason: str or None, has_sensitive_data: bool)
+        """
+        from apps.shop.models import ProductPayment, EventCart
+        
+        # Check for participants
+        participant_count = self.participants.count()
+        if participant_count > 0:
+            return False, f"Event has {participant_count} registered participant(s). Cannot delete without data loss.", True
+        
+        # Check for event payments
+        payment_count = self.event_payments.count()
+        if payment_count > 0:
+            return False, f"Event has {payment_count} event payment record(s). Cannot delete without data loss.", True
+        
+        # Check for product payments
+        product_payment_count = ProductPayment.objects.filter(cart__event=self).count()
+        if product_payment_count > 0:
+            return False, f"Event has {product_payment_count} product payment(s). Cannot delete without data loss.", True
+        
+        # Check for event carts (merchandise orders)
+        cart_count = EventCart.objects.filter(event=self).count()
+        if cart_count > 0:
+            return False, f"Event has {cart_count} merchandise cart(s). Cannot delete without data loss.", True
+        
+        return True, None, False
+    
+    def can_be_cancelled(self):
+        """
+        Check if event can be cancelled.
+        
+        Cancellation criteria:
+        - Event must not have started yet
+        - Event cannot already be cancelled, completed, or deleted
+        
+        Returns:
+            tuple: (can_cancel: bool, reason: str or None)
+        """
+        from django.utils import timezone
+        now = timezone.now()
+        
+        # Check if event has already started
+        if self.start_date and now >= self.start_date:
+            return False, "Cannot cancel an event that has already started or is ongoing."
+        
+        # Check current status
+        invalid_statuses = [
+            self.EventStatus.CANCELLED,
+            self.EventStatus.COMPLETED,
+            self.EventStatus.DELETED,
+            self.EventStatus.PENDING_DELETION
+        ]
+        
+        if self.status in invalid_statuses:
+            return False, f"Cannot cancel an event with status: {self.get_status_display()}"
+        
+        return True, None
+    
+    def can_be_postponed(self):
+        """
+        Check if event can be postponed.
+        
+        Postponement criteria:
+        - Event must be approved or confirmed
+        - Event must not have started yet
+        - Event cannot already be cancelled, completed, or deleted
+        
+        Returns:
+            tuple: (can_postpone: bool, reason: str or None)
+        """
+        from django.utils import timezone
+        now = timezone.now()
+        
+        # Check if event has already started
+        if self.start_date and now >= self.start_date:
+            return False, "Cannot postpone an event that has already started or is ongoing."
+        
+        # Check if event was approved
+        if not self.approved:
+            return False, "Only approved events can be postponed."
+        
+        # Check current status
+        invalid_statuses = [
+            self.EventStatus.CANCELLED,
+            self.EventStatus.COMPLETED,
+            self.EventStatus.DELETED,
+            self.EventStatus.PENDING_DELETION,
+            self.EventStatus.REJECTED
+        ]
+        
+        if self.status in invalid_statuses:
+            return False, f"Cannot postpone an event with status: {self.get_status_display()}"
+        
+        return True, None
+    
+    def mark_for_deletion(self, deletion_date=None):
+        """
+        Mark event for deletion. Sets status to PENDING_DELETION.
+        
+        Args:
+            deletion_date: Optional datetime when event should be permanently deleted
+        
+        Returns:
+            bool: True if successfully marked
+        """
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        self.status = self.EventStatus.PENDING_DELETION
+        
+        # Set deletion date if not provided (default 30 days from now)
+        if deletion_date:
+            self.date_for_deletion = deletion_date
+        elif not self.date_for_deletion:
+            self.date_for_deletion = timezone.now() + timedelta(days=30)
+        
+        self.save(update_fields=['status', 'date_for_deletion'])
+        return True
+    
+    def mark_as_deleted(self):
+        """
+        Mark event as deleted (soft delete). Sets status to DELETED and makes it invisible to most users.
+        Sets automatic deletion date to 30 days from now for database cleanup.
+        This is used for events with sensitive data that cannot be immediately deleted.
+        
+        Returns:
+            bool: True if successfully marked
+        """
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        self.status = self.EventStatus.DELETED
+        
+        # Set automatic deletion date (30 days from now) if not already set
+        if not self.date_for_deletion:
+            self.date_for_deletion = timezone.now() + timedelta(days=30)
+        
+        self.save(update_fields=['status', 'date_for_deletion'])
+        return True
+    
+    def cancel_event(self, reason=None):
+        """
+        Cancel the event. Sets status to CANCELLED.
+        
+        Args:
+            reason: Optional cancellation reason
+        
+        Returns:
+            bool: True if successfully cancelled
+        """
+        can_cancel, error_reason = self.can_be_cancelled()
+        
+        if not can_cancel:
+            raise ValidationError(error_reason)
+        
+        self.status = self.EventStatus.CANCELLED
+        
+        # Store cancellation reason in notes if provided
+        if reason:
+            if self.notes:
+                self.notes += f"\n\n[CANCELLED] {reason}"
+            else:
+                self.notes = f"[CANCELLED] {reason}"
+        
+        self.save(update_fields=['status', 'notes'])
+        return True
+    
+    def postpone_event(self, reason=None):
+        """
+        Postpone the event. Sets status to POSTPONED.
+        
+        Args:
+            reason: Optional postponement reason
+        
+        Returns:
+            bool: True if successfully postponed
+        """
+        can_postpone, error_reason = self.can_be_postponed()
+        
+        if not can_postpone:
+            raise ValidationError(error_reason)
+        
+        self.status = self.EventStatus.POSTPONED
+        
+        # Store postponement reason in notes if provided
+        if reason:
+            if self.notes:
+                self.notes += f"\n\n[POSTPONED] {reason}"
+            else:
+                self.notes = f"[POSTPONED] {reason}"
+        
+        self.save(update_fields=['status', 'notes'])
+        return True
 
 class EventServiceTeamMember(models.Model):
     '''

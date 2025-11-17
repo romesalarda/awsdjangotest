@@ -138,7 +138,7 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
     cost = serializers.SerializerMethodField(read_only=True)
     organisation = OrganisationSerializer(read_only=True)
     chapter = serializers.CharField(source="created_by.area_from.unit.chapter.chapter_name")
-    created_by = SimplifiedCommunityUserSerializer()
+    created_by = SimplifiedCommunityUserSerializer(required=False)
     spots_left = serializers.SerializerMethodField()
 
     class Meta:
@@ -166,6 +166,7 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
             "rejection_reason",
             "approval_notes",
             "approved_at",
+            "date_for_deletion",
             "organisation",
             "chapter",
             "created_by",
@@ -235,10 +236,18 @@ class SimplifiedEventSerializer(serializers.ModelSerializer):
                 "rejection_reason": rep.get("rejection_reason"),
                 "approval_notes": rep.get("approval_notes"),
                 "approved_at": rep.get("approved_at"),
+                "date_for_deletion": rep.get("date_for_deletion"),
                 "created_by": rep.get("created_by")
             }
         }
-
+    
+    def validate(self, attrs):
+        return super().validate(attrs)
+        
+    def create(self, validated_data):
+        validated_data['created_by'] = self.context['request'].user
+        created = super().create(validated_data)
+        return created
 
 class UserAwareEventSerializer(SimplifiedEventSerializer):
     '''
@@ -420,7 +429,7 @@ class EventSerializer(serializers.ModelSerializer):
     approval_notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     rejected = serializers.BooleanField(read_only=True)
     rejection_reason = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    created_by = SimplifiedCommunityUserSerializer()
+    created_by = SimplifiedCommunityUserSerializer(required=False)
     
     def to_internal_value(self, data):
         # Handle nested data structures sent from frontend
