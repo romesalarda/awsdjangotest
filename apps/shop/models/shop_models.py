@@ -141,7 +141,6 @@ class EventProduct(models.Model):
     
     def save(self, *args, **kwargs):
         # Auto-set in_stock based on stock quantity
-        self.in_stock = self.stock > 0
         
         # Ensure colors JSON field is a list if None
         if self.colors is None:

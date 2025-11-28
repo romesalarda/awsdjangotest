@@ -419,8 +419,8 @@ class StripePaymentService:
                 # Update participant status to CONFIRMED if needed
                 if event_payment.user:
                     from apps.events.models import EventParticipant
-                    if event_payment.user.status == EventParticipant.Status.PENDING:
-                        event_payment.user.status = EventParticipant.Status.CONFIRMED
+                    if event_payment.user.status == EventParticipant.ParticipantStatus.REGISTERED:
+                        event_payment.user.status = EventParticipant.ParticipantStatus.CONFIRMED
                         event_payment.user.save()
                         logger.info(f"Participant {event_payment.user.event_pax_id} status updated to CONFIRMED")
                 
