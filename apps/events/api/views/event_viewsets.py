@@ -2777,7 +2777,7 @@ class EventViewSet(viewsets.ModelViewSet):
         - confirmation: Must match event name exactly
         - deletion_date: Optional - when to permanently delete (ISO format)
         """
-        event = self.get_object()
+        event: Event = self.get_object()
         user = request.user
         
         # Check permissions - must have full event access
@@ -2939,7 +2939,7 @@ class EventViewSet(viewsets.ModelViewSet):
             )
         
         # Build base queryset - all events user can access
-        base_queryset = Event.objects.filter(date_for_deletion__isnull=True)
+        base_queryset = Event.objects.exclude(status=Event.EventStatus.DELETED)
         
         # Filter by allowed organisations (including events with no organisation)
         if allowed_org_ids:

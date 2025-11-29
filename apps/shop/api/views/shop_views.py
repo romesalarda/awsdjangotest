@@ -138,18 +138,41 @@ class EventCartViewSet(viewsets.ModelViewSet):
         #     return self.queryset  # admins and encoders can see all carts
         return self.queryset.filter(user=user)  # regular users can only see their own carts
     
+    def perform_create(self, serializer):
+        """
+        Restrict cart creation to staff and superusers only.
+        Regular users cannot create carts themselves - only admins can create carts for participants.
+        """
+        user = self.request.user
+        
+        # Only staff and superusers can create carts
+        if not (user.is_staff or user.is_superuser):
+            raise exceptions.PermissionDenied(
+                "Only administrators can create merchandise carts. "
+                "If you need a cart created, please contact the event service team."
+            )
+        
+        serializer.save()
+    
     @action(detail=True, methods=['post'], url_name='add', url_path='add')
     def add_to_cart(self, request, *args, **kwargs):
         '''
         Bulk add products to the cart with max purchase validation and stock locking.
         E.g. {"products": [{"product_id": "uuid1", "quantity": 2, "size": "M"}, {"product_id": "uuid2", "quantity": 1}]}
+        
+        SECURITY: Only staff and superusers can add products to carts.
         '''
         cart: EventCart = self.get_object()
         
-        # Security check: ensure user can modify this cart
+        # Security check: Only staff/superusers can add products to carts
+        if not (request.user.is_staff or request.user.is_superuser):
+            raise exceptions.PermissionDenied(
+                "Only administrators can add products to carts. "
+                "If you need items added to your cart, please contact the event service team."
+            )
+        
+        # Additional check: ensure authorized user is modifying the cart
         self.check_object_permissions(request, cart)
-        if not (cart.user == request.user or request.user.is_superuser or getattr(request.user, 'is_encoder', False)):
-            raise exceptions.PermissionDenied("You can only modify your own carts.")
         
         # Check if user can purchase merch for this event
         can_purchase, reason = cart.event.can_purchase_merch(cart.user)
@@ -634,9 +657,17 @@ class EventCartViewSet(viewsets.ModelViewSet):
         Replace cart products/orders with provided list.
         Returns a summary of changes.
         E.g. {"products": [{"id": "uuid1", "quantity": 2, "size": "M"}, {"id": "uuid2", "quantity": 1}]}
+        
+        SECURITY RULES (UPDATED - IMMUTABLE AFTER SUBMISSION):
+        - Before submission (draft/pending): Only staff/superusers can modify
+        - After submission/payment (waiting/submitted/paid): COMPLETELY IMMUTABLE
+            * NO ONE can edit from frontend - not even superusers
+            * All edits must be done via Django Admin after careful consideration
+            * This ensures payment integrity and prevents statistical corruption
         '''
         cart: EventCart = self.get_object()
         products = request.data.get("products", [])
+        user = request.user
         
         self.check_object_permissions(request, cart)
         
@@ -644,8 +675,47 @@ class EventCartViewSet(viewsets.ModelViewSet):
         if cart.cart_status in [EventCart.CartStatus.LOCKED, EventCart.CartStatus.COMPLETED]:
             raise serializers.ValidationError(f"Cannot modify a {cart.cart_status} cart.")
         
-        if cart.approved or cart.submitted:
-            raise serializers.ValidationError("Cannot modify an approved or submitted cart.")
+        # Import permission utilities and logging
+        from core.event_permissions import has_event_permission, has_full_event_access
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Determine if cart is submitted/paid - if so, it's IMMUTABLE
+        is_submitted_or_paid = cart.approved or cart.submitted
+        
+        # NEW SECURITY: Submitted/paid carts are COMPLETELY IMMUTABLE from frontend
+        if is_submitted_or_paid:
+            # Log the attempted modification for audit trail
+            logger.warning(
+                f"SECURITY: User {user.email} (ID: {user.id}, Staff: {user.is_staff}, Super: {user.is_superuser}) "
+                f"attempted to modify submitted cart {cart.order_reference_id} (ID: {cart.id}). "
+                f"Request blocked - submitted carts are immutable."
+            )
+            
+            raise exceptions.PermissionDenied(
+                "This cart has been submitted and is now IMMUTABLE to ensure payment integrity. "
+                "No modifications can be made from the frontend - not even by administrators. "
+                "If changes are absolutely necessary, they must be made through the Django Admin "
+                "after careful consideration to avoid corrupting order statistics. "
+                "Please contact the system administrator."
+            )
+        
+        # Before submission, only staff/superusers can modify
+        if not (user.is_staff or user.is_superuser):
+            logger.warning(
+                f"SECURITY: User {user.email} (ID: {user.id}) attempted to modify cart {cart.order_reference_id} "
+                f"without proper permissions. Request blocked."
+            )
+            raise exceptions.PermissionDenied(
+                "Only administrators can modify carts. "
+                "If you need changes made, please contact the event service team."
+            )
+        
+        # Audit log for cart modifications
+        logger.info(
+            f"AUDIT: User {user.email} (ID: {user.id}) modifying cart {cart.order_reference_id} (ID: {cart.id}). "
+            f"Products: {len(products)} items."
+        )
 
         # Detect duplicates in incoming products
         seen = set()
@@ -770,6 +840,23 @@ class EventCartViewSet(viewsets.ModelViewSet):
 
         return Response({"status": "cart updated", "changes": summary}, status=200)
 
+    def _validate_size_only_changes(self, cart, new_products):
+        """
+        DEPRECATED: This method is no longer used as submitted carts are now completely immutable.
+        Kept for reference only.
+        
+        Helper method to validate that only size changes are being made.
+        Raises ValidationError if quantity or price changes are detected.
+        
+        Args:
+            cart: EventCart instance
+            new_products: List of product dicts from request
+        """
+        raise serializers.ValidationError(
+            "This functionality has been disabled. Submitted carts are now completely immutable. "
+            "Please use Django Admin for any necessary modifications."
+        )
+    
     @action(detail=True, methods=['post'], url_name='clear', url_path='clear')
     def clear_cart(self, request, *args, **kwargs):
         '''

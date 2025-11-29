@@ -154,7 +154,7 @@ class EventAdmin(admin.ModelAdmin):
         )}),
         (_('Event Details'), {'fields': (
             'description', 'sentence_description', 'theme', 'anchor_verse', 'number_of_pax', 'important_information', 
-            'registration_deadline', 'what_to_bring', 'organisation'
+            'registration_deadline', 'what_to_bring', 'organisation', 'force_participant_organisation'
         )}),
         (_('Supervision'), {'fields': (
             'supervising_youth_heads', 'supervising_CFC_coordinators'
@@ -164,6 +164,10 @@ class EventAdmin(admin.ModelAdmin):
         )}),
         (_('Admin'), {'fields': (
             'notes', 'is_public', 'registration_open', 'required_existing_id', 'format_verifier', 'existing_id_name', 'existing_id_description', 'approved',
+            'date_for_deletion', 'approved_by'
+        )}),
+        (_('Finance'), {'fields': (
+            'registration_discount_type', 'registration_discount_value', 'product_discount_type', 'product_discount_value'
         )}),
     )
     

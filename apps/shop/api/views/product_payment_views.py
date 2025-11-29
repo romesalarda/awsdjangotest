@@ -62,19 +62,56 @@ class ProductPaymentViewSet(viewsets.ModelViewSet):
             return self.queryset  # admins and encoders can see all payments
         return self.queryset.filter(user=user)  # regular users can only see their own payments
     
-    @action(detail=True, methods=['post'], url_name='verify-payment', url_path='verify-payment', permission_classes=[permissions.IsAdminUser])
+    @action(detail=True, methods=['post'], url_name='verify-payment', url_path='verify-payment', permission_classes=[permissions.IsAuthenticated])
     def verify_payment(self, request, pk=None):
         """
-        Admin action to verify/approve a product payment.
+        Admin and authorized service team action to verify/approve a product payment.
         Marks payment as succeeded and approved, then sends confirmation email.
+        
+        SECURITY: Only staff, superusers, or service team with can_approve_merch_payments permission can verify.
+        AUDIT: All payment verifications are logged for compliance.
         """
         payment = self.get_object()
+        user = request.user
+        
+        # Check permissions: staff/superuser OR service team with can_approve_merch_payments
+        from core.event_permissions import has_event_permission
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        has_approval_permission = (
+            user.is_staff or 
+            user.is_superuser or 
+            has_event_permission(user, payment.cart.event, 'can_approve_merch_payments')
+        )
+        
+        if not has_approval_permission:
+            from rest_framework.exceptions import PermissionDenied
+            logger.warning(
+                f"SECURITY: User {user.email} (ID: {user.id}) attempted to verify payment {payment.payment_reference_id} "
+                f"without proper permissions. Request blocked."
+            )
+            raise PermissionDenied(
+                "You do not have permission to verify payments. " + 
+                "This action requires 'can_approve_merch_payments' permission or administrator access."
+            )
         
         if payment.approved:
+            logger.info(
+                f"AUDIT: User {user.email} (ID: {user.id}) attempted to re-verify already verified payment "
+                f"{payment.payment_reference_id}. No action taken."
+            )
             return Response({
                 "status": "already verified",
                 "message": "This payment has already been verified."
             }, status=status.HTTP_200_OK)
+        
+        # Audit log before making changes
+        logger.info(
+            f"AUDIT: User {user.email} (ID: {user.id}, Staff: {user.is_staff}, Super: {user.is_superuser}) "
+            f"verifying payment {payment.payment_reference_id} for cart {payment.cart.order_reference_id}. "
+            f"Amount: {payment.currency.upper()} {payment.amount}"
+        )
         
         # Update payment status
         payment.status = ProductPayment.PaymentStatus.SUCCEEDED
@@ -86,6 +123,12 @@ class ProductPaymentViewSet(viewsets.ModelViewSet):
         for order in payment.cart.orders.all():
             order.status = EventProductOrder.Status.PURCHASED
             order.save()
+        
+        # Audit log after successful verification
+        logger.info(
+            f"AUDIT: Payment {payment.payment_reference_id} successfully verified by {user.email}. "
+            f"Cart {payment.cart.order_reference_id} orders updated to PURCHASED status."
+        )
         
         # Send confirmation email in background
         def send_email():

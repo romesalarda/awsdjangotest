@@ -630,6 +630,8 @@ class Event(models.Model):
         from datetime import timedelta
         
         self.status = self.EventStatus.PENDING_DELETION
+        self.is_public = False
+        self.approved = False
         
         # Set deletion date if not provided (default 30 days from now)
         if deletion_date:
@@ -653,6 +655,8 @@ class Event(models.Model):
         from datetime import timedelta
         
         self.status = self.EventStatus.DELETED
+        self.is_public = False
+        self.approved = False
         
         # Set automatic deletion date (30 days from now) if not already set
         if not self.date_for_deletion:
