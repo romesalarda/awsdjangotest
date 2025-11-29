@@ -3862,6 +3862,23 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         participant.save()
         return Response(serializer.data)
     
+    @action(detail=True, methods=['post'], url_name="verify-registration", url_path="verify-registration")
+    def verify_participant_status(self, request, event_pax_id=None):
+        '''
+        Verify a participant's registration status for an event. 
+        '''
+        # TODO: ensure only organisers can do this
+        participant = self.get_object()
+        if participant.status != EventParticipant.ParticipantStatus.REGISTERED:
+            return Response(
+                {'error': _('Only participants with REGISTERED status can be confirmed.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        participant.status = EventParticipant.ParticipantStatus.CONFIRMED
+        participant.save()
+        serializer = self.get_serializer(participant)
+        return Response(serializer.data)
+    
     @action(detail=True, methods=['post'], url_name="confirm-merch-payment", url_path="confirm-merch-payment")
     def confirm_merch_order_payment(self, request, event_pax_id=None):
         '''

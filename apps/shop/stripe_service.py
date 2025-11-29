@@ -398,6 +398,7 @@ class StripePaymentService:
         Updates payment status for both EventPayment and optional DonationPayment.
         """
         try:
+            print("attempting to handle event payment success")
             metadata = intent.get('metadata', {})
             event_payment_id = metadata.get('event_payment_id')
             donation_payment_id = metadata.get('donation_payment_id')
