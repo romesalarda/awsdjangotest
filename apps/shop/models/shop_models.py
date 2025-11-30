@@ -592,7 +592,8 @@ class ProductPurchaseTracker(models.Model):
         total = EventProductOrder.objects.filter(
             product=product,
             cart__user=user,
-            cart__event=product.event
+            cart__event=product.event,
+            status__in=[EventProductOrder.Status.PURCHASED]
         ).aggregate(
             total=Sum('quantity')
         )['total']
