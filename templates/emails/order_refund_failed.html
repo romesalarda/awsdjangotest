@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Refund Processing Failed - {{ event_name }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .error-box {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+            color: #721c24;
+        }
+        .info-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid #0d6efd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+            color: #856404;
+        }
+        .details-section {
+            margin: 25px 0;
+        }
+        .details-section h2 {
+            color: #dc3545;
+            font-size: 18px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #dc3545;
+            padding-bottom: 5px;
+        }
+        .detail-row {
+            display: flex;
+            padding: 10px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+            min-width: 150px;
+        }
+        .detail-value {
+            color: #212529;
+        }
+        .product-item {
+            padding: 12px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            border: 1px solid #e9ecef;
+        }
+        .product-item strong {
+            color: #212529;
+        }
+        .reference-box {
+            background-color: #f8f9fa;
+            border: 2px solid #dc3545;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .reference-number {
+            font-size: 20px;
+            font-weight: bold;
+            color: #dc3545;
+            font-family: 'Courier New', monospace;
+        }
+        .contact-box {
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .contact-box strong {
+            color: #155724;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 14px;
+            border-top: 1px solid #e9ecef;
+        }
+        .amount-highlight {
+            font-size: 24px;
+            font-weight: bold;
+            color: #dc3545;
+            text-align: center;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚠️ Refund Processing Issue</h1>
+        </div>
+
+        <div class="content">
+            <p>Dear {{ customer_name }},</p>
+            
+            <div class="error-box">
+                <p style="margin: 0;"><strong>❌ We encountered an issue while processing your refund.</strong></p>
+            </div>
+
+            <p>We attempted to process your refund for your order from <strong>{{ event_name }}</strong>, but unfortunately encountered a technical issue.</p>
+
+            <div class="reference-box">
+                <p style="margin: 0 0 5px 0; font-size: 14px; color: #6c757d;">Refund Reference Number</p>
+                <p class="reference-number">{{ refund_reference }}</p>
+            </div>
+
+            <div class="details-section">
+                <h2>🔍 Issue Details</h2>
+                <div class="detail-row">
+                    <div class="detail-label">Order Reference:</div>
+                    <div class="detail-value"><strong>{{ order_reference }}</strong></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Event:</div>
+                    <div class="detail-value">{{ event_name }}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Refund Amount:</div>
+                    <div class="detail-value"><strong>£{{ refund_amount|floatformat:2 }}</strong></div>
+                </div>
+                {% if failure_reason %}
+                <div class="detail-row">
+                    <div class="detail-label">Failure Reason:</div>
+                    <div class="detail-value" style="color: #dc3545;">{{ failure_reason }}</div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if order_items %}
+            <div class="details-section">
+                <h2>🛍️ Order Items</h2>
+                {% for item in order_items %}
+                <div class="product-item">
+                    <strong>{{ item.product_name }}</strong>
+                    {% if item.size %} - Size: {{ item.size }}{% endif %}
+                    <br>
+                    <small style="color: #6c757d;">Quantity: {{ item.quantity }} × £{{ item.price|floatformat:2 }}</small>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="warning-box">
+                <p><strong>🔄 What happens next?</strong></p>
+                <p style="margin: 10px 0 0 0;">Don't worry! Our team has been automatically notified of this issue and will:</p>
+                <ul style="margin: 10px 0;">
+                    <li>Review your refund request</li>
+                    <li>Investigate the cause of the failure</li>
+                    <li>Retry the refund or process it manually</li>
+                    <li>Contact you within 1-2 business days with an update</li>
+                </ul>
+            </div>
+
+            <div class="info-box">
+                <p><strong>💡 Common Causes</strong></p>
+                <p style="margin: 5px 0 0 0;">Refund processing failures can occur due to:</p>
+                <ul style="margin: 10px 0;">
+                    <li>Temporary payment gateway issues</li>
+                    <li>Expired or closed payment methods</li>
+                    <li>Bank account verification requirements</li>
+                    <li>Technical connectivity issues</li>
+                </ul>
+                <p style="margin: 10px 0 0 0;">Most issues are resolved quickly, and we will ensure your refund is processed successfully.</p>
+            </div>
+
+            <div class="contact-box">
+                <p><strong>📧 Need Immediate Assistance?</strong></p>
+                <p>If you have any urgent questions or concerns about your refund, please contact us at:</p>
+                <p><a href="mailto:{{ refund_contact_email }}" style="color: #155724; text-decoration: none; font-weight: 600;">{{ refund_contact_email }}</a></p>
+                <p style="margin-top: 10px; font-size: 14px; color: #495057;">Please include your refund reference number (<strong>{{ refund_reference }}</strong>) in your email so we can quickly locate your request.</p>
+            </div>
+
+            <p style="margin-top: 30px;">We apologize for this inconvenience and appreciate your patience as we resolve this issue.</p>
+
+            <p style="margin-top: 30px;">
+                Best regards,<br>
+                <strong>{{ event_name }} Team</strong>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p>&copy; Community Events Management System. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -20,6 +20,7 @@ from apps.shop.api.views.shop_views import (
     EventProductOrderViewSet,   
 )
 
+from apps.shop.api.views.order_refund_viewsets import OrderRefundViewSet
 from apps.shop.api.views.stripe_views import stripe_webhook, create_payment_intent
 
 production_payment_router = DefaultRouter()
@@ -37,6 +38,7 @@ shop = DefaultRouter()
 shop.register(r'products', EventProductViewSet, basename='eventproduct')
 shop.register(r'carts', EventCartViewSet, basename='eventcart')
 shop.register(r'orders', EventProductOrderViewSet, basename='eventproductorder')
+shop.register(r'order-refunds', OrderRefundViewSet, basename='orderrefund')
 
 # Stripe webhook endpoint (must be added to urlpatterns)
 stripe_urls = [

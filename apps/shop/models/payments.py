@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
+from django.utils import timezone
 import uuid
 class ProductPaymentMethod(models.Model):
     """
@@ -233,6 +234,318 @@ class ProductPayment(models.Model):
     def __str__(self):
         return f"{self.user} - {self.cart} - {self.get_status_display()}"
 
+
+
+class OrderRefund(models.Model):
+    """
+    Tracks refunds for merchandise orders (entire carts).
+    Provides clear audit trail for product refund processing.
+    Supports both automatic (Stripe) and manual (bank transfer) refunds.
+    
+    Key difference from ParticipantRefund:
+    - OrderRefund: User-requested product/cart refunds only
+    - ParticipantRefund: Full participant removal (event registration + products)
+    """
+    
+    class RefundStatus(models.TextChoices):
+        PENDING = "PENDING", _("Pending Processing")
+        IN_PROGRESS = "IN_PROGRESS", _("In Progress")
+        PROCESSED = "PROCESSED", _("Refund Processed")
+        CANCELLED = "CANCELLED", _("Refund Cancelled")
+        FAILED = "FAILED", _("Refund Failed")
+    
+    class RefundReason(models.TextChoices):
+        CUSTOMER_REQUESTED = "CUSTOMER_REQUESTED", _("Customer Requested")
+        WRONG_SIZE = "WRONG_SIZE", _("Wrong Size/Color")
+        DAMAGED_ITEM = "DAMAGED_ITEM", _("Damaged Item")
+        NOT_AS_DESCRIBED = "NOT_AS_DESCRIBED", _("Not As Described")
+        DUPLICATE_ORDER = "DUPLICATE_ORDER", _("Duplicate Order")
+        CHANGED_MIND = "CHANGED_MIND", _("Changed Mind")
+        EVENT_CANCELLED = "EVENT_CANCELLED", _("Event Cancelled")
+        ADMIN_DECISION = "ADMIN_DECISION", _("Administrative Decision")
+        OTHER = "OTHER", _("Other")
+    
+    # Core relationships
+    cart = models.ForeignKey(
+        'shop.EventCart',
+        on_delete=models.CASCADE,
+        related_name="refunds",
+        verbose_name=_("cart/order")
+    )
+    payment = models.ForeignKey(
+        'shop.ProductPayment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_refunds",
+        verbose_name=_("original payment")
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="order_refunds",
+        verbose_name=_("customer")
+    )
+    event = models.ForeignKey(
+        'events.Event',
+        on_delete=models.CASCADE,
+        related_name="order_refunds",
+        verbose_name=_("event")
+    )
+    
+    # Refund tracking
+    refund_reference = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name=_("refund reference"),
+        help_text=_("Unique identifier for this refund"),
+        blank=True
+    )
+    
+    # Financial details
+    refund_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name=_("refund amount"),
+        help_text=_("Total amount to be refunded")
+    )
+    currency = models.CharField(max_length=10, default="gbp")
+    
+    # Status and tracking
+    status = models.CharField(
+        max_length=20,
+        choices=RefundStatus.choices,
+        default=RefundStatus.PENDING,
+        verbose_name=_("refund status")
+    )
+    
+    # Refund reason
+    refund_reason = models.CharField(
+        max_length=50,
+        choices=RefundReason.choices,
+        default=RefundReason.CUSTOMER_REQUESTED,
+        verbose_name=_("refund reason")
+    )
+    reason_details = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("detailed reason"),
+        help_text=_("Detailed explanation for the refund")
+    )
+    
+    # Personnel tracking
+    initiated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_refunds_initiated",
+        verbose_name=_("initiated by")
+    )
+    processed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_refunds_processed",
+        verbose_name=_("processed by")
+    )
+    processing_notes = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("processing notes"),
+        help_text=_("Internal notes about refund processing")
+    )
+    
+    # Contact information (cached for reference)
+    customer_email = models.EmailField(
+        blank=True,
+        null=True,
+        verbose_name=_("customer email"),
+        help_text=_("Email address at time of refund creation")
+    )
+    customer_name = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name=_("customer name"),
+        help_text=_("Full name at time of refund creation")
+    )
+    refund_contact_email = models.EmailField(
+        blank=True,
+        null=True,
+        verbose_name=_("refund contact email"),
+        help_text=_("Email address for refund inquiries (event organizer/secretariat)")
+    )
+    
+    # Payment method details (for refund processing)
+    original_payment_method = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_("original payment method"),
+        help_text=_("Payment method used for original transaction")
+    )
+    is_automatic_refund = models.BooleanField(
+        default=False,
+        verbose_name=_("automatic refund"),
+        help_text=_("True if refund can be processed automatically via Stripe")
+    )
+    refund_method = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_("refund method"),
+        help_text=_("Method used to process refund (Stripe, Bank Transfer, etc.)")
+    )
+    
+    # Stripe-specific fields
+    stripe_payment_intent = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name=_("original Stripe payment intent"),
+        help_text=_("Original Stripe payment intent ID to refund")
+    )
+    stripe_refund_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        unique=True,
+        verbose_name=_("Stripe refund ID"),
+        help_text=_("Stripe refund ID if processed through Stripe")
+    )
+    stripe_failure_reason = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("Stripe failure reason"),
+        help_text=_("Reason if Stripe refund failed")
+    )
+    
+    # Bank transfer fields (for manual refunds)
+    bank_account_name = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name=_("bank account name"),
+        help_text=_("Customer's bank account name for manual refunds")
+    )
+    bank_account_number = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_("bank account number")
+    )
+    bank_sort_code = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name=_("bank sort code")
+    )
+    
+    # Stock restoration tracking
+    stock_restored = models.BooleanField(
+        default=False,
+        verbose_name=_("stock restored"),
+        help_text=_("Whether product stock has been restored")
+    )
+    stock_restored_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("stock restored at")
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("updated at"))
+    processed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("processed at"),
+        help_text=_("Date and time when refund was marked as processed")
+    )
+    
+    # Notification tracking
+    customer_notified = models.BooleanField(
+        default=False,
+        verbose_name=_("customer notified"),
+        help_text=_("Whether customer has been notified about the refund")
+    )
+    admin_notified = models.BooleanField(
+        default=False,
+        verbose_name=_("admin notified"),
+        help_text=_("Whether admin/organizer has been notified")
+    )
+    
+    def save(self, *args, **kwargs):
+        # Auto-generate refund reference if not set
+        if not self.refund_reference:
+            event_code = self.event.event_code[:5] if self.event and hasattr(self.event, 'event_code') else 'SHOP'
+            self.refund_reference = f"{event_code}-ORDREF-{uuid.uuid4().hex[:8].upper()}"
+        
+        super().save(*args, **kwargs)
+    
+    class Meta:
+        verbose_name = _("Order Refund")
+        verbose_name_plural = _("Order Refunds")
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['event', 'status']),
+            models.Index(fields=['cart']),
+            models.Index(fields=['user']),
+            models.Index(fields=['refund_reference']),
+        ]
+    
+    def __str__(self):
+        return f"{self.refund_reference} - £{self.refund_amount} - {self.get_status_display()}"
+    
+    def can_process_refund(self):
+        """Check if refund can be processed based on eligibility rules"""
+        from django.utils import timezone
+        
+        if self.status in [self.RefundStatus.PROCESSED, self.RefundStatus.CANCELLED]:
+            return False, "Refund already processed or cancelled"
+        
+        # Check if event has started (with admin override capability)
+        if self.event and self.event.start_date and timezone.now() >= self.event.start_date:
+            # Return warning but don't block - admins can override
+            return True, "Warning: Event has started. Admin approval recommended."
+        
+        # Check refund deadline (inherit from event)
+        if self.event:
+            refund_deadline = getattr(self.event, 'refund_deadline', None) or getattr(self.event, 'payment_deadline', None)
+            if refund_deadline and timezone.now() > refund_deadline:
+                # Return warning but don't block - admins can override
+                return True, f"Warning: Refund deadline passed ({refund_deadline.strftime('%Y-%m-%d')}). Admin approval required."
+        
+        return True, "Refund can be processed"
+    
+    def restore_stock(self):
+        """Restore product stock for all items in the cart"""
+        if self.stock_restored:
+            return False, "Stock already restored"
+        
+        try:
+            from apps.shop.models import EventProductOrder
+            orders = EventProductOrder.objects.filter(cart=self.cart)
+            
+            restored_items = []
+            for order in orders:
+                if order.product:
+                    # Increment product stock
+                    order.product.stock += order.quantity
+                    order.product.save()
+                    restored_items.append(f"{order.product.title} (+{order.quantity})")
+            
+            self.stock_restored = True
+            self.stock_restored_at = timezone.now()
+            self.save()
+            
+            return True, f"Stock restored for {len(restored_items)} items: {', '.join(restored_items)}"
+        except Exception as e:
+            return False, f"Failed to restore stock: {str(e)}"
 
 
 class ProductPaymentLog(models.Model):

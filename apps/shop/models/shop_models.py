@@ -401,6 +401,8 @@ class EventCart(models.Model):
         COMPLETED = "completed", _("Completed")
         EXPIRED = "expired", _("Expired")
         CANCELLED = "cancelled", _("Cancelled")
+        PENDING_REFUND = "pending_refund", _("Pending Refund")
+        REFUNDED = "refunded", _("Refunded")
     
     uuid = models.UUIDField(_("Cart UUID"), default=uuid.uuid4, editable=False, primary_key=True)
     order_reference_id = models.CharField(_("Order ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking order references
@@ -505,12 +507,22 @@ class EventProductOrder(models.Model):
         PENDING = "pending", _("Pending")
         PURCHASED = "purchased", _("Purchased")
         CANCELLED = "cancelled", _("Cancelled")
+        PENDING_REFUND = "pending_refund", _("Pending Refund")
+        REFUNDED = "refunded", _("Refunded")
 
     status = models.CharField(
         _("Order Status"),
-        max_length=10,
+        max_length=20,
         choices=Status.choices,
         default=Status.PENDING
+    )
+    
+    refund_status = models.CharField(
+        _("Refund Status"),
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text=_("Tracks refund state: PENDING, IN_PROGRESS, PROCESSED, CANCELLED, FAILED")
     )
     changeable = models.BooleanField(default=True, help_text=_("Flags if the product order can be changed"))
     
@@ -531,6 +543,9 @@ class EventProductOrder(models.Model):
             if self.product is None or self.product.uuid is None:
                 raise ValueError("Product must be set and saved before saving an order.")
             self.order_reference_id = f"ORD{self.cart.event.event_code}-{str(self.cart.uuid)[:10]}-{str(self.product.uuid)[:10]}"
+        if self.price_at_purchase is None:
+            self.price_at_purchase = self.product.get_price_for_user(self.cart.user)
+            self.price_at_purchase = round(self.price_at_purchase, 2)
         return super().save(force_insert, force_update, using, update_fields)
 
     def __str__(self) -> str:

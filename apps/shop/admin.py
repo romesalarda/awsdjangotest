@@ -88,3 +88,4 @@ class ProductSizeAdmin(admin.ModelAdmin):
     ordering = ("product", "size")
     
 admin.site.register(ProductPaymentLog)
+admin.site.register(OrderRefund)

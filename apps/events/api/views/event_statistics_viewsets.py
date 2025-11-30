@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime
 
 from apps.events.models import Event, EventParticipant, EventPayment
-from apps.shop.models import EventCart, EventProductOrder, ProductPayment, EventProduct, ProductPaymentMethod
+from apps.shop.models import EventCart, EventProductOrder, ProductPayment, EventProduct, ProductPaymentMethod, OrderRefund
 
 
 class EventStatisticsViewSet(viewsets.ViewSet):
@@ -704,6 +704,166 @@ class EventStatisticsViewSet(viewsets.ViewSet):
         except Exception as e:
             import traceback
             print(f"Error in merch_orders: {str(e)}")
+            print(traceback.format_exc())
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'], url_path='merch-refund-statistics')
+    def merch_refund_statistics(self, request, pk=None):
+        """
+        Get comprehensive refund statistics for the event
+        Returns:
+        - Total refund amount and count
+        - Refund status breakdown
+        - Refund reasons breakdown
+        - Item-level refund statistics
+        - Timeline of refunds
+        """
+        try:
+            event = Event.objects.get(id=pk)
+            
+            # Get all refunds for this event
+            refunds = OrderRefund.objects.filter(event=event).select_related(
+                'cart', 'payment', 'user'
+            )
+            
+            # Overall statistics
+            total_refunds = refunds.count()
+            total_refund_amount = refunds.aggregate(total=Sum('refund_amount'))['total'] or 0
+            
+            # Status breakdown
+            status_breakdown = {}
+            for status_choice in OrderRefund.RefundStatus.choices:
+                status_code = status_choice[0]
+                status_display = status_choice[1]
+                count = refunds.filter(status=status_code).count()
+                amount = refunds.filter(status=status_code).aggregate(total=Sum('refund_amount'))['total'] or 0
+                status_breakdown[status_code] = {
+                    'display': status_display,
+                    'count': count,
+                    'total_amount': float(amount)
+                }
+            
+            # Refund reasons breakdown
+            reason_breakdown = {}
+            for reason_choice in OrderRefund.RefundReason.choices:
+                reason_code = reason_choice[0]
+                reason_display = reason_choice[1]
+                count = refunds.filter(refund_reason=reason_code).count()
+                amount = refunds.filter(refund_reason=reason_code).aggregate(total=Sum('refund_amount'))['total'] or 0
+                if count > 0:  # Only include reasons that have been used
+                    reason_breakdown[reason_code] = {
+                        'display': reason_display,
+                        'count': count,
+                        'total_amount': float(amount)
+                    }
+            
+            # Automatic vs Manual refunds
+            automatic_count = refunds.filter(is_automatic_refund=True).count()
+            manual_count = refunds.filter(is_automatic_refund=False).count()
+            automatic_amount = refunds.filter(is_automatic_refund=True).aggregate(total=Sum('refund_amount'))['total'] or 0
+            manual_amount = refunds.filter(is_automatic_refund=False).aggregate(total=Sum('refund_amount'))['total'] or 0
+            
+            # Item-level statistics (products that were refunded)
+            refunded_cart_ids = refunds.values_list('cart_id', flat=True)
+            refunded_orders = EventProductOrder.objects.filter(
+                cart__uuid__in=refunded_cart_ids,
+                status='refunded'
+            ).select_related('product', 'size')
+            
+            # Group by product
+            product_refunds = {}
+            for order in refunded_orders:
+                product_id = str(order.product.uuid)
+                if product_id not in product_refunds:
+                    product_refunds[product_id] = {
+                        'product_name': order.product.title,
+                        'product_id': product_id,
+                        'total_quantity': 0,
+                        'total_value': 0,
+                        'sizes': {}
+                    }
+                
+                product_refunds[product_id]['total_quantity'] += order.quantity
+                product_refunds[product_id]['total_value'] += float(order.price_at_purchase * order.quantity)
+                
+                # Track sizes
+                if order.size:
+                    size_name = order.size.size
+                    if size_name not in product_refunds[product_id]['sizes']:
+                        product_refunds[product_id]['sizes'][size_name] = 0
+                    product_refunds[product_id]['sizes'][size_name] += order.quantity
+            
+            # Timeline of refunds (last 30 days, grouped by day)
+            from datetime import datetime, timedelta
+            today = datetime.now().date()
+            thirty_days_ago = today - timedelta(days=30)
+            
+            daily_refunds = refunds.filter(
+                created_at__date__gte=thirty_days_ago
+            ).annotate(
+                refund_date=TruncDate('created_at')
+            ).values('refund_date').annotate(
+                count=Count('id'),
+                total_amount=Sum('refund_amount')
+            ).order_by('refund_date')
+            
+            timeline = []
+            for day_data in daily_refunds:
+                timeline.append({
+                    'date': day_data['refund_date'].strftime('%Y-%m-%d'),
+                    'count': day_data['count'],
+                    'total_amount': float(day_data['total_amount'])
+                })
+            
+            # Recent refunds (last 10)
+            recent_refunds = refunds.order_by('-created_at')[:10].values(
+                'id', 'refund_reference', 'refund_amount', 'status',
+                'refund_reason', 'created_at', 'processed_at',
+                'cart__order_reference_id', 'user__member_id'
+            )
+            
+            recent_refunds_list = []
+            for refund in recent_refunds:
+                recent_refunds_list.append({
+                    'id': refund['id'],
+                    'refund_reference': refund['refund_reference'],
+                    'amount': float(refund['refund_amount']),
+                    'status': refund['status'],
+                    'reason': refund['refund_reason'],
+                    'created_at': refund['created_at'],
+                    'processed_at': refund['processed_at'],
+                    'cart_reference': refund['cart__order_reference_id'],
+                    'user_member_id': refund['user__member_id']
+                })
+            
+            return Response({
+                'event_id': str(event.id),
+                'event_name': event.name,
+                'event_code': event.event_code,
+                'summary': {
+                    'total_refunds': total_refunds,
+                    'total_refund_amount': float(total_refund_amount),
+                    'automatic_refunds': {
+                        'count': automatic_count,
+                        'total_amount': float(automatic_amount)
+                    },
+                    'manual_refunds': {
+                        'count': manual_count,
+                        'total_amount': float(manual_amount)
+                    }
+                },
+                'status_breakdown': status_breakdown,
+                'reason_breakdown': reason_breakdown,
+                'product_refunds': list(product_refunds.values()),
+                'timeline': timeline,
+                'recent_refunds': recent_refunds_list
+            })
+            
+        except Event.DoesNotExist:
+            return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            import traceback
+            print(f"Error in merch_refund_statistics: {str(e)}")
             print(traceback.format_exc())
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

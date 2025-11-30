@@ -398,3 +398,211 @@ def send_cart_created_by_admin_email(cart):
         import traceback
         print(f"❌ Full traceback: {traceback.format_exc()}")
         return False
+
+
+def send_order_refund_created_email(refund):
+    """
+    Send email notification when an order refund is created.
+    
+    Args:
+        refund (OrderRefund): The refund instance
+    
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+    try:
+        # Get customer email
+        recipient_email = refund.customer_email or (refund.user.primary_email if refund.user else None)
+        if not recipient_email:
+            print(f"⚠️ No email address for refund {refund.refund_reference}")
+            return False
+        
+        # Extract cart order items
+        order_items = []
+        if refund.cart:
+            orders = refund.cart.orders.select_related('product', 'size').all()
+            for order in orders:
+                product = order.product
+                order_items.append({
+                    'product_name': product.title if product else 'Unknown',
+                    'quantity': order.quantity,
+                    'size': order.size.size if order.size else None,
+                    'price': float(order.price_at_purchase) if order.price_at_purchase else 0,
+                })
+        
+        # Prepare context with extracted data
+        context = {
+            'customer_name': refund.customer_name,
+            'refund_amount': float(refund.refund_amount),
+            'refund_reference': refund.refund_reference,
+            'is_automatic': refund.is_automatic_refund,
+            'refund_reason': refund.get_refund_reason_display(),
+            'reason_details': refund.reason_details,
+            'refund_contact_email': refund.refund_contact_email,
+            'order_reference': refund.cart.order_reference_id if refund.cart else 'N/A',
+            'event_name': refund.event.name if refund.event else 'Event',
+            'order_items': order_items,
+            'created_at': refund.created_at,
+        }
+        
+        # Render email templates
+        subject = f"Refund Request Created - {refund.refund_reference}"
+        html_message = render_to_string('emails/order_refund_created.html', context)
+        plain_message = strip_tags(html_message)
+        
+        # Send email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[recipient_email]
+        )
+        email.attach_alternative(html_message, "text/html")
+        email.send()
+        
+        print(f"📧 Order refund created email sent to {recipient_email} for {refund.refund_reference}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send order refund created email: {e}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        return False
+
+
+def send_order_refund_processed_email(refund):
+    """
+    Send email notification when an order refund is processed/completed.
+    
+    Args:
+        refund (OrderRefund): The refund instance
+    
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+    try:
+        # Get customer email
+        recipient_email = refund.customer_email or (refund.user.primary_email if refund.user else None)
+        if not recipient_email:
+            print(f"⚠️ No email address for refund {refund.refund_reference}")
+            return False
+        
+        # Extract cart order items
+        order_items = []
+        if refund.cart:
+            orders = refund.cart.orders.select_related('product', 'size').all()
+            for order in orders:
+                product = order.product
+                order_items.append({
+                    'product_name': product.title if product else 'Unknown',
+                    'quantity': order.quantity,
+                    'size': order.size.size if order.size else None,
+                    'price': float(order.price_at_purchase) if order.price_at_purchase else 0,
+                })
+        
+        # Prepare context with extracted data
+        context = {
+            'customer_name': refund.customer_name,
+            'refund_amount': float(refund.refund_amount),
+            'refund_reference': refund.refund_reference,
+            'is_automatic': refund.is_automatic_refund,
+            'refund_method': refund.refund_method or ('Stripe' if refund.is_automatic_refund else 'Manual'),
+            'processed_at': refund.processed_at,
+            'processing_notes': refund.processing_notes,
+            'refund_contact_email': refund.refund_contact_email or (refund.event.secretariat_email if refund.event else settings.DEFAULT_FROM_EMAIL),
+            'order_reference': refund.cart.order_reference_id if refund.cart else 'N/A',
+            'event_name': refund.event.name if refund.event else 'Event',
+            'order_items': order_items,
+        }
+        
+        # Render email templates
+        subject = f"Refund Processed - {refund.refund_reference}"
+        html_message = render_to_string('emails/order_refund_processed.html', context)
+        plain_message = strip_tags(html_message)
+        
+        # Send email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[recipient_email]
+        )
+        email.attach_alternative(html_message, "text/html")
+        email.send()
+        
+        print(f"📧 Order refund processed email sent to {recipient_email} for {refund.refund_reference}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send order refund processed email: {e}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        return False
+
+
+def send_order_refund_failed_email(refund):
+    """
+    Send email notification when an order refund fails.
+    
+    Args:
+        refund (OrderRefund): The refund instance
+    
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+    try:
+        # Get customer email
+        recipient_email = refund.customer_email or (refund.user.primary_email if refund.user else None)
+        if not recipient_email:
+            print(f"⚠️ No email address for refund {refund.refund_reference}")
+            return False
+        
+        # Extract cart order items
+        order_items = []
+        if refund.cart:
+            orders = refund.cart.orders.select_related('product', 'size').all()
+            for order in orders:
+                product = order.product
+                order_items.append({
+                    'product_name': product.title if product else 'Unknown',
+                    'quantity': order.quantity,
+                    'size': order.size.size if order.size else None,
+                    'price': float(order.price_at_purchase) if order.price_at_purchase else 0,
+                })
+        
+        # Prepare context with extracted data
+        context = {
+            'customer_name': refund.customer_name,
+            'refund_amount': float(refund.refund_amount),
+            'refund_reference': refund.refund_reference,
+            'failure_reason': refund.stripe_failure_reason or 'Unknown error',
+            'refund_contact_email': refund.refund_contact_email or (refund.event.secretariat_email if refund.event else settings.DEFAULT_FROM_EMAIL),
+            'order_reference': refund.cart.order_reference_id if refund.cart else 'N/A',
+            'event_name': refund.event.name if refund.event else 'Event',
+            'order_items': order_items,
+        }
+        
+        # Render email templates
+        subject = f"Refund Processing Failed - {refund.refund_reference}"
+        html_message = render_to_string('emails/order_refund_failed.html', context)
+        plain_message = strip_tags(html_message)
+        
+        # Send email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[recipient_email]
+        )
+        email.attach_alternative(html_message, "text/html")
+        email.send()
+        
+        print(f"📧 Order refund failed email sent to {recipient_email} for {refund.refund_reference}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send order refund failed email: {e}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        return False
+

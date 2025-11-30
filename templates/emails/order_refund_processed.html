@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Refund Processed - {{ event_name }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .success-box {
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .info-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid #0d6efd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .details-section {
+            margin: 25px 0;
+        }
+        .details-section h2 {
+            color: #28a745;
+            font-size: 18px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #28a745;
+            padding-bottom: 5px;
+        }
+        .detail-row {
+            display: flex;
+            padding: 10px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+            min-width: 150px;
+        }
+        .detail-value {
+            color: #212529;
+        }
+        .product-item {
+            padding: 12px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            border: 1px solid #e9ecef;
+        }
+        .product-item strong {
+            color: #212529;
+        }
+        .reference-box {
+            background-color: #f8f9fa;
+            border: 2px solid #28a745;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .reference-number {
+            font-size: 20px;
+            font-weight: bold;
+            color: #28a745;
+            font-family: 'Courier New', monospace;
+        }
+        .contact-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid #0d6efd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .contact-box strong {
+            color: #0d6efd;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 14px;
+            border-top: 1px solid #e9ecef;
+        }
+        .amount-highlight {
+            font-size: 24px;
+            font-weight: bold;
+            color: #28a745;
+            text-align: center;
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #d4edda;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ Refund Processed</h1>
+        </div>
+
+        <div class="content">
+            <p>Dear {{ customer_name }},</p>
+            
+            <div class="success-box">
+                <p style="margin: 0;"><strong>🎉 Great news! Your refund has been successfully processed.</strong></p>
+            </div>
+
+            <p>We are pleased to confirm that your refund for your order from <strong>{{ event_name }}</strong> has been completed.</p>
+
+            <div class="reference-box">
+                <p style="margin: 0 0 5px 0; font-size: 14px; color: #6c757d;">Refund Reference Number</p>
+                <p class="reference-number">{{ refund_reference }}</p>
+            </div>
+
+            <div class="details-section">
+                <h2>💰 Refund Summary</h2>
+                <div class="detail-row">
+                    <div class="detail-label">Order Reference:</div>
+                    <div class="detail-value"><strong>{{ order_reference }}</strong></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Event:</div>
+                    <div class="detail-value">{{ event_name }}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Refund Method:</div>
+                    <div class="detail-value">{{ refund_method }}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Processed Date:</div>
+                    <div class="detail-value">{{ processed_at|date:"F d, Y at g:i A" }}</div>
+                </div>
+            </div>
+
+            <div class="amount-highlight">
+                Refunded Amount: £{{ refund_amount|floatformat:2 }}
+            </div>
+
+            {% if order_items %}
+            <div class="details-section">
+                <h2>🛍️ Refunded Items</h2>
+                {% for item in order_items %}
+                <div class="product-item">
+                    <strong>{{ item.product_name }}</strong>
+                    {% if item.size %} - Size: {{ item.size }}{% endif %}
+                    <br>
+                    <small style="color: #6c757d;">Quantity: {{ item.quantity }} × £{{ item.price|floatformat:2 }}</small>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if processing_notes %}
+            <div class="info-box">
+                <p><strong>📝 Processing Notes:</strong></p>
+                <p style="margin: 5px 0 0 0;">{{ processing_notes }}</p>
+            </div>
+            {% endif %}
+
+            <div class="info-box">
+                <p><strong>⏱️ When will I receive my refund?</strong></p>
+                <p style="margin: 5px 0 0 0;">Depending on your payment method, refunds typically appear in your account within:</p>
+                <ul style="margin: 10px 0;">
+                    {% if is_automatic %}
+                    <li>Card payments: 5-10 business days</li>
+                    <li>Bank account: 2-5 business days</li>
+                    {% else %}
+                    <li>Bank transfers: 2-5 business days</li>
+                    <li>Cash refunds: Already processed</li>
+                    {% endif %}
+                </ul>
+                <p style="margin: 10px 0 0 0;">Please allow this time for the funds to appear in your account. If you don't see the refund after this period, please contact us.</p>
+            </div>
+
+            <div class="contact-box">
+                <p><strong>📧 Questions about your refund?</strong></p>
+                <p>If you have any questions or concerns, please contact us at:</p>
+                <p><a href="mailto:{{ refund_contact_email }}" style="color: #0d6efd; text-decoration: none; font-weight: 600;">{{ refund_contact_email }}</a></p>
+                <p style="margin-top: 10px; font-size: 14px; color: #495057;">Please include your refund reference number (<strong>{{ refund_reference }}</strong>) in your email.</p>
+            </div>
+
+            <p style="margin-top: 30px;">Thank you for your patience during the refund process. We hope to see you at future events!</p>
+
+            <p style="margin-top: 30px;">
+                Best regards,<br>
+                <strong>{{ event_name }} Team</strong>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p>&copy; Community Events Management System. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
