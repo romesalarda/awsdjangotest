@@ -303,6 +303,8 @@ class EventPayment(models.Model):
         PENDING = "PENDING", _("Pending")
         SUCCEEDED = "SUCCEEDED", _("Succeeded")
         FAILED = "FAILED", _("Failed")
+        REFUND_PROCESSING = "REFUND_PROCESSING", _("Refund Processing")
+        REFUNDED = "REFUNDED", _("Refunded")
 
     user = models.ForeignKey(EventParticipant, on_delete=models.SET_NULL, related_name="participant_event_payments", null=True)
     event = models.ForeignKey("Event", on_delete=models.SET_NULL, null=True, blank=True, related_name="event_payments")

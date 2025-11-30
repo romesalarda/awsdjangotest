@@ -119,6 +119,8 @@ class ProductPayment(models.Model):
         PENDING = "PENDING", _("Pending")
         SUCCEEDED = "SUCCEEDED", _("Succeeded")
         FAILED = "FAILED", _("Failed")
+        REFUND_PROCESSING = "REFUND_PROCESSING", _("Refund Processing")
+        REFUNDED = "REFUNDED", _("Refunded")
 
     payment_reference_id = models.CharField(_("Payment ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking payment references
     bank_reference = models.CharField(_("Bank Transfer Reference"), max_length=18, unique=True, blank=True, null=True) # short reference for bank transfers

@@ -617,6 +617,8 @@ class EventStatisticsViewSet(viewsets.ViewSet):
         Returns list of orders with cart, payment, and participant information
         """
         try:
+            from apps.shop.api.serializers import EventCartSerializer
+            
             event = Event.objects.get(id=pk)
             
             # Get all carts for this event with related data
@@ -630,72 +632,56 @@ class EventStatisticsViewSet(viewsets.ViewSet):
                 'product_payments__method'
             ).order_by('-created')
             
-            orders_data = []
+            # Serialize carts using the proper serializer
+            serializer = EventCartSerializer(carts, many=True, context={'request': request})
+            carts_data = serializer.data
             
-            for cart in carts:
+            # Enhance with participant information
+            orders_data = []
+            for i, cart in enumerate(carts):
+                cart_data = carts_data[i]
+                
                 # Get participant information
                 participant = EventParticipant.objects.filter(
                     event=event,
                     user=cart.user
                 ).first()
-                                
-                # Get all product orders in this cart
-                cart_orders = cart.orders.all()
                 
                 # Get payment info
                 payments = cart.product_payments.all()
-                payment_status = 'pending'
+                payment_status = cart.cart_status
                 payment_method = None
                 total_paid = 0
                 
                 for payment in payments:
                     if payment.approved and payment.status == ProductPayment.PaymentStatus.SUCCEEDED:
-                        payment_status = 'paid'
                         total_paid += float(payment.amount or 0)
+                   
+                    
                     if payment.method:
                         payment_method = payment.method.get_method_display()
                 
-                # Build items list
-                items = []
-                for order in cart_orders:
-                    items.append({
-                        'id': order.id,
-                        'product_name': order.product.title,
-                        'product_id': str(order.product.uuid),
-                        'quantity': order.quantity,
-                        'size': order.size.size if order.size else None,
-                        'price': float(order.price_at_purchase or order.product.price),
-                        'total': float(order.price_at_purchase or order.product.price) * order.quantity,
-                        'status': order.status
-                    })
-                
-                orders_data.append({
-                    'cart_id': str(cart.uuid),
-                    'order_reference_id': cart.order_reference_id,
+                # Enhance cart data with participant and payment info
+                enhanced_cart = {
+                    **cart_data,
                     'participant_id': participant.id if participant else None,
                     'participant_pax_id': participant.event_pax_id if participant else None,
                     'participant_name': f"{cart.user.first_name} {cart.user.last_name}",
-                    'participant_email': cart.user.primary_email,
                     'participant_member_id': cart.user.member_id,
                     'area_from': cart.user.area_from.area_name if cart.user.area_from else 'Unknown',
-                    'order_date': cart.created.isoformat(),
-                    'status': payment_status,
-                    'submitted': cart.submitted,
-                    'approved': cart.approved,
-                    'items': items,
-                    'total': float(cart.total),
-                    'shipping_cost': float(cart.shipping_cost),
+                    'payment_status': payment_status,
                     'payment_method': payment_method,
-                    'notes': cart.notes,
-                    'created_via_admin': cart.created_via_admin
-                })
+                    'total_paid': total_paid
+                }
+                
+                orders_data.append(enhanced_cart)
             
             return Response({
                 'orders': orders_data,
                 'summary': {
                     'total_orders': len(orders_data),
                     'total_carts': carts.count(),
-                    'total_revenue': sum(order['total'] for order in orders_data)
+                    'total_revenue': sum(float(order['total']) for order in orders_data)
                 }
             })
             

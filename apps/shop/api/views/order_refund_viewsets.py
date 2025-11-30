@@ -208,7 +208,8 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
         if payment and payment.stripe_payment_intent and payment.method:
             is_automatic = payment.method.supports_automatic_refunds
             stripe_payment_intent = payment.stripe_payment_intent
-        
+        payment.status = ProductPayment.PaymentStatus.REFUND_PROCESSING    
+        payment.save()
         # Prepare refund data
         refund_data = {
             'cart': cart.uuid,
@@ -279,7 +280,7 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
         
         # Permission check
         if refund.event:
-            if not has_event_permission(request.user, refund.event.id, 'can_approve_merch_payments'):
+            if not has_event_permission(request.user, refund.event, 'can_approve_merch_payments'):
                 return Response(
                     {'error': 'You do not have permission to process refunds for this event'},
                     status=status.HTTP_403_FORBIDDEN
@@ -289,6 +290,14 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
             data=request.data,
             context={'refund': refund, 'request': request, 'action': 'process'}
         )
+        payment = refund.payment
+        if payment.status != ProductPayment.PaymentStatus.REFUND_PROCESSING:
+            return Response(
+                {'error': 'Payment is not in a state that allows processing refund'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        payment.status = ProductPayment.PaymentStatus.REFUNDED
+        payment.save()
         serializer.is_valid(raise_exception=True)
         refund = serializer.save()
         
