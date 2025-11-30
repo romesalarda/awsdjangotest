@@ -165,6 +165,7 @@ class ProductPayment(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    notes = models.TextField(blank=True, null=True, help_text=_("Internal notes about the payment"))
 
     class Meta:
         verbose_name = _("Product Payment")

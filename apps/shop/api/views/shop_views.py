@@ -874,6 +874,94 @@ class EventCartViewSet(viewsets.ModelViewSet):
         serialized = self.get_serializer(cart)
         return Response({"status": "cart cleared", "cart": serialized.data}, status=200)
     
+    @action(detail=True, methods=['post'], url_name='cancel', url_path='cancel')
+    def cancel_cart(self, request, *args, **kwargs):
+        '''
+        Cancel an unpaid cart. Marks cart and all orders as CANCELLED and restores stock.
+        Only works for carts that haven't been paid/verified.
+        Requires permission to manage merchandise.
+        '''
+        cart: EventCart = self.get_object()
+        user = request.user
+        
+        # Import permission utilities
+        from core.event_permissions import has_event_permission
+        
+        # Security check: User must have merchandise management permission
+        if not has_event_permission(user, cart.event, 'can_manage_merch'):
+            raise exceptions.PermissionDenied(
+                "You do not have permission to cancel orders for this event."
+            )
+        
+        # Check if cart has been paid/verified
+        paid_payment = ProductPayment.objects.filter(
+            cart=cart,
+            status__in=[ProductPayment.PaymentStatus.SUCCEEDED]
+        ).first()
+        
+        if paid_payment:
+            raise serializers.ValidationError(
+                "Cannot cancel a paid order. Please initiate a refund instead using the refund system."
+            )
+        
+        # Check if cart is already cancelled or refunded
+        if cart.cart_status in [EventCart.CartStatus.CANCELLED, EventCart.CartStatus.REFUNDED]:
+            raise serializers.ValidationError(
+                f"This cart is already {cart.get_cart_status_display().lower()}."
+            )
+        
+        # Get cancellation reason from request
+        cancellation_reason = request.data.get('reason', 'Cancelled by admin')
+        
+        with transaction.atomic():
+            # Restore stock for all orders
+            restored_items = []
+            for order in cart.orders.all():
+                product = order.product
+                
+                # Restore stock if tracking is enabled (stock > 0)
+                if product.stock > 0:
+                    product.increment_stock(order.quantity)
+                    restored_items.append({
+                        'product': product.title,
+                        'quantity': order.quantity,
+                        'stock_restored': True
+                    })
+                else:
+                    restored_items.append({
+                        'product': product.title,
+                        'quantity': order.quantity,
+                        'stock_restored': False
+                    })
+                
+                # Update order status
+                order.status = EventProductOrder.Status.CANCELLED
+                order.admin_notes = f"Cancelled: {cancellation_reason}"
+                order.save()
+            
+            # Update cart status
+            cart.cart_status = EventCart.CartStatus.CANCELLED
+            cart.active = False
+            cart.notes = f"{cart.notes or ''}\n\nCANCELLED: {cancellation_reason} (by {user.primary_email})".strip()
+            cart.save(force_update=True)
+            
+            # Mark any pending payments as cancelled
+            ProductPayment.objects.filter(
+                cart=cart,
+                status=ProductPayment.PaymentStatus.PENDING
+            ).update(
+                status=ProductPayment.PaymentStatus.FAILED,
+                notes=f"Cancelled with cart: {cancellation_reason}"
+            )
+        
+        serialized = self.get_serializer(cart)
+        return Response({
+            "status": "cart cancelled",
+            "cart": serialized.data,
+            "restored_items": restored_items,
+            "message": f"Cart {cart.order_reference_id} has been cancelled and stock has been restored."
+        }, status=200)
+    
     @action(detail=True, methods=['get'], url_name='payment-methods', url_path='payment-methods')
     def get_payment_methods(self, request, *args, **kwargs):
         '''

@@ -66,7 +66,7 @@ class EventProductOrderInline(admin.StackedInline):
 
 @admin.register(EventCart)
 class EventCartAdmin(admin.ModelAdmin):
-    list_display = ("order_reference_id", "user", "event", "total", "shipping_cost", "approved", "submitted", "active", "created", "updated")
+    list_display = ("order_reference_id", "user", "event", "total", "shipping_cost", "approved", "submitted", "active", "cart_status")
     list_filter = ("approved", "submitted", "active", "event")
     search_fields = ("user__email", "event__name", "notes", "shipping_address")
     ordering = ("-created",)

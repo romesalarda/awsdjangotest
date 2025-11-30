@@ -262,7 +262,7 @@ class EventProductSerializer(serializers.ModelSerializer):
             "image_uploads", "size_list", "category_ids", "material_ids",
             # Service team discount fields
             "discount_for_service_team", "service_team_discount_type", "service_team_discount_value",
-            "has_service_team_discount", "user_specific_price", "discount_info"
+            "has_service_team_discount", "user_specific_price", "discount_info",
         ]
         read_only_fields = [
             "seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes", 
@@ -677,6 +677,7 @@ class EventCartSerializer(serializers.ModelSerializer):
     orders = EventProductOrderSerializer(many=True, read_only=True)
     bank_reference = serializers.SerializerMethodField()
     active_refund = serializers.SerializerMethodField()
+    payment_method = serializers.SerializerMethodField()
     
     # Write-only fields for creating orders
     product_orders = serializers.ListField(
@@ -692,6 +693,13 @@ class EventCartSerializer(serializers.ModelSerializer):
         if not payment:
             return None
         return payment.bank_reference
+    
+    def get_payment_method(self, obj):
+        # get associated payment model
+        payment = obj.product_payments.first()
+        if not payment:
+            return None
+        return payment.method.method
     
     def get_active_refund(self, obj):
         """Get active refund information for this cart"""
@@ -721,9 +729,9 @@ class EventCartSerializer(serializers.ModelSerializer):
         fields = [
             "uuid", "user", "user_email", "event", "event_name", "order_reference_id",
             "total", "shipping_cost", "created", "updated", "approved", "submitted", 
-            "active", "cart_status", "locked_at", "lock_expires_at",  # New cart locking fields
+            "active", "cart_status", "locked_at", "lock_expires_at", # New cart locking fields
             "notes", "shipping_address", "orders", "product_orders", "bank_reference", "created_via_admin",
-            "active_refund"  # Refund information
+            "active_refund", "payment_method"  # Refund information
         ]
         
         read_only_fields = ["uuid", "user", "user_email", "event_name", "order_reference_id", "created", "updated", 

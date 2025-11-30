@@ -474,7 +474,7 @@ class ParticipantRefundAdmin(admin.ModelAdmin):
         'event_name', 
         'total_refund_amount', 
         'status', 
-        'days_pending_display',
+        # 'days_pending_display',
         'created_at'
     )
     list_filter = ('status', 'created_at', 'processed_at')
@@ -490,7 +490,7 @@ class ParticipantRefundAdmin(admin.ModelAdmin):
         'refund_reference',
         'created_at', 
         'updated_at', 
-        'days_pending_display',
+        # 'days_pending_display',
         'removed_by',
         'processed_by'
     )
@@ -515,7 +515,7 @@ class ParticipantRefundAdmin(admin.ModelAdmin):
             'fields': ('removal_reason_details', 'removed_by', 'created_at')
         }),
         ('Processing Details', {
-            'fields': ('processing_notes', 'processed_by', 'processed_at', 'days_pending_display'),
+            'fields': ('processing_notes', 'processed_by', 'processed_at'),
             'classes': ('collapse',)
         }),
         ('Timestamps', {
@@ -538,19 +538,19 @@ class ParticipantRefundAdmin(admin.ModelAdmin):
     event_name.short_description = 'Event'
     event_name.admin_order_field = 'event__name'
     
-    def days_pending_display(self, obj):
-        if obj.status == 'PROCESSED':
-            return 'Completed'
-        days = obj.days_pending
-        if days <= 2:
-            color = 'green'
-        elif days <= 7:
-            color = 'orange'
-        else:
-            color = 'red'
-        return f'<span style="color: {color}; font-weight: bold;">{days} days</span>'
-    days_pending_display.short_description = 'Days Pending'
-    days_pending_display.allow_tags = True
+    # def days_pending_display(self, obj):
+    #     if obj.status == 'PROCESSED':
+    #         return 'Completed'
+    #     days = obj.days_pending
+    #     if days <= 2:
+    #         color = 'green'
+    #     elif days <= 7:
+    #         color = 'orange'
+    #     else:
+    #         color = 'red'
+    #     return f'<span style="color: {color}; font-weight: bold;">{days} days</span>'
+    # days_pending_display.short_description = 'Days Pending'
+    # days_pending_display.allow_tags = True
     
     def get_queryset(self, request):
         qs = super().get_queryset(request)
