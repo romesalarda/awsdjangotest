@@ -4356,10 +4356,10 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 event_payment_amount=event_payment_total,
                 product_payment_amount=product_payment_total,
                 total_refund_amount=total_amount,
-                removal_reason=reason,
+                refund_reason=reason,
                 removed_by=request.user,
                 participant_email=participant.user.primary_email,
-                organizer_contact_email=organizer_contact_email,
+                refund_contact_email=organizer_contact_email,
                 original_payment_method=event_payments.first().method.get_method_display() if event_payments.exists() and event_payments.first().method else None,
                 status=ParticipantRefund.RefundStatus.PENDING
             )
