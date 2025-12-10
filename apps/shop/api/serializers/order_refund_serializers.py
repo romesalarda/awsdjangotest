@@ -5,7 +5,7 @@ Supports both automatic (Stripe) and manual (bank transfer) refunds.
 """
 from rest_framework import serializers
 from apps.shop.models import OrderRefund, EventCart, ProductPayment, EventProduct, EventProductOrder
-from apps.users.api.serializers import CommunityUserSerializer
+from apps.users.api.serializers import CommunityUserSerializer, SimplifiedCommunityUserSerializer
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from decimal import Decimal
@@ -273,6 +273,27 @@ class OrderRefundDetailSerializer(serializers.ModelSerializer):
         
         return timeline
 
+class SimpleOrderRefundSerializer(serializers.ModelSerializer):
+    """Simple serializer for basic refund info"""
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    refund_reason_display = serializers.CharField(source='get_refund_reason_display', read_only=True)
+    user = SimplifiedCommunityUserSerializer(read_only=True)
+    class Meta:
+        model = OrderRefund
+        fields = [
+            'id',
+            'refund_reference',
+            'refund_amount',
+            'currency',
+            'status',
+            'status_display',
+            'refund_reason',
+            'refund_reason_display',
+            'is_automatic_refund',
+            'created_at',
+            'original_payment_method',
+            'user',
+        ]
 
 class CreateOrderRefundSerializer(serializers.ModelSerializer):
     """

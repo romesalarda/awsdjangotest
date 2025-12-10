@@ -116,11 +116,12 @@ class ProductPayment(models.Model):
     Tracks a user's payment for products in a cart.
     """
     class PaymentStatus(models.TextChoices):
-        PENDING = "PENDING", _("Pending")
-        SUCCEEDED = "SUCCEEDED", _("Succeeded")
-        FAILED = "FAILED", _("Failed")
-        REFUND_PROCESSING = "REFUND_PROCESSING", _("Refund Processing")
-        REFUNDED = "REFUNDED", _("Refunded")
+        PENDING = "PENDING", _("Pending") # when payment is initiated but not completed
+        SUCCEEDED = "SUCCEEDED", _("Succeeded") # when payment is completed successfully
+        FAILED = "FAILED", _("Failed") # when payment attempt fails due to technical/payment issues
+        REFUND_PROCESSING = "REFUND_PROCESSING", _("Refund Processing") # when refund is initiated but not completed, happens when a payment is completed
+        REFUNDED = "REFUNDED", _("Refunded") # when refund is completed
+        CANCELLED = "CANCELLED", _("Cancelled") # if payment is voided before completion
 
     payment_reference_id = models.CharField(_("Payment ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking payment references
     bank_reference = models.CharField(_("Bank Transfer Reference"), max_length=18, unique=True, blank=True, null=True) # short reference for bank transfers

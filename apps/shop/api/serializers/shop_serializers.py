@@ -704,22 +704,29 @@ class EventCartSerializer(serializers.ModelSerializer):
     def get_active_refund(self, obj):
         """Get active refund information for this cart"""
         from apps.shop.models import OrderRefund
-        active_refund = obj.refunds.filter(
+        from apps.shop.api.serializers.order_refund_serializers import SimpleOrderRefundSerializer
+        
+        active_refund: OrderRefund = obj.refunds.filter(
             status__in=['PENDING', 'IN_PROGRESS']
         ).first()
         
         if active_refund:
-            return {
-                'id': active_refund.id,
-                'refund_reference': active_refund.refund_reference,
-                'status': active_refund.status,
-                'status_display': active_refund.get_status_display(),
-                'refund_amount': float(active_refund.refund_amount),
-                'refund_reason': active_refund.refund_reason,
-                'refund_reason_display': active_refund.get_refund_reason_display(),
-                'is_automatic_refund': active_refund.is_automatic_refund,
-                'created_at': active_refund.created_at
-            }
+            # return {
+            #     'id': active_refund.id,
+            #     'refund_reference': active_refund.refund_reference,
+            #     'status': active_refund.status,
+            #     'status_display': active_refund.get_status_display(),
+            #     'refund_amount': float(active_refund.refund_amount),
+            #     'refund_reason': active_refund.refund_reason,
+            #     'refund_reason_display': active_refund.get_refund_reason_display(),
+            #     'is_automatic_refund': active_refund.is_automatic_refund,
+            #     'created_at': active_refund.created_at,
+                
+            # }
+            
+            return SimpleOrderRefundSerializer(active_refund).data
+            
+            
         return None
             
             

@@ -945,13 +945,21 @@ class EventCartViewSet(viewsets.ModelViewSet):
             cart.notes = f"{cart.notes or ''}\n\nCANCELLED: {cancellation_reason} (by {user.primary_email})".strip()
             cart.save(force_update=True)
             
-            # Mark any pending payments as cancelled
+            # Mark any pending payments as cancelled and any succeeded as pending refund
             ProductPayment.objects.filter(
                 cart=cart,
                 status=ProductPayment.PaymentStatus.PENDING
             ).update(
-                status=ProductPayment.PaymentStatus.FAILED,
+                status=ProductPayment.PaymentStatus.CANCELLED,
                 notes=f"Cancelled with cart: {cancellation_reason}"
+            )
+            
+            ProductPayment.objects.filter(
+                cart=cart,
+                status=ProductPayment.PaymentStatus.SUCCEEDED
+            ).update(
+                status=ProductPayment.PaymentStatus.REFUND_PROCESSING,
+                notes=f"Refunded due to cart cancellation: {cancellation_reason}"
             )
         
         serialized = self.get_serializer(cart)
