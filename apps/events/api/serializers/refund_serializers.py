@@ -160,9 +160,6 @@ class ParticipantRefundDetailSerializer(serializers.ModelSerializer):
             'refund_method',
             'stripe_refund_id',
             'stripe_failure_reason',
-            'bank_account_name',
-            'bank_account_number',
-            'bank_sort_code',
             'participant_notified',
             'secretariat_notified',
             'created_at',
@@ -282,10 +279,7 @@ class ProcessRefundSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Method used to process the refund (e.g., 'Bank Transfer', 'PayPal')"
     )
-    bank_account_name = serializers.CharField(required=False, allow_blank=True)
-    bank_account_number = serializers.CharField(required=False, allow_blank=True)
-    bank_sort_code = serializers.CharField(required=False, allow_blank=True)
-    
+        
     def validate(self, data):
         """Ensure refund can be processed"""
         refund = self.context.get('refund')
@@ -327,13 +321,6 @@ class ProcessRefundSerializer(serializers.Serializer):
         if self.validated_data.get('refund_method'):
             refund.refund_method = self.validated_data['refund_method']
         
-        if self.validated_data.get('bank_account_name'):
-            refund.bank_account_name = self.validated_data['bank_account_name']
-        if self.validated_data.get('bank_account_number'):
-            refund.bank_account_number = self.validated_data['bank_account_number']
-        if self.validated_data.get('bank_sort_code'):
-            refund.bank_sort_code = self.validated_data['bank_sort_code']
-        
         refund.save()
         
         return refund
@@ -363,9 +350,6 @@ class CreateRefundSerializer(serializers.ModelSerializer):
             'refund_contact_email',
             'original_payment_method',
             'is_automatic_refund',
-            'bank_account_name',
-            'bank_account_number',
-            'bank_sort_code'
         ]
         read_only_fields = ['removed_by']
     

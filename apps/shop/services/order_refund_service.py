@@ -45,9 +45,9 @@ class OrderRefundService:
             logger.warning(f"Refund {refund.refund_reference} cannot be processed: {message}")
             return False, message
         
-        if refund.status not in [OrderRefund.RefundStatus.PENDING, OrderRefund.RefundStatus.IN_PROGRESS]:
+        if refund.status not in [OrderRefund.RefundStatus.PENDING]:
             logger.warning(f"Refund {refund.refund_reference} has invalid status: {refund.status}")
-            return False, f"Refund is already {refund.status}"
+            return False, f"Refund status must be PENDING. Current status: {refund.get_status_display()}"
         
         if not refund.is_automatic_refund:
             logger.warning(f"Refund {refund.refund_reference} is not configured for automatic processing")
@@ -56,6 +56,9 @@ class OrderRefundService:
         if not refund.stripe_payment_intent:
             logger.error(f"Refund {refund.refund_reference} missing Stripe payment intent")
             return False, "No Stripe payment intent found for this refund"
+        
+        if not refund.payment or refund.payment.status != ProductPayment.PaymentStatus.REFUND_PROCESSING:
+            return False, "Payment must be in REFUND_PROCESSING status"
         
         try:
             # Update status to processing
@@ -128,7 +131,10 @@ class OrderRefundService:
         
         if refund.status not in [OrderRefund.RefundStatus.PENDING]:
             logger.warning(f"Manual refund {refund.refund_reference} has invalid status: {refund.status}")
-            return False, f"Refund is already {refund.status}"
+            return False, f"Refund status must be PENDING. Current status: {refund.get_status_display()}"
+        
+        if not refund.payment or refund.payment.status != ProductPayment.PaymentStatus.REFUND_PROCESSING:
+            return False, "Payment must be in REFUND_PROCESSING status"
         
         try:
             refund.status = OrderRefund.RefundStatus.IN_PROGRESS
@@ -137,7 +143,7 @@ class OrderRefundService:
             refund.save()
             
             logger.info(f"⏳ Manual refund {refund.refund_reference} marked as in-progress")
-            return True, "Manual refund payment sent. Please verify completion to finalize."
+            return True, "Manual refund initiated. Payment should be sent outside the system. Please verify completion to finalize."
         
         except Exception as e:
             logger.exception(f"❌ Error initiating manual refund {refund.refund_reference}")

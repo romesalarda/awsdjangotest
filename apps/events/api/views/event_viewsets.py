@@ -1815,7 +1815,7 @@ class EventViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        if EventServiceTeamMember.objects.filter(youth_camp=event, user=user).exists():
+        if EventServiceTeamMember.objects.filter(event=event, user=user).exists():
             return Response(
                 {'error': _('User is already a service team member for this event.')},
                 status=status.HTTP_400_BAD_REQUEST
@@ -3387,7 +3387,7 @@ class EventServiceTeamMemberViewSet(viewsets.ModelViewSet):
     queryset = EventServiceTeamMember.objects.all()
     serializer_class = EventServiceTeamMemberSerializer
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['youth_camp', 'user', 'head_of_role']
+    filterset_fields = ['user', 'head_of_role']
 
 class EventRoleViewSet(viewsets.ModelViewSet):
     '''
@@ -3884,6 +3884,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         '''
         Confirm a participant's merchandise order payment for an event.
         Only event organizers/admins can confirm payments.
+        Uses centralized payment completion logic from ProductPayment model.
         '''
         # TODO: ensure only organisers can do this
         data = request.data
@@ -3902,23 +3903,18 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
             )
         product_payment = get_object_or_404(ProductPayment, cart=cart_instance, user=participant.user)
         
-        # Check if already approved
+        # Check if already approved (for email logic)
         already_approved = product_payment.approved
         
-        product_payment.status = ProductPayment.PaymentStatus.SUCCEEDED
-        product_payment.approved = True
-        product_payment.paid_at = timezone.now()
-        product_payment.save()
-        
-        cart_instance.approved = True
-        cart_instance.save()
-        
-        for order in cart_instance.orders.all():
-            order.status = EventProductOrder.Status.PURCHASED
-            order.save()
+        # Use centralized payment completion logic
+        was_completed = product_payment.complete_payment(log_metadata={
+            'source': 'manual_confirmation',
+            'confirmed_by': request.user.username if request.user else None,
+            'participant_id': participant.event_pax_id
+        })
         
         # Send confirmation email in background if newly approved
-        if not already_approved:
+        if not already_approved and was_completed:
             def send_email():
                 try:
                     send_payment_verified_email(cart_instance, product_payment)

@@ -175,8 +175,85 @@ class ProductPayment(models.Model):
         verbose_name_plural = _("Product Payments")
 
     def mark_as_paid(self):
+        """Legacy method - use complete_payment() instead for full workflow."""
         self.status = self.PaymentStatus.SUCCEEDED
         self.save()
+    
+    def complete_payment(self, log_metadata=None):
+        """
+        Centralized payment completion logic used by both webhook and manual confirmation.
+        Ensures consistent behavior across all payment success flows.
+        
+        This method handles:
+        1. Updating payment status to SUCCEEDED
+        2. Marking payment as approved
+        3. Recording payment timestamp
+        4. Updating cart status to COMPLETED
+        5. Updating all order statuses to PURCHASED
+        6. Recording purchase tracking for max purchase enforcement
+        7. Deducting product stock
+        8. Logging the transaction
+        
+        Args:
+            log_metadata: Optional dict of metadata to include in payment log
+            
+        Returns:
+            bool: True if successful, False if already completed
+        """
+        from apps.shop.models.shop_models import ProductPurchaseTracker
+        from apps.shop.models.payments import ProductPaymentLog
+        
+        # Check if already completed (idempotency)
+        if self.status == self.PaymentStatus.SUCCEEDED and self.approved:
+            return False
+        
+        old_status = self.status
+        
+        # 1. Update payment status
+        self.status = self.PaymentStatus.SUCCEEDED
+        self.approved = True
+        self.paid_at = timezone.now()
+        self.save()
+        
+        # 2. Update cart status
+        if self.cart:
+            self.cart.cart_status = EventCart.CartStatus.COMPLETED
+            self.cart.approved = True
+            self.cart.save()
+            
+            # 3. Update order statuses and handle stock/tracking
+            for order in self.cart.orders.all():
+                # Update order status to PURCHASED
+                order.status = EventProductOrder.Status.PURCHASED
+                order.save()
+                
+                # 4. Record purchase tracking for max purchase enforcement
+                ProductPurchaseTracker.record_purchase(
+                    user=self.user,
+                    product=order.product,
+                    quantity=order.quantity
+                )
+                
+                # 5. Deduct stock
+                product = order.product
+                product.stock = max(0, product.stock - order.quantity)
+                product.save()
+        
+        # 6. Log the completion
+        log_notes = "Payment completed successfully"
+        if log_metadata and log_metadata.get('source'):
+            log_notes = f"Payment completed via {log_metadata['source']}"
+        
+        ProductPaymentLog.log_action(
+            payment=self,
+            action='payment_succeeded',
+            old_status=old_status,
+            new_status=self.PaymentStatus.SUCCEEDED,
+            notes=log_notes,
+            metadata=log_metadata or {}
+        )
+        
+        return True
     
     def get_bank_transfer_instructions(self):
         """
@@ -427,26 +504,8 @@ class OrderRefund(models.Model):
         help_text=_("Reason if Stripe refund failed")
     )
     
-    # Bank transfer fields (for manual refunds)
-    bank_account_name = models.CharField(
-        max_length=200,
-        blank=True,
-        null=True,
-        verbose_name=_("bank account name"),
-        help_text=_("Customer's bank account name for manual refunds")
-    )
-    bank_account_number = models.CharField(
-        max_length=50,
-        blank=True,
-        null=True,
-        verbose_name=_("bank account number")
-    )
-    bank_sort_code = models.CharField(
-        max_length=20,
-        blank=True,
-        null=True,
-        verbose_name=_("bank sort code")
-    )
+    # NOTE: Bank account details should NEVER be stored in the database for security reasons.
+    # Manual refunds should be processed outside the system and verified through admin notes.
     
     # Stock restoration tracking
     stock_restored = models.BooleanField(
@@ -506,22 +565,34 @@ class OrderRefund(models.Model):
         return f"{self.refund_reference} - £{self.refund_amount} - {self.get_status_display()}"
     
     def can_process_refund(self):
-        """Check if refund can be processed based on eligibility rules"""
+        """
+        Check if refund can be processed based on eligibility rules.
+        
+        Returns:
+            tuple: (can_process: bool, message: str)
+        """
         from django.utils import timezone
         
+        # Check if refund already processed or cancelled
         if self.status in [self.RefundStatus.PROCESSED, self.RefundStatus.CANCELLED]:
             return False, "Refund already processed or cancelled"
         
-        # Check if event has started (with admin override capability)
+        # CRITICAL: Validate payment exists and is in correct state
+        if not self.payment:
+            return False, "Cannot process refund: No payment record found"
+        
+        # Only allow refunds for SUCCEEDED payments (payment verified and completed)
+        if self.payment.status != ProductPayment.PaymentStatus.SUCCEEDED:
+            return False, f"Cannot process refund: Payment status is '{self.payment.get_status_display()}'. Only succeeded payments can be refunded."
+        
+        # Check if event has started (warning only, admins can override)
         if self.event and self.event.start_date and timezone.now() >= self.event.start_date:
-            # Return warning but don't block - admins can override
             return True, "Warning: Event has started. Admin approval recommended."
         
-        # Check refund deadline (inherit from event)
+        # Check refund deadline (warning only, admins can override)
         if self.event:
             refund_deadline = getattr(self.event, 'refund_deadline', None) or getattr(self.event, 'payment_deadline', None)
             if refund_deadline and timezone.now() > refund_deadline:
-                # Return warning but don't block - admins can override
                 return True, f"Warning: Refund deadline passed ({refund_deadline.strftime('%Y-%m-%d')}). Admin approval required."
         
         return True, "Refund can be processed"

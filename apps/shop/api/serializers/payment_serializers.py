@@ -252,9 +252,14 @@ class ProductPaymentSerializer(serializers.ModelSerializer):
         
         # Handle status changes and approval
         if 'status' in validated_data and validated_data['status'] == ProductPayment.PaymentStatus.SUCCEEDED:
-            if not instance.paid_at:
-                instance.mark_as_paid()
-            validated_data['approved'] = True
+            # Use centralized payment completion logic
+            instance.complete_payment(log_metadata={
+                'source': 'serializer_update',
+                'updated_by': request_user.id if request_user else None
+            })
+            # Remove status from validated_data since complete_payment handles it
+            validated_data.pop('status', None)
+            validated_data.pop('approved', None)  # Also handled by complete_payment
         
         return super().update(instance, validated_data)
 

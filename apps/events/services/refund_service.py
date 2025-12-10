@@ -149,8 +149,6 @@ class RefundService:
             return False, "This refund is configured for automatic processing"
         
         # Validate bank account details
-        if not all([refund.bank_account_name, refund.bank_account_number, refund.bank_sort_code]):
-            return False, "Bank account details are incomplete"
         
         try:
             refund.status = 'processing'

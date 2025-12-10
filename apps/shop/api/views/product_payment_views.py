@@ -113,33 +113,35 @@ class ProductPaymentViewSet(viewsets.ModelViewSet):
             f"Amount: {payment.currency.upper()} {payment.amount}"
         )
         
-        # Update payment status
-        payment.status = ProductPayment.PaymentStatus.SUCCEEDED
-        payment.approved = True
-        payment.mark_as_paid()
-        payment.save()
-        
-        # todo: all orders must be set to approved as well
-        for order in payment.cart.orders.all():
-            order.status = EventProductOrder.Status.PURCHASED
-            order.save()
+        # Use centralized payment completion logic
+        was_completed = payment.complete_payment(log_metadata={
+            'source': 'manual_verification',
+            'verified_by': user.id,
+            'verified_by_email': user.email
+        })
         
         # Audit log after successful verification
-        logger.info(
-            f"AUDIT: Payment {payment.payment_reference_id} successfully verified by {user.email}. "
-            f"Cart {payment.cart.order_reference_id} orders updated to PURCHASED status."
-        )
+        if was_completed:
+            logger.info(
+                f"AUDIT: Payment {payment.payment_reference_id} successfully verified by {user.email}. "
+                f"Cart {payment.cart.order_reference_id} orders updated to PURCHASED status."
+            )
+        else:
+            logger.info(
+                f"AUDIT: Payment {payment.payment_reference_id} already completed, no changes made by {user.email}."
+            )
         
-        # Send confirmation email in background
-        def send_email():
-            try:
-                send_payment_verified_email(payment.cart, payment)
-                print(f"📧 Payment verification email queued for order {payment.cart.order_reference_id}")
-            except Exception as e:
-                print(f"⚠️ Failed to send payment verification email: {e}")
-        
-        email_thread = threading.Thread(target=send_email)
-        email_thread.start()
+        # Send confirmation email in background (only if newly completed)
+        if was_completed:
+            def send_email():
+                try:
+                    send_payment_verified_email(payment.cart, payment)
+                    print(f"📧 Payment verification email queued for order {payment.cart.order_reference_id}")
+                except Exception as e:
+                    print(f"⚠️ Failed to send payment verification email: {e}")
+            
+            email_thread = threading.Thread(target=send_email)
+            email_thread.start()
         
         serializer = self.get_serializer(payment)
         return Response({

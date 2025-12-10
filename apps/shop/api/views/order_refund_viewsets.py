@@ -149,6 +149,96 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
         """Set initiated_by to current user"""
         serializer.save(initiated_by=self.request.user)
     
+    @action(detail=False, methods=['post'], url_name='cancel-order', url_path='cancel-order')
+    def cancel_order(self, request):
+        """
+        Cancel an unpaid order (alternative to refund for PENDING payments).
+        This should be used when payment hasn't been verified/completed yet.
+        
+        Request body:
+        {
+            "cart_id": "uuid",
+            "cancellation_reason": "Customer requested cancellation"
+        }
+        """
+        cart_id = request.data.get('cart_id')
+        if not cart_id:
+            return Response(
+                {'error': 'cart_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            cart = EventCart.objects.select_related('event', 'user').get(uuid=cart_id)
+        except EventCart.DoesNotExist:
+            return Response(
+                {'error': 'Cart not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Permission check
+        if cart.event:
+            if not has_event_permission(request.user, cart.event, 'can_approve_merch_payments'):
+                return Response(
+                    {'error': 'You do not have permission to cancel orders for this event'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
+        # Get payment for this cart
+        payment = ProductPayment.objects.filter(cart=cart).first()
+        
+        # Validate payment is in PENDING state (not yet verified/paid)
+        if not payment:
+            return Response(
+                {'error': 'No payment record found for this cart'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if payment.status != ProductPayment.PaymentStatus.PENDING:
+            return Response(
+                {'error': f'Cannot cancel order with payment status: {payment.get_status_display()}. Use refund for paid orders.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Update payment status to CANCELLED
+            payment.status = ProductPayment.PaymentStatus.CANCELLED
+            payment.notes = f"Cancelled by {request.user.primary_email}: {request.data.get('cancellation_reason', 'No reason provided')}"
+            payment.save()
+            
+            # Update cart status to CANCELLED
+            cart.cart_status = EventCart.CartStatus.CANCELLED
+            cart.save()
+            
+            # Update order items status to CANCELLED
+            from apps.shop.models import EventProductOrder
+            order_items = EventProductOrder.objects.filter(cart=cart)
+            order_items.update(status=EventProductOrder.Status.CANCELLED)
+            
+            # Restore stock for cancelled items
+            for order in order_items:
+                if order.product:
+                    order.product.stock += order.quantity
+                    order.product.save()
+            
+            logger.info(f"✅ Order {cart.order_reference_id} cancelled by {request.user.primary_email}")
+            logger.info(f"Stock restored for {order_items.count()} items")
+            
+            return Response({
+                'message': _('Order cancelled successfully. Stock has been restored.'),
+                'cart_id': str(cart.uuid),
+                'cart_reference': cart.order_reference_id,
+                'payment_status': payment.get_status_display(),
+                'cart_status': cart.get_cart_status_display()
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to cancel order {cart.order_reference_id}: {e}")
+            return Response(
+                {'error': f'Failed to cancel order: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     @action(detail=False, methods=['post'], url_name='initiate-refund', url_path='initiate')
     def initiate_refund(self, request):
         """
@@ -189,16 +279,21 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
         # Get payment for this cart
         payment = ProductPayment.objects.filter(cart=cart).first()
         
-        # Validate payment exists and is paid
+        # CRITICAL: Validate payment exists and has been SUCCEEDED (verified and paid)
         if not payment:
             return Response(
-                {'error': 'Cannot refund unpaid order. No payment record found.'},
+                {'error': 'Cannot refund order with no payment record. Use cancel-order endpoint for unpaid orders.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        if payment.status not in [ProductPayment.PaymentStatus.PENDING, ProductPayment.PaymentStatus.SUCCEEDED]:
+        if payment.status != ProductPayment.PaymentStatus.SUCCEEDED:
+            if payment.status == ProductPayment.PaymentStatus.PENDING:
+                return Response(
+                    {'error': 'Cannot refund unverified payment. Use cancel-order endpoint for pending payments.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             return Response(
-                {'error': f'Cannot refund unpaid order. Payment status is: {payment.status}'},
+                {'error': f'Cannot refund payment with status: {payment.get_status_display()}. Only succeeded payments can be refunded.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -208,8 +303,11 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
         if payment and payment.stripe_payment_intent and payment.method:
             is_automatic = payment.method.supports_automatic_refunds
             stripe_payment_intent = payment.stripe_payment_intent
-        payment.status = ProductPayment.PaymentStatus.REFUND_PROCESSING    
+        
+        # Update payment status to REFUND_PROCESSING
+        payment.status = ProductPayment.PaymentStatus.REFUND_PROCESSING
         payment.save()
+        
         # Prepare refund data
         refund_data = {
             'cart': cart.uuid,
@@ -271,9 +369,6 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
         {
             "processing_notes": "Refund sent via bank transfer",
             "refund_method": "Bank Transfer",
-            "bank_account_name": "John Doe",  // For manual refunds
-            "bank_account_number": "12345678",
-            "bank_sort_code": "12-34-56"
         }
         """
         refund = self.get_object()
@@ -290,20 +385,30 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
             data=request.data,
             context={'refund': refund, 'request': request, 'action': 'process'}
         )
+        serializer.is_valid(raise_exception=True)
+        
+        # Validate payment is in correct state
         payment = refund.payment
-        if payment.status != ProductPayment.PaymentStatus.REFUND_PROCESSING:
+        if not payment:
             return Response(
-                {'error': 'Payment is not in a state that allows processing refund'},
+                {'error': 'No payment record found for this refund'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        payment.status = ProductPayment.PaymentStatus.REFUNDED
-        payment.save()
-        serializer.is_valid(raise_exception=True)
+        
+        if payment.status != ProductPayment.PaymentStatus.REFUND_PROCESSING:
+            return Response(
+                {'error': f'Payment status must be REFUND_PROCESSING to process refund. Current status: {payment.get_status_display()}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Process the refund (PENDING -> IN_PROGRESS)
         refund = serializer.save()
+        
+        # Payment status remains REFUND_PROCESSING until completion
         
         response_serializer = OrderRefundDetailSerializer(refund)
         return Response({
-            'message': _('Refund payment sent. Please verify completion to finalize.'),
+            'message': _('Refund payment initiated. Please verify completion to finalize.'),
             'refund': response_serializer.data
         }, status=status.HTTP_200_OK)
     
@@ -333,7 +438,28 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
             context={'refund': refund, 'request': request, 'action': 'complete'}
         )
         serializer.is_valid(raise_exception=True)
+        
+        # Complete the refund (IN_PROGRESS -> PROCESSED)
         refund = serializer.save()
+        
+        # Update payment status to REFUNDED
+        if refund.payment:
+            refund.payment.status = ProductPayment.PaymentStatus.REFUNDED
+            refund.payment.save()
+        
+        # Update cart status to REFUNDED
+        if refund.cart:
+            refund.cart.cart_status = EventCart.CartStatus.REFUNDED
+            refund.cart.save()
+        
+        # Update order items status to REFUNDED
+        from apps.shop.models import EventProductOrder
+        EventProductOrder.objects.filter(cart=refund.cart).update(
+            status=EventProductOrder.Status.REFUNDED,
+            refund_status='PROCESSED'
+        )
+        
+        logger.info(f"✅ Refund {refund.refund_reference} completed. Payment, cart, and order items updated.")
         
         # Send confirmation email in background
         def send_email():

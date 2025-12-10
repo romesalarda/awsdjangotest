@@ -559,28 +559,7 @@ class ParticipantRefund(models.Model):
         verbose_name=_("Stripe failure reason"),
         help_text=_("Reason if Stripe refund failed")
     )
-    
-    # Bank transfer fields (for manual refunds)
-    bank_account_name = models.CharField(
-        max_length=200,
-        blank=True,
-        null=True,
-        verbose_name=_("bank account name"),
-        help_text=_("Participant's bank account name for manual refunds")
-    )
-    bank_account_number = models.CharField(
-        max_length=50,
-        blank=True,
-        null=True,
-        verbose_name=_("bank account number")
-    )
-    bank_sort_code = models.CharField(
-        max_length=20,
-        blank=True,
-        null=True,
-        verbose_name=_("bank sort code")
-    )
-    
+        
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("created at"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("updated at"))
@@ -714,8 +693,8 @@ class DonationPayment(models.Model):
         return super().save(*args, **kwargs)
 
     class Meta:
-        verbose_name = _("Event Payment")
-        verbose_name_plural = _("Event Payments")
+        verbose_name = _("Donation Payment")
+        verbose_name_plural = _("Donation Payments")
 
     def __str__(self):
         return f"{self.user} - {self.event} - {self.get_status_display()}"

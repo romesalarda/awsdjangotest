@@ -154,9 +154,6 @@ class OrderRefundDetailSerializer(serializers.ModelSerializer):
             'stripe_payment_intent',
             'stripe_refund_id',
             'stripe_failure_reason',
-            'bank_account_name',
-            'bank_account_number',
-            'bank_sort_code',
             'stock_restored',
             'stock_restored_at',
             'customer_notified',
@@ -318,9 +315,6 @@ class CreateOrderRefundSerializer(serializers.ModelSerializer):
             'original_payment_method',
             'is_automatic_refund',
             'stripe_payment_intent',
-            'bank_account_name',
-            'bank_account_number',
-            'bank_sort_code'
         ]
         read_only_fields = ['initiated_by']
     
@@ -414,6 +408,9 @@ class ProcessOrderRefundSerializer(serializers.Serializer):
     """
     Serializer for processing refund completion.
     Validates refund processing data and updates status.
+    
+    NOTE: Bank account details should NEVER be collected or stored.
+    Manual refunds should be processed outside the system through secure banking channels.
     """
     processing_notes = serializers.CharField(
         required=False,
@@ -425,9 +422,6 @@ class ProcessOrderRefundSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Method used to process the refund (e.g., 'Bank Transfer', 'Stripe')"
     )
-    bank_account_name = serializers.CharField(required=False, allow_blank=True)
-    bank_account_number = serializers.CharField(required=False, allow_blank=True)
-    bank_sort_code = serializers.CharField(required=False, allow_blank=True)
     restore_stock = serializers.BooleanField(
         default=True,
         help_text="Whether to restore product stock upon processing refund"
@@ -454,12 +448,8 @@ class ProcessOrderRefundSerializer(serializers.Serializer):
             if refund.status not in [OrderRefund.RefundStatus.PENDING]:
                 raise serializers.ValidationError(f"Refund is already {refund.status}")
         
-        # If manual refund, require processing notes or bank details
-        if not refund.is_automatic_refund and action != 'complete':
-            if not data.get('processing_notes') and not data.get('bank_account_number'):
-                raise serializers.ValidationError(
-                    "Manual refunds require either processing notes or bank transfer details"
-                )
+        # For manual refunds, processing notes are recommended but not required
+        # Bank transfers should be handled outside the system for security
         
         return data
     
@@ -487,13 +477,7 @@ class ProcessOrderRefundSerializer(serializers.Serializer):
             if refund.is_automatic_refund:
                 success, message = refund_service.process_automatic_refund(refund)
             else:
-                # Save bank details first
-                if self.validated_data.get('bank_account_name'):
-                    refund.bank_account_name = self.validated_data['bank_account_name']
-                if self.validated_data.get('bank_account_number'):
-                    refund.bank_account_number = self.validated_data['bank_account_number']
-                if self.validated_data.get('bank_sort_code'):
-                    refund.bank_sort_code = self.validated_data['bank_sort_code']
+                # Save refund method for tracking (but never bank account details)
                 if self.validated_data.get('refund_method'):
                     refund.refund_method = self.validated_data['refund_method']
                 refund.save()

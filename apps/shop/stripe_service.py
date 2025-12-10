@@ -112,7 +112,7 @@ class StripePaymentService:
     def handle_payment_intent_succeeded(intent):
         """
         Handle successful payment intent from webhook.
-        Updates payment status and records purchase tracking.
+        Uses centralized payment completion logic from ProductPayment model.
         """
         try:
             payment_id = intent.metadata.get('payment_id')
@@ -122,43 +122,18 @@ class StripePaymentService:
             
             payment = ProductPayment.objects.get(id=payment_id)
             
-            # Update payment status
-            old_status = payment.status
-            payment.status = ProductPayment.PaymentStatus.SUCCEEDED
-            payment.approved = True
-            payment.paid_at = timezone.now()
-            payment.save()
+            # Use centralized payment completion logic
+            was_completed = payment.complete_payment(log_metadata={
+                'source': 'stripe_webhook',
+                'intent_id': intent.id,
+                'amount_received': intent.amount_received
+            })
             
-            # Update cart status
-            if payment.cart:
-                payment.cart.cart_status = EventCart.CartStatus.COMPLETED
-                payment.cart.approved = True
-                payment.cart.save()
+            if was_completed:
+                logger.info(f"Payment {payment.payment_reference_id} succeeded via Stripe webhook")
+            else:
+                logger.info(f"Payment {payment.payment_reference_id} already completed, skipping")
                 
-                # Record purchase tracking for max purchase enforcement
-                for order in payment.cart.orders.all():
-                    ProductPurchaseTracker.record_purchase(
-                        user=payment.user,
-                        product=order.product,
-                        quantity=order.quantity
-                    )
-                    
-                    # Deduct stock
-                    product = order.product
-                    product.stock = max(0, product.stock - order.quantity)
-                    product.save()
-            
-            # Log success
-            ProductPaymentLog.log_action(
-                payment=payment,
-                action='payment_succeeded',
-                old_status=old_status,
-                new_status=ProductPayment.PaymentStatus.SUCCEEDED,
-                notes=f"Stripe payment succeeded: {intent.id}",
-                metadata={'intent_id': intent.id, 'amount_received': intent.amount_received}
-            )
-            
-            logger.info(f"Payment {payment.payment_reference_id} succeeded via Stripe")
             return True
             
         except ProductPayment.DoesNotExist:

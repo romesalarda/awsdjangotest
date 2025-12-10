@@ -13,6 +13,12 @@ from apps.users.api.auth_views import (
     CSRFTokenView,
 )
 
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularSwaggerView,
+    SpectacularRedocView,
+)
+
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
@@ -70,6 +76,19 @@ urlpatterns = [
     path('api/shop/payments/', include(production_payment_router.urls)),
     # Swagger and ReDoc documentation
     path('', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    # path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+
+    # # API documentation UIs
+    # path(
+    #     "api/schema/swagger-ui/",
+    #     SpectacularSwaggerView.as_view(url_name="schema"),
+    #     name="swagger-ui",
+    # ),
+    # path(
+    #     "api/schema/redoc/",
+    #     SpectacularRedocView.as_view(url_name="schema"),
+    #     name="redoc",
+    # ),
 ]
 
 if settings.DEBUG:
