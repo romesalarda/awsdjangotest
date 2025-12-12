@@ -398,7 +398,7 @@ class CreateOrderRefundSerializer(serializers.ModelSerializer):
         if not validated_data.get('refund_contact_email'):
             payment = validated_data.get('payment')
             if payment and payment.method:
-                validated_data['refund_contact_email'] = payment.method.refund_contact_email or getattr(cart.event, 'secretariat_email', None)
+                validated_data['refund_contact_email'] = payment.method.refund_contact_email
         
         refund = super().create(validated_data)
         return refund

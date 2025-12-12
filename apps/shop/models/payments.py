@@ -375,6 +375,17 @@ class OrderRefund(models.Model):
         verbose_name=_("event")
     )
     
+    # Link to parent ParticipantRefund if this order refund is part of a full participant removal
+    participant_refund = models.ForeignKey(
+        'events.ParticipantRefund',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_refunds",
+        verbose_name=_("participant refund"),
+        help_text=_("Parent participant refund if this is part of a full participant removal")
+    )
+    
     # Refund tracking
     refund_reference = models.CharField(
         max_length=100,
@@ -582,7 +593,7 @@ class OrderRefund(models.Model):
             return False, "Cannot process refund: No payment record found"
         
         # Only allow refunds for SUCCEEDED payments (payment verified and completed)
-        if self.payment.status != ProductPayment.PaymentStatus.SUCCEEDED:
+        if self.payment.status != ProductPayment.PaymentStatus.REFUND_PROCESSING:
             return False, f"Cannot process refund: Payment status is '{self.payment.get_status_display()}'. Only succeeded payments can be refunded."
         
         # Check if event has started (warning only, admins can override)

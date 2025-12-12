@@ -418,15 +418,13 @@ class ParticipantRefund(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="refunds",
+        related_name="participant_refunds",
         verbose_name=_("original event payment")
     )
-    product_payments = models.ManyToManyField(
-        'shop.ProductPayment',
-        blank=True,
-        related_name="refunds",
-        verbose_name=_("original product payments")
-    )
+    
+    # Note: OrderRefund records link back to ParticipantRefund via their own relationship
+    # This creates a clean separation: ParticipantRefund handles event registration,
+    # OrderRefund handles merchandise - both linked but separately trackable
     
     # Refund tracking
     refund_reference = models.CharField(
@@ -438,25 +436,11 @@ class ParticipantRefund(models.Model):
     )
     
     # Financial details
-    event_payment_amount = models.DecimalField(
+    refund_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        default=0.00,
         verbose_name=_("event registration refund amount"),
-        help_text=_("Amount to refund for event registration")
-    )
-    product_payment_amount = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0.00,
-        verbose_name=_("merchandise refund amount"),
-        help_text=_("Amount to refund for merchandise purchases")
-    )
-    total_refund_amount = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        verbose_name=_("total refund amount"),
-        help_text=_("Total amount to be refunded")
+        help_text=_("Amount to refund for event registration only. Merchandise refunds tracked separately via OrderRefund.")
     )
     currency = models.CharField(max_length=10, default="gbp")
     
@@ -582,15 +566,34 @@ class ParticipantRefund(models.Model):
         help_text=_("Whether secretariat has been notified about manual refund")
     )
     
+    @property
+    def total_refund_amount(self):
+        """Calculate total including event registration and all associated merchandise refunds"""
+        from apps.shop.models import OrderRefund
+        
+        event_amount = self.refund_amount or 0
+        
+        # Get sum of all associated order refunds
+        merch_refunds = OrderRefund.objects.filter(participant_refund=self).aggregate(
+            total=models.Sum('refund_amount')
+        )['total'] or 0
+        
+        return event_amount + merch_refunds
+    
+    @property
+    def merchandise_refund_amount(self):
+        """Get total merchandise refund amount from associated OrderRefunds"""
+        from apps.shop.models import OrderRefund
+        
+        return OrderRefund.objects.filter(participant_refund=self).aggregate(
+            total=models.Sum('refund_amount')
+        )['total'] or 0
+    
     def save(self, *args, **kwargs):
         # Auto-generate refund reference if not set
         if not self.refund_reference:
             event_code = self.event.event_code[:5] if hasattr(self.event, 'event_code') else 'EVT'
-            self.refund_reference = f"{event_code}-REFUND-{uuid.uuid4()}".upper()
-        
-        # Auto-calculate total if not set
-        if not self.total_refund_amount:
-            self.total_refund_amount = self.event_payment_amount + self.product_payment_amount
+            self.refund_reference = f"{event_code}-PAX-REFUND-{uuid.uuid4()}".upper()
         
         super().save(*args, **kwargs)
     

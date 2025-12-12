@@ -17,7 +17,7 @@ from apps.events.models import (
     Event, EventPayment, DonationPayment, ParticipantRefund,
     EventParticipant
 )
-from apps.shop.models import ProductPayment
+from apps.shop.models import ProductPayment, OrderRefund
 from apps.events.api.serializers.payment_overview_serializers import (
     PaymentOverviewSerializer,
     PaymentTimelineSerializer,
@@ -315,14 +315,14 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
         
         # Refunds
         refunds = ParticipantRefund.objects.filter(event=event).aggregate(
-            total=Coalesce(Sum('total_refund_amount'), Decimal('0.00')),
+            total=Coalesce(Sum('refund_amount'), Decimal('0.00')),
             count=Count('id'),
             processed_amount=Coalesce(Sum(
-                'total_refund_amount',
+                'refund_amount',
                 filter=Q(status=ParticipantRefund.RefundStatus.PROCESSED)
             ), Decimal('0.00')),
             pending_amount=Coalesce(Sum(
-                'total_refund_amount',
+                'refund_amount',
                 filter=Q(status__in=[
                     ParticipantRefund.RefundStatus.PENDING,
                     ParticipantRefund.RefundStatus.IN_PROGRESS
@@ -330,6 +330,15 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             ), Decimal('0.00'))
         )
         
+        # refunds for orders
+        refunds_orders = OrderRefund.objects.filter(
+            event=event,
+        ).aggregate(
+            processed_amount=Coalesce(Sum(
+                'refund_amount',
+                filter=Q(status=OrderRefund.RefundStatus.PROCESSED)
+            ), Decimal('0.00')),
+        )
         # Calculate totals
         gross_revenue = (
             event_payments['total'] +
@@ -337,7 +346,7 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             donations['total']
         )
         
-        net_revenue = gross_revenue - refunds['processed_amount']
+        net_revenue = gross_revenue - refunds['processed_amount'] - refunds_orders['processed_amount']
         
         total_verified = (
             event_payments['verified_amount'] +
@@ -451,7 +460,7 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             date=trunc_func('processed_at')
         ).values('date').annotate(
             count=Count('id'),
-            amount=Coalesce(Sum('total_refund_amount'), Decimal('0.00'))
+            amount=Coalesce(Sum('refund_amount'), Decimal('0.00'))
         ).order_by('date')
         
         # Combine all data by date

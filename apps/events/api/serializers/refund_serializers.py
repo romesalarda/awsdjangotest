@@ -70,9 +70,7 @@ class ParticipantRefundListSerializer(serializers.ModelSerializer):
             'event',
             'event_name',
             'event_code',
-            'event_payment_amount',
-            'product_payment_amount',
-            'total_refund_amount',
+            'refund_amount',  # Event registration only
             'removal_reason_details',
             'currency',
             'status',
@@ -119,6 +117,7 @@ class ParticipantRefundDetailSerializer(serializers.ModelSerializer):
     """
     Comprehensive serializer for detailed refund views.
     Includes full participant, event, payment, and processing information.
+    Also includes related OrderRefund records for merchandise.
     """
     participant = RefundParticipantSerializer(read_only=True)
     event = RefundEventSerializer(read_only=True)
@@ -128,19 +127,18 @@ class ParticipantRefundDetailSerializer(serializers.ModelSerializer):
     refund_reason_display = serializers.CharField(source='get_refund_reason_display', read_only=True)
     can_process = serializers.SerializerMethodField()
     payment_details = serializers.SerializerMethodField()
+    order_refunds = serializers.SerializerMethodField()
+    total_refund_amount = serializers.SerializerMethodField()
+    merchandise_refund_amount = serializers.SerializerMethodField()
     timeline = serializers.SerializerMethodField()
     
     class Meta:
         model = ParticipantRefund
         fields = [
             'id',
-            'refund_reference',
-            'participant',
-            'event',
-            'event_payment',
-            'event_payment_amount',
-            'product_payment_amount',
-            'total_refund_amount',
+            'refund_amount',  # Event registration only
+            'total_refund_amount',  # Event + merchandise (computed)
+            'merchandise_refund_amount',  # Merchandise only (computed)
             'currency',
             'status',
             'status_display',
@@ -152,17 +150,23 @@ class ParticipantRefundDetailSerializer(serializers.ModelSerializer):
             'processed_by',
             'processed_by_name',
             'processing_notes',
-            'participant_email',
-            'participant_name',
+            'participant',
+            'event',
             'refund_contact_email',
             'original_payment_method',
             'is_automatic_refund',
             'refund_method',
+            # 'stripe_payment_intent',
             'stripe_refund_id',
             'stripe_failure_reason',
             'participant_notified',
             'secretariat_notified',
             'created_at',
+            'updated_at',
+            'processed_at',
+            'can_process',
+            'payment_details',
+            'order_refunds',  # Associated merchandise refunds
             'updated_at',
             'processed_at',
             'can_process',
@@ -193,37 +197,51 @@ class ParticipantRefundDetailSerializer(serializers.ModelSerializer):
             'message': message
         }
     
-    def get_payment_details(self, obj):
-        """Get detailed information about original payments"""
-        details = {
-            'event_payment': None,
-            'product_payments': []
-        }
+    def get_total_refund_amount(self, obj):
+        """Get total including event registration and all merchandise"""
+        return float(obj.total_refund_amount)
+    
+    def get_merchandise_refund_amount(self, obj):
+        """Get total merchandise refund amount from associated OrderRefunds"""
+        return float(obj.merchandise_refund_amount)
+    
+    def get_order_refunds(self, obj):
+        """Get associated merchandise order refunds"""
+        from apps.shop.models import OrderRefund
         
-        if obj.event_payment:
-            details['event_payment'] = {
-                'id': obj.event_payment.id,
-                'tracking_number': obj.event_payment.event_payment_tracking_number,
-                'amount': float(obj.event_payment.amount),
-                'payment_method': obj.event_payment.method.get_method_display() if obj.event_payment.method else None,
-                'stripe_payment_intent': obj.event_payment.stripe_payment_intent,
-                'paid_at': obj.event_payment.paid_at,
-                'status': obj.event_payment.get_status_display()
+        order_refunds = OrderRefund.objects.filter(participant_refund=obj).select_related(
+            'cart', 'payment', 'event'
+        )
+        
+        return [
+            {
+                'id': order_refund.id,
+                'refund_reference': order_refund.refund_reference,
+                'cart_reference': order_refund.cart.order_reference_id if order_refund.cart else None,
+                'refund_amount': float(order_refund.refund_amount),
+                'status': order_refund.status,
+                'status_display': order_refund.get_status_display(),
+                'refund_reason': order_refund.refund_reason,
+                'created_at': order_refund.created_at,
+                'processed_at': order_refund.processed_at,
             }
+            for order_refund in order_refunds
+        ]
+    
+    def get_payment_details(self, obj):
+        """Get detailed information about original event payment"""
+        if not obj.event_payment:
+            return None
         
-        if obj.product_payments.exists():
-            details['product_payments'] = [
-                {
-                    'id': pp.id,
-                    'reference': pp.payment_reference_id,
-                    'amount': float(pp.amount),
-                    'payment_method': pp.method.get_method_display() if pp.method else None,
-                    'stripe_payment_intent': pp.stripe_payment_intent
-                }
-                for pp in obj.product_payments.all()
-            ]
-        
-        return details
+        return {
+            'id': obj.event_payment.id,
+            'tracking_number': obj.event_payment.event_payment_tracking_number,
+            'amount': float(obj.event_payment.amount),
+            'payment_method': obj.event_payment.method.get_method_display() if obj.event_payment.method else None,
+            'stripe_payment_intent': obj.event_payment.stripe_payment_intent,
+            'paid_at': obj.event_payment.paid_at,
+            'status': obj.event_payment.get_status_display()
+        }
     
     def get_timeline(self, obj):
         """Generate timeline of refund events"""
@@ -339,9 +357,7 @@ class CreateRefundSerializer(serializers.ModelSerializer):
             'participant',
             'event',
             'event_payment',
-            'event_payment_amount',
-            'product_payment_amount',
-            'total_refund_amount',
+            'refund_amount',  # Event registration only
             'refund_reason',
             'removal_reason_details',
             'removed_by',
@@ -350,6 +366,7 @@ class CreateRefundSerializer(serializers.ModelSerializer):
             'refund_contact_email',
             'original_payment_method',
             'is_automatic_refund',
+            'stripe_refund_id',
         ]
         read_only_fields = ['removed_by']
     
@@ -358,8 +375,7 @@ class CreateRefundSerializer(serializers.ModelSerializer):
         participant = data.get('participant')
         event = data.get('event')
         event_payment = data.get('event_payment')
-        event_payment_amount = data.get('event_payment_amount', Decimal('0.00'))
-        product_payment_amount = data.get('product_payment_amount', Decimal('0.00'))
+        refund_amount = data.get('refund_amount', Decimal('0.00'))
         
         # Ensure participant belongs to event
         if participant.event.id != event.id:
@@ -381,21 +397,17 @@ class CreateRefundSerializer(serializers.ModelSerializer):
             })
         
         # Validate event payment amount
-        if event_payment_amount > 0 and event_payment:
-            if event_payment_amount > event_payment.amount:
+        if refund_amount > 0 and event_payment:
+            if refund_amount > event_payment.amount:
                 raise serializers.ValidationError({
-                    'event_payment_amount': f'Refund amount (£{event_payment_amount}) cannot exceed original payment (£{event_payment.amount})'
+                    'refund_amount': f'Refund amount (£{refund_amount}) cannot exceed original payment (£{event_payment.amount})'
                 })
         
-        # Calculate total if not provided
-        total = event_payment_amount + product_payment_amount
-        if total <= 0:
+        # Ensure refund amount is greater than 0
+        if refund_amount <= 0:
             raise serializers.ValidationError({
-                'total_refund_amount': 'Total refund amount must be greater than 0'
+                'refund_amount': 'Refund amount must be greater than 0'
             })
-        
-        # Override total with calculated value
-        data['total_refund_amount'] = total
         
         return data
     

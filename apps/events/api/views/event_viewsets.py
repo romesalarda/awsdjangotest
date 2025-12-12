@@ -4307,6 +4307,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         # Calculate payment totals for refund
         from decimal import Decimal
         from apps.events.models import ParticipantRefund
+        from apps.shop.models import OrderRefund
         
         # Get all event registration payments
         event_payments = participant.participant_event_payments.all()
@@ -4315,15 +4316,44 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
             if payment.status == EventPayment.PaymentStatus.SUCCEEDED
         ) or Decimal('0.00')
         
-        # Get all product/merchandise payments for this event
-        product_payments = ProductPayment.objects.filter(
-            user=participant.user, 
-            cart__event=participant.event,
-            status=ProductPayment.PaymentStatus.SUCCEEDED
-        )
-        product_payment_total = sum(
-            payment.amount for payment in product_payments
-        ) or Decimal('0.00')
+        # Update event payment status to REFUND_PROCESSING
+        if event_payment_total > 0:
+            event_payments.filter(status=EventPayment.PaymentStatus.SUCCEEDED).update(
+                status=EventPayment.PaymentStatus.REFUND_PROCESSING
+            )
+        
+        # Get all product/merchandise carts for this participant's event
+        from apps.shop.models import EventCart
+        participant_carts = EventCart.objects.filter(
+            user=participant.user,
+            event=participant.event,
+            cart_status='paid'  # Only refund paid carts
+        ).prefetch_related('orders')
+        
+        # Track total merchandise amount and prepare to create OrderRefunds
+        product_payment_total = Decimal('0.00')
+        order_refunds_to_create = []
+        
+        for cart in participant_carts:
+            # Get the payment for this cart
+            cart_payment = ProductPayment.objects.filter(
+                cart=cart,
+                status=ProductPayment.PaymentStatus.SUCCEEDED
+            ).first()
+            
+            if cart_payment:
+                # Update payment status to REFUND_PROCESSING
+                cart_payment.status = ProductPayment.PaymentStatus.REFUND_PROCESSING
+                cart_payment.save()
+                
+                product_payment_total += cart_payment.amount
+                
+                # Prepare OrderRefund data (will be created after ParticipantRefund)
+                order_refunds_to_create.append({
+                    'cart': cart,
+                    'payment': cart_payment,
+                    'amount': cart_payment.amount
+                })
         
         # Calculate total amount
         total_amount = event_payment_total + product_payment_total
@@ -4346,20 +4376,72 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         # Create refund record if there are payments
         refund = None
         if has_payments:
+            # Determine payment method info
+            first_event_payment = event_payments.first() if event_payments.exists() else None
+            payment_method_display = None
+            is_automatic = False
+            stripe_intent = None
+            
+            if first_event_payment and first_event_payment.method:
+                payment_method_display = first_event_payment.method.get_method_display()
+                is_automatic = first_event_payment.method.supports_automatic_refunds
+                stripe_intent = first_event_payment.stripe_payment_intent
+            
+            # Create main ParticipantRefund (for event registration only)
             refund = ParticipantRefund.objects.create(
                 participant=participant,
                 event=participant.event,
-                event_payment_amount=event_payment_total,
-                product_payment_amount=product_payment_total,
-                total_refund_amount=total_amount,
-                refund_reason=reason,
+                event_payment=first_event_payment,
+                refund_amount=event_payment_total,  # Only event registration amount
+                refund_reason=ParticipantRefund.RefundReason.ADMIN_DECISION,
+                removal_reason_details=reason,
                 removed_by=request.user,
                 participant_email=participant.user.primary_email,
+                participant_name=f"{participant.user.first_name} {participant.user.last_name}",
                 refund_contact_email=organizer_contact_email,
-                original_payment_method=event_payments.first().method.get_method_display() if event_payments.exists() and event_payments.first().method else None,
+                original_payment_method=payment_method_display,
+                is_automatic_refund=is_automatic,
+                stripe_payment_intent=stripe_intent if is_automatic else None,
                 status=ParticipantRefund.RefundStatus.PENDING
             )
-            print(f"💰 Refund record created: {refund.refund_reference} - £{total_amount}")
+            print(f"💰 ParticipantRefund created: {refund.refund_reference} - £{event_payment_total} (event registration)")
+            
+            # Create OrderRefund records for each merchandise cart
+            for order_refund_data in order_refunds_to_create:
+                cart = order_refund_data['cart']
+                payment = order_refund_data['payment']
+                amount = order_refund_data['amount']
+                
+                # Determine refund method for merchandise
+                merch_is_automatic = False
+                merch_stripe_intent = None
+                merch_payment_method = None
+                
+                if payment.method:
+                    merch_payment_method = payment.method.get_method_display()
+                    merch_is_automatic = payment.method.supports_automatic_refunds
+                    merch_stripe_intent = payment.stripe_payment_intent
+                
+                order_refund = OrderRefund.objects.create(
+                    cart=cart,
+                    payment=payment,
+                    user=participant.user,
+                    event=participant.event,
+                    participant_refund=refund,  # Link to parent ParticipantRefund
+                    refund_amount=amount,
+                    refund_reason=OrderRefund.RefundReason.ADMIN_DECISION,
+                    reason_details=f"Participant removed from event: {reason}",
+                    initiated_by=request.user,
+                    customer_email=participant.user.primary_email,
+                    customer_name=f"{participant.user.first_name} {participant.user.last_name}",
+                    refund_contact_email=organizer_contact_email,
+                    original_payment_method=merch_payment_method,
+                    is_automatic_refund=merch_is_automatic,
+                    stripe_payment_intent=merch_stripe_intent if merch_is_automatic else None,
+                    status=OrderRefund.RefundStatus.PENDING
+                )
+                print(f"🛍️ OrderRefund created: {order_refund.refund_reference} - £{amount} (cart: {cart.order_reference_id})")
+        
         
         # Prepare payment details for email
         payment_details = {
@@ -4367,6 +4449,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
             'event_payment_total': event_payment_total,
             'product_payment_total': product_payment_total,
             'total_amount': total_amount,
+            'merchandise_orders_count': len(order_refunds_to_create)
         }
         
         # Send removal notification email
@@ -4398,85 +4481,88 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         return Response({
             'message': f'{participant_name} has been removed from {event_name}.',
             'had_payments': has_payments,
+            'event_refund_amount': float(event_payment_total) if has_payments else 0,
+            'merchandise_refund_amount': float(product_payment_total) if has_payments else 0,
             'total_refund_amount': float(total_amount) if has_payments else 0,
-            'refund_id': refund.id if refund else None,
-            'refund_reference': refund.refund_reference if refund else None
+            'participant_refund_id': refund.id if refund else None,
+            'participant_refund_reference': refund.refund_reference if refund else None,
+            'order_refunds_count': len(order_refunds_to_create) if has_payments else 0
         }, status=status.HTTP_200_OK)
         
-        if not confirmation_name:
-            return Response(
-                {'error': _('Confirmation name is required.')},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # if not confirmation_name:
+        #     return Response(
+        #         {'error': _('Confirmation name is required.')},
+        #         status=status.HTTP_400_BAD_REQUEST
+        #     )
         
-        # Validate confirmation name matches participant name
-        participant_full_name = f"{participant.user.first_name} {participant.user.last_name}"
-        if confirmation_name.lower() != participant_full_name.lower():
-            return Response(
-                {'error': _('Confirmation name does not match participant name.')},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # # Validate confirmation name matches participant name
+        # participant_full_name = f"{participant.user.first_name} {participant.user.last_name}"
+        # if confirmation_name.lower() != participant_full_name.lower():
+        #     return Response(
+        #         {'error': _('Confirmation name does not match participant name.')},
+        #         status=status.HTTP_400_BAD_REQUEST
+        #     )
         
-        # Calculate payment totals for refund notification
-        from decimal import Decimal
+        # # Calculate payment totals for refund notification
+        # from decimal import Decimal
         
-        # Get all event registration payments
-        event_payments = participant.participant_event_payments.all()
-        event_payment_total = sum(
-            payment.amount for payment in event_payments 
-            if payment.status == EventPayment.PaymentStatus.SUCCEEDED
-        ) or Decimal('0.00')
+        # # Get all event registration payments
+        # event_payments = participant.participant_event_payments.all()
+        # event_payment_total = sum(
+        #     payment.amount for payment in event_payments 
+        #     if payment.status == EventPayment.PaymentStatus.SUCCEEDED
+        # ) or Decimal('0.00')
         
-        # Get all product/merchandise payments for this event
-        product_payments = ProductPayment.objects.filter(
-            user=participant.user, 
-            cart__event=participant.event,
-            status=ProductPayment.PaymentStatus.SUCCEEDED
-        )
-        product_payment_total = sum(
-            payment.amount for payment in product_payments
-        ) or Decimal('0.00')
+        # # Get all product/merchandise payments for this event
+        # product_payments = ProductPayment.objects.filter(
+        #     user=participant.user, 
+        #     cart__event=participant.event,
+        #     status=ProductPayment.PaymentStatus.SUCCEEDED
+        # )
+        # product_payment_total = sum(
+        #     payment.amount for payment in product_payments
+        # ) or Decimal('0.00')
         
-        # Calculate total amount
-        total_amount = event_payment_total + product_payment_total
-        has_payments = total_amount > 0
+        # # Calculate total amount
+        # total_amount = event_payment_total + product_payment_total
+        # has_payments = total_amount > 0
         
-        # Prepare payment details for email
-        payment_details = {
-            'has_payments': has_payments,
-            'event_payment_total': event_payment_total,
-            'product_payment_total': product_payment_total,
-            'total_amount': total_amount,
-        }
+        # # Prepare payment details for email
+        # payment_details = {
+        #     'has_payments': has_payments,
+        #     'event_payment_total': event_payment_total,
+        #     'product_payment_total': product_payment_total,
+        #     'total_amount': total_amount,
+        # }
         
-        # Send removal notification email
-        try:
-            from apps.events.email_utils import send_participant_removal_email
-            email_sent = send_participant_removal_email(
-                participant=participant,
-                reason=reason,
-                payment_details=payment_details
-            )
-            if email_sent:
-                print(f"📧 Participant removal email sent to {participant.user.primary_email}")
-            else:
-                print(f"⚠️ Participant has no email address, proceeding with removal without notification")
-        except Exception as e:
-            print(f"⚠️ Failed to send removal email: {e}")
-            # Don't fail the removal if email fails
+        # # Send removal notification email
+        # try:
+        #     from apps.events.email_utils import send_participant_removal_email
+        #     email_sent = send_participant_removal_email(
+        #         participant=participant,
+        #         reason=reason,
+        #         payment_details=payment_details
+        #     )
+        #     if email_sent:
+        #         print(f"📧 Participant removal email sent to {participant.user.primary_email}")
+        #     else:
+        #         print(f"⚠️ Participant has no email address, proceeding with removal without notification")
+        # except Exception as e:
+        #     print(f"⚠️ Failed to send removal email: {e}")
+        #     # Don't fail the removal if email fails
         
-        # Store participant info before deletion for response
-        participant_name = participant_full_name
-        event_name = participant.event.name
+        # # Store participant info before deletion for response
+        # participant_name = participant_full_name
+        # event_name = participant.event.name
         
-        # Delete the participant
-        participant.delete()
+        # # Delete the participant
+        # participant.delete()
         
-        return Response({
-            'message': f'{participant_name} has been removed from {event_name}.',
-            'had_payments': has_payments,
-            'total_refund_amount': float(total_amount) if has_payments else 0
-        }, status=status.HTTP_200_OK)
+        # return Response({
+        #     'message': f'{participant_name} has been removed from {event_name}.',
+        #     'had_payments': has_payments,
+        #     'total_refund_amount': float(total_amount) if has_payments else 0
+        # }, status=status.HTTP_200_OK)
 
 class EventTalkViewSet(viewsets.ModelViewSet):
     '''

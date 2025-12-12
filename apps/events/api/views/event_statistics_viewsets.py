@@ -613,13 +613,22 @@ class EventStatisticsViewSet(viewsets.ViewSet):
     @action(detail=True, methods=['get'], url_path='merch-orders')
     def merch_orders(self, request, pk=None):
         """
-        Get all merchandise orders for the event with participant details
+        Get paginated merchandise orders for the event with participant details
         Returns list of orders with cart, payment, and participant information
+        
+        Query params:
+        - page: Page number (default: 1)
+        - page_size: Items per page (default: 25)
         """
         try:
             from apps.shop.api.serializers import EventCartSerializer
+            from django.core.paginator import Paginator
             
             event = Event.objects.get(id=pk)
+            
+            # Get pagination parameters
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 25))
             
             # Get all carts for this event with related data
             carts = EventCart.objects.filter(event=event, submitted=True).select_related(
@@ -632,13 +641,29 @@ class EventStatisticsViewSet(viewsets.ViewSet):
                 'product_payments__method'
             ).order_by('-created')
             
-            # Serialize carts using the proper serializer
-            serializer = EventCartSerializer(carts, many=True, context={'request': request})
+            # Calculate summary statistics BEFORE pagination (across all carts)
+            total_carts_count = carts.count()
+            total_revenue = sum(float(cart.total or 0) for cart in carts)
+            
+            # Apply pagination
+            paginator = Paginator(carts, page_size)
+            page_obj = paginator.get_page(page)
+            
+            # Serialize only the current page
+            serializer = EventCartSerializer(page_obj, many=True, context={'request': request})
             carts_data = serializer.data
             
-            # Enhance with participant information
+            # Apply pagination
+            paginator = Paginator(carts, page_size)
+            page_obj = paginator.get_page(page)
+            
+            # Serialize only the current page
+            serializer = EventCartSerializer(page_obj, many=True, context={'request': request})
+            carts_data = serializer.data
+            
+            # Enhance with participant information for current page
             orders_data = []
-            for i, cart in enumerate(carts):
+            for i, cart in enumerate(page_obj):
                 cart_data = carts_data[i]
                 
                 # Get participant information
@@ -677,11 +702,17 @@ class EventStatisticsViewSet(viewsets.ViewSet):
                 orders_data.append(enhanced_cart)
             
             return Response({
+                'count': paginator.count,
+                'next': page_obj.has_next() and f"?page={page_obj.next_page_number()}&page_size={page_size}" or None,
+                'previous': page_obj.has_previous() and f"?page={page_obj.previous_page_number()}&page_size={page_size}" or None,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': paginator.num_pages,
                 'orders': orders_data,
                 'summary': {
-                    'total_orders': len(orders_data),
-                    'total_carts': carts.count(),
-                    'total_revenue': sum(float(order['total']) for order in orders_data)
+                    'total_orders': len(orders_data),  # Orders on current page
+                    'total_carts': total_carts_count,  # Total carts across all pages
+                    'total_revenue': total_revenue  # Total revenue across all pages
                 }
             })
             

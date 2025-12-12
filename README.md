@@ -252,3 +252,8 @@ Other projects -> To help with SEO, to either learn SSR? or learn how to improve
 
 to run daphne server 
 daphne -v 2 -b 0.0.0.0 -p 8000 core.asgi:application
+
+All missions digital gateway
+One gateway, all missions
+
+The digital engine behind every catholic gathering.

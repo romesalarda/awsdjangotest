@@ -137,7 +137,7 @@ def get_user_event_permissions(user, event):
         ... (all permission flags)
     }
     """
-    if isinstance(event, str):
+    if not isinstance(event, Event):
         try:
             event = Event.objects.get(id=event)
         except Event.DoesNotExist:
