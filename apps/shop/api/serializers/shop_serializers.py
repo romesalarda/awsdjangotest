@@ -704,11 +704,12 @@ class EventCartSerializer(serializers.ModelSerializer):
     def get_active_refund(self, obj):
         """Get active refund information for this cart"""
         from apps.shop.models import OrderRefund
-        from apps.shop.api.serializers.order_refund_serializers import SimpleOrderRefundSerializer
+        from apps.shop.api.serializers.order_refund_serializers import SimpleOrderRefundSerializer, OrderRefundDetailSerializer
         
-        active_refund: OrderRefund = obj.refunds.filter(
-            status__in=['PENDING', 'IN_PROGRESS']
-        ).first()
+        # active_refund: OrderRefund = obj.refunds.filter(
+        #     status__in=['PENDING', 'IN_PROGRESS']
+        # ).first()
+        active_refund: OrderRefund = obj.refunds.all().order_by('-created_at').first()
         
         if active_refund:
             # return {
@@ -724,10 +725,9 @@ class EventCartSerializer(serializers.ModelSerializer):
                 
             # }
             
-            return SimpleOrderRefundSerializer(active_refund).data
+            return OrderRefundDetailSerializer(active_refund).data
             
             
-        return None
             
             
 
