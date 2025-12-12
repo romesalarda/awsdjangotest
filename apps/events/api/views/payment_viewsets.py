@@ -37,7 +37,7 @@ class EventPaymentViewSet(viewsets.ModelViewSet):
         Admin action to verify/approve an event registration payment.
         Marks payment as verified, then sends confirmation email to participant.
         """
-        payment = self.get_object()
+        payment: EventPayment = self.get_object()
         
         if payment.verified:
             return Response({
@@ -47,6 +47,7 @@ class EventPaymentViewSet(viewsets.ModelViewSet):
         
         # Update payment status
         payment.verified = True
+        payment.status = EventPayment.PaymentStatus.SUCCEEDED
         payment.save()
         
         # Send confirmation email in background

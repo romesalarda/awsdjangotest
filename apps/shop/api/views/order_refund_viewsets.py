@@ -582,11 +582,29 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
         total_refunds = queryset.count()
         total_amount = queryset.aggregate(Sum('refund_amount'))['refund_amount__sum'] or 0
         
-        status_counts = {}
-        for choice in OrderRefund.RefundStatus.choices:
-            status_key = choice[0]
-            count = queryset.filter(status=status_key).count()
-            status_counts[status_key] = count
+        # Count by status
+        pending_count = queryset.filter(status=OrderRefund.RefundStatus.PENDING).count()
+        pending_amount = queryset.filter(status=OrderRefund.RefundStatus.PENDING).aggregate(
+            Sum('refund_amount'))['refund_amount__sum'] or 0
+        
+        in_progress_count = queryset.filter(status=OrderRefund.RefundStatus.IN_PROGRESS).count()
+        in_progress_amount = queryset.filter(status=OrderRefund.RefundStatus.IN_PROGRESS).aggregate(
+            Sum('refund_amount'))['refund_amount__sum'] or 0
+        
+        processed_count = queryset.filter(status=OrderRefund.RefundStatus.PROCESSED).count()
+        processed_amount = queryset.filter(status=OrderRefund.RefundStatus.PROCESSED).aggregate(
+            Sum('refund_amount'))['refund_amount__sum'] or 0
+        
+        failed_count = queryset.filter(status=OrderRefund.RefundStatus.FAILED).count()
+        cancelled_count = queryset.filter(status=OrderRefund.RefundStatus.CANCELLED).count()
+        
+        status_counts = {
+            'pending': pending_count,
+            'in_progress': in_progress_count,
+            'processed': processed_count,
+            'failed': failed_count,
+            'cancelled': cancelled_count
+        }
         
         reason_counts = {}
         for choice in OrderRefund.RefundReason.choices:
@@ -605,6 +623,12 @@ class OrderRefundViewSet(viewsets.ModelViewSet):
         return Response({
             'total_refunds': total_refunds,
             'total_amount': float(total_amount),
+            'pending_count': pending_count,
+            'pending_amount': float(pending_amount),
+            'in_progress_count': in_progress_count,
+            'in_progress_amount': float(in_progress_amount),
+            'processed_count': processed_count,
+            'processed_amount': float(processed_amount),
             'average_amount': float(avg_refund_amount),
             'status_breakdown': status_counts,
             'reason_breakdown': reason_counts,

@@ -76,7 +76,6 @@ class ParticipantRefundViewSet(viewsets.ModelViewSet):
         'participant_email',
         'event__name',
         'event__event_code',
-        'removal_reason'
     ]
     
     # Sorting options
@@ -346,8 +345,11 @@ class ParticipantRefundViewSet(viewsets.ModelViewSet):
         """
         queryset = self.get_queryset()
         
-        # Calculate statistics
-        stats = queryset.aggregate(
+        # Get event_id filter for order refunds
+        event_id = request.query_params.get('event_id')
+        
+        # Calculate participant refund statistics
+        participant_stats = queryset.aggregate(
             total_refunds=Count('id'),
             total_amount=Sum('refund_amount'),
             pending_count=Count('id', filter=Q(
@@ -365,6 +367,60 @@ class ParticipantRefundViewSet(viewsets.ModelViewSet):
             processed_count=Count('id', filter=Q(status=ParticipantRefund.RefundStatus.PROCESSED)),
             processed_amount=Sum('refund_amount', filter=Q(status=ParticipantRefund.RefundStatus.PROCESSED))
         )
+        
+        # Calculate order refund statistics
+        from apps.shop.models import OrderRefund
+        order_queryset = OrderRefund.objects.all()
+        if event_id:
+            order_queryset = order_queryset.filter(event_id=event_id)
+        
+        order_stats = order_queryset.aggregate(
+            total_refunds=Count('id'),
+            total_amount=Sum('refund_amount'),
+            pending_count=Count('id', filter=Q(
+                status__in=[
+                    OrderRefund.RefundStatus.PENDING,
+                    OrderRefund.RefundStatus.IN_PROGRESS
+                ]
+            )),
+            pending_amount=Sum('refund_amount', filter=Q(
+                status__in=[
+                    OrderRefund.RefundStatus.PENDING,
+                    OrderRefund.RefundStatus.IN_PROGRESS
+                ]
+            )),
+            processed_count=Count('id', filter=Q(status=OrderRefund.RefundStatus.PROCESSED)),
+            processed_amount=Sum('refund_amount', filter=Q(status=OrderRefund.RefundStatus.PROCESSED))
+        )
+        
+        # Combine statistics
+        stats = {
+            # Combined totals
+            'total_refunds': (participant_stats['total_refunds'] or 0) + (order_stats['total_refunds'] or 0),
+            'total_amount': (participant_stats['total_amount'] or 0) + (order_stats['total_amount'] or 0),
+            'pending_count': (participant_stats['pending_count'] or 0) + (order_stats['pending_count'] or 0),
+            'pending_amount': (participant_stats['pending_amount'] or 0) + (order_stats['pending_amount'] or 0),
+            'processed_count': (participant_stats['processed_count'] or 0) + (order_stats['processed_count'] or 0),
+            'processed_amount': (participant_stats['processed_amount'] or 0) + (order_stats['processed_amount'] or 0),
+            # Participant refund breakdown
+            'participant_refunds': {
+                'total_refunds': participant_stats['total_refunds'] or 0,
+                'total_amount': participant_stats['total_amount'] or 0,
+                'pending_count': participant_stats['pending_count'] or 0,
+                'pending_amount': participant_stats['pending_amount'] or 0,
+                'processed_count': participant_stats['processed_count'] or 0,
+                'processed_amount': participant_stats['processed_amount'] or 0,
+            },
+            # Order refund breakdown
+            'order_refunds': {
+                'total_refunds': order_stats['total_refunds'] or 0,
+                'total_amount': order_stats['total_amount'] or 0,
+                'pending_count': order_stats['pending_count'] or 0,
+                'pending_amount': order_stats['pending_amount'] or 0,
+                'processed_count': order_stats['processed_count'] or 0,
+                'processed_amount': order_stats['processed_amount'] or 0,
+            }
+        }
         
         # Get breakdown by event if no specific event filter
         event_id = request.query_params.get('event_id')

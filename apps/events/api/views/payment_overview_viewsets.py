@@ -108,9 +108,23 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             'verified_payments': verified_payments,
             'pending_payments': pending_payments,
             
-            # Refunds
+            # Refunds (combined totals)
             'total_refunds': revenue_breakdown['total_refunds'],
             'refund_count': revenue_breakdown['refund_count'],
+            'processed_refunds': revenue_breakdown['processed_refunds'],
+            'pending_refunds': revenue_breakdown['pending_refunds'],
+            
+            # Participant refunds breakdown
+            'participant_refunds': revenue_breakdown['participant_refunds'],
+            'participant_refund_count': revenue_breakdown['participant_refund_count'],
+            'participant_refund_processed': revenue_breakdown['participant_refund_processed'],
+            'participant_refund_pending': revenue_breakdown['participant_refund_pending'],
+            
+            # Order refunds breakdown
+            'order_refunds': revenue_breakdown['order_refunds'],
+            'order_refund_count': revenue_breakdown['order_refund_count'],
+            'order_refund_processed': revenue_breakdown['order_refund_processed'],
+            'order_refund_pending': revenue_breakdown['order_refund_pending'],
             
             # Donations
             'total_donations': revenue_breakdown['donation_revenue'],
@@ -262,7 +276,7 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
     
     def _get_revenue_breakdown(self, event, include_pending=True):
         """Calculate comprehensive revenue breakdown"""
-        # Event registration payments
+        # Event registration payments - exclude REFUNDED and CANCELLED
         event_payment_filter = Q(event=event)
         if include_pending:
             event_payment_filter &= Q(status__in=[
@@ -275,16 +289,17 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
         event_payments = EventPayment.objects.filter(event_payment_filter).aggregate(
             total=Coalesce(Sum('amount'), Decimal('0.00')),
             count=Count('id'),
-            verified_amount=Coalesce(Sum('amount', filter=Q(verified=True)), Decimal('0.00')),
+            verified_amount=Coalesce(Sum('amount', filter=Q(verified=True, status=EventPayment.PaymentStatus.SUCCEEDED)), Decimal('0.00')),
             pending_amount=Coalesce(Sum('amount', filter=Q(verified=False)), Decimal('0.00'))
         )
         
-        # Merchandise payments
+        # Merchandise payments - exclude REFUNDED and CANCELLED
         product_payment_filter = Q(cart__event=event)
         if include_pending:
             product_payment_filter &= Q(status__in=[
                 ProductPayment.PaymentStatus.SUCCEEDED,
-                ProductPayment.PaymentStatus.PENDING
+                ProductPayment.PaymentStatus.REFUND_PROCESSING,
+                ProductPayment.PaymentStatus.REFUNDED
             ])
         else:
             product_payment_filter &= Q(status=ProductPayment.PaymentStatus.SUCCEEDED)
@@ -292,7 +307,9 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
         product_payments = ProductPayment.objects.filter(product_payment_filter).aggregate(
             total=Coalesce(Sum('amount'), Decimal('0.00')),
             count=Count('id'),
-            verified_amount=Coalesce(Sum('amount', filter=Q(approved=True)), Decimal('0.00')),
+            verified_amount=Coalesce(Sum('amount', filter=Q(approved=True, 
+                                                            status__in=[ProductPayment.PaymentStatus.SUCCEEDED]
+                                                            )), Decimal('0.00')),
             pending_amount=Coalesce(Sum('amount', filter=Q(approved=False)), Decimal('0.00'))
         )
         
@@ -313,8 +330,8 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             pending_amount=Coalesce(Sum('amount', filter=Q(verified=False)), Decimal('0.00'))
         )
         
-        # Refunds
-        refunds = ParticipantRefund.objects.filter(event=event).aggregate(
+        # Participant Refunds (event registration refunds)
+        participant_refunds = ParticipantRefund.objects.filter(event=event).aggregate(
             total=Coalesce(Sum('refund_amount'), Decimal('0.00')),
             count=Count('id'),
             processed_amount=Coalesce(Sum(
@@ -330,15 +347,39 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             ), Decimal('0.00'))
         )
         
-        # refunds for orders
-        refunds_orders = OrderRefund.objects.filter(
-            event=event,
-        ).aggregate(
+        # Order Refunds (merchandise refunds)
+        order_refunds = OrderRefund.objects.filter(event=event).aggregate(
+            total=Coalesce(Sum('refund_amount'), Decimal('0.00')),
+            count=Count('id'),
             processed_amount=Coalesce(Sum(
                 'refund_amount',
                 filter=Q(status=OrderRefund.RefundStatus.PROCESSED)
             ), Decimal('0.00')),
+            pending_amount=Coalesce(Sum(
+                'refund_amount',
+                filter=Q(status__in=[
+                    OrderRefund.RefundStatus.PENDING,
+                    OrderRefund.RefundStatus.IN_PROGRESS
+                ])
+            ), Decimal('0.00'))
         )
+        # Calculate refunds on verified/approved payments only
+        # For participant refunds - check if original payment was verified
+        participant_refunds_on_verified = ParticipantRefund.objects.filter(
+            event=event,
+            status=ParticipantRefund.RefundStatus.PROCESSED,
+            event_payment__verified=True,
+            event_payment__status=EventPayment.PaymentStatus.SUCCEEDED
+        ).aggregate(total=Coalesce(Sum('refund_amount'), Decimal('0.00')))['total']
+        
+        # For order refunds - check if original payment was approved
+        order_refunds_on_approved = OrderRefund.objects.filter(
+            event=event,
+            status=OrderRefund.RefundStatus.PROCESSED,
+            payment__approved=True,
+            payment__status=ProductPayment.PaymentStatus.SUCCEEDED
+        ).aggregate(total=Coalesce(Sum('refund_amount'), Decimal('0.00')))['total']
+        
         # Calculate totals
         gross_revenue = (
             event_payments['total'] +
@@ -346,13 +387,18 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             donations['total']
         )
         
-        net_revenue = gross_revenue - refunds['processed_amount'] - refunds_orders['processed_amount']
+        total_refund_processed = participant_refunds['processed_amount'] + order_refunds['processed_amount']
+        net_revenue = gross_revenue - total_refund_processed
         
-        total_verified = (
+        # Verified revenue = verified payments - refunds on verified payments only
+        total_verified_before_refunds = (
             event_payments['verified_amount'] +
             product_payments['verified_amount'] +
             donations['verified_amount']
-        ) - refunds['processed_amount']
+        )
+        print(total_verified_before_refunds)
+        print(participant_refunds_on_verified, order_refunds_on_approved)
+        total_verified = total_verified_before_refunds - (participant_refunds_on_verified + order_refunds_on_approved)
         
         total_pending = (
             event_payments['pending_amount'] +
@@ -373,10 +419,21 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             'donation_count': donations['count'],
             'donation_verified': donations['verified_amount'],
             'donation_pending': donations['pending_amount'],
-            'total_refunds': refunds['total'],
-            'refund_count': refunds['count'],
-            'processed_refunds': refunds['processed_amount'],
-            'pending_refunds': refunds['pending_amount'],
+            # Combined refund totals
+            'total_refunds': participant_refunds['total'] + order_refunds['total'],
+            'refund_count': participant_refunds['count'] + order_refunds['count'],
+            'processed_refunds': total_refund_processed,
+            'pending_refunds': participant_refunds['pending_amount'] + order_refunds['pending_amount'],
+            # Participant refunds breakdown
+            'participant_refunds': participant_refunds['total'],
+            'participant_refund_count': participant_refunds['count'],
+            'participant_refund_processed': participant_refunds['processed_amount'],
+            'participant_refund_pending': participant_refunds['pending_amount'],
+            # Order refunds breakdown
+            'order_refunds': order_refunds['total'],
+            'order_refund_count': order_refunds['count'],
+            'order_refund_processed': order_refunds['processed_amount'],
+            'order_refund_pending': order_refunds['pending_amount'],
             'gross_revenue': gross_revenue,
             'net_revenue': net_revenue,
             'total_verified_revenue': total_verified,
@@ -423,7 +480,9 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
         if include_pending:
             product_payment_filter &= Q(status__in=[
                 ProductPayment.PaymentStatus.SUCCEEDED,
-                ProductPayment.PaymentStatus.PENDING
+                ProductPayment.PaymentStatus.CANCELLED,
+                ProductPayment.PaymentStatus.REFUND_PROCESSING,
+                ProductPayment.PaymentStatus.REFUNDED
             ])
         else:
             product_payment_filter &= Q(status=ProductPayment.PaymentStatus.SUCCEEDED)
@@ -452,10 +511,21 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             amount=Coalesce(Sum('amount'), Decimal('0.00'))
         ).order_by('date')
         
-        # Get refunds by date
-        refunds_timeline = ParticipantRefund.objects.filter(
+        # Get participant refunds by date
+        participant_refunds_timeline = ParticipantRefund.objects.filter(
             event=event,
             status=ParticipantRefund.RefundStatus.PROCESSED
+        ).annotate(
+            date=trunc_func('processed_at')
+        ).values('date').annotate(
+            count=Count('id'),
+            amount=Coalesce(Sum('refund_amount'), Decimal('0.00'))
+        ).order_by('date')
+        
+        # Get order refunds by date
+        order_refunds_timeline = OrderRefund.objects.filter(
+            event=event,
+            status=OrderRefund.RefundStatus.PROCESSED
         ).annotate(
             date=trunc_func('processed_at')
         ).values('date').annotate(
@@ -487,23 +557,35 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             timeline_dict[date]['donations'] = donation['count']
             timeline_dict[date]['donation_amount'] = donation['amount']
         
-        for refund in refunds_timeline:
+        for refund in participant_refunds_timeline:
             date = refund['date'].date() if hasattr(refund['date'], 'date') else refund['date']
             if date not in timeline_dict:
                 timeline_dict[date] = self._init_timeline_entry(date)
-            timeline_dict[date]['refunds'] = refund['count']
-            timeline_dict[date]['refund_amount'] = refund['amount']
+            timeline_dict[date]['participant_refunds'] = refund['count']
+            timeline_dict[date]['participant_refund_amount'] = refund['amount']
+        
+        for refund in order_refunds_timeline:
+            date = refund['date'].date() if hasattr(refund['date'], 'date') else refund['date']
+            if date not in timeline_dict:
+                timeline_dict[date] = self._init_timeline_entry(date)
+            timeline_dict[date]['order_refunds'] = refund['count']
+            timeline_dict[date]['order_refund_amount'] = refund['amount']
         
         # Calculate net and cumulative amounts
         cumulative = Decimal('0.00')
         timeline_list = []
         for date in sorted(timeline_dict.keys()):
             entry = timeline_dict[date]
+            # Combined refund amount for net calculation
+            total_refund = entry['participant_refund_amount'] + entry['order_refund_amount']
+            entry['refund_amount'] = total_refund
+            entry['refunds'] = entry['participant_refunds'] + entry['order_refunds']
+            
             entry['net_amount'] = (
                 entry['event_registration_amount'] +
                 entry['merchandise_amount'] +
                 entry['donation_amount'] -
-                entry['refund_amount']
+                total_refund
             )
             cumulative += entry['net_amount']
             entry['cumulative_amount'] = cumulative
@@ -521,8 +603,12 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             'merchandise_amount': Decimal('0.00'),
             'donations': 0,
             'donation_amount': Decimal('0.00'),
-            'refunds': 0,
-            'refund_amount': Decimal('0.00'),
+            'participant_refunds': 0,
+            'participant_refund_amount': Decimal('0.00'),
+            'order_refunds': 0,
+            'order_refund_amount': Decimal('0.00'),
+            'refunds': 0,  # Combined count
+            'refund_amount': Decimal('0.00'),  # Combined amount
             'net_amount': Decimal('0.00'),
             'cumulative_amount': Decimal('0.00')
         }
