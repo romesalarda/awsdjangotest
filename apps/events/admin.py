@@ -472,7 +472,7 @@ class ParticipantRefundAdmin(admin.ModelAdmin):
         'refund_reference', 
         'participant_name', 
         'event_name', 
-        'total_refund_amount', 
+        'refund_amount', 
         'status', 
         # 'days_pending_display',
         'created_at'
@@ -502,9 +502,7 @@ class ParticipantRefundAdmin(admin.ModelAdmin):
         }),
         ('Financial Details', {
             'fields': (
-                'event_payment_amount', 
-                'product_payment_amount', 
-                'total_refund_amount',
+                'refund_amount',
                 'refund_method'
             )
         }),

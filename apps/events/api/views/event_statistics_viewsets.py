@@ -408,7 +408,7 @@ class EventStatisticsViewSet(viewsets.ViewSet):
                     if payment.approved and payment.status == ProductPayment.PaymentStatus.SUCCEEDED:
                         distribution[location_key]['total_verified'] += 1
                         distribution[location_key]['verified_amount'] += float(payment.amount or 0)
-                    else:
+                    elif payment.status in [ProductPayment.PaymentStatus.PENDING] or not payment.approved:
                         distribution[location_key]['total_outstanding'] += 1
                         distribution[location_key]['outstanding_amount'] += float(payment.amount or 0)
             

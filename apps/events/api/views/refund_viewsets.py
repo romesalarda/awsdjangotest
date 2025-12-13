@@ -90,7 +90,7 @@ class ParticipantRefundViewSet(viewsets.ModelViewSet):
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
-        if self.action == 'list':
+        if self.action == 'list' and self.request.GET.get('detailed', 'false').lower() != 'true':
             return ParticipantRefundListSerializer
         elif self.action in ['process_refund']:
             return ProcessRefundSerializer

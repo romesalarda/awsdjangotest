@@ -281,7 +281,9 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
         if include_pending:
             event_payment_filter &= Q(status__in=[
                 EventPayment.PaymentStatus.SUCCEEDED,
-                EventPayment.PaymentStatus.PENDING
+                EventPayment.PaymentStatus.PENDING,
+                EventPayment.PaymentStatus.REFUND_PROCESSING,
+                EventPayment.PaymentStatus.REFUNDED,
             ])
         else:
             event_payment_filter &= Q(status=EventPayment.PaymentStatus.SUCCEEDED)

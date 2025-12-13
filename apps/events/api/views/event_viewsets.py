@@ -4336,6 +4336,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         
         for cart in participant_carts:
             # Get the payment for this cart
+            continue
             cart_payment = ProductPayment.objects.filter(
                 cart=cart,
                 status=ProductPayment.PaymentStatus.SUCCEEDED
@@ -4387,6 +4388,7 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 is_automatic = first_event_payment.method.supports_automatic_refunds
                 stripe_intent = first_event_payment.stripe_payment_intent
             
+            print(f"💸 Initiating refund process for participant {participant.event_pax_id} - Total refund: £{total_amount}")
             # Create main ParticipantRefund (for event registration only)
             refund = ParticipantRefund.objects.create(
                 participant=participant,
@@ -4401,7 +4403,6 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 refund_contact_email=organizer_contact_email,
                 original_payment_method=payment_method_display,
                 is_automatic_refund=is_automatic,
-                stripe_payment_intent=stripe_intent if is_automatic else None,
                 status=ParticipantRefund.RefundStatus.PENDING
             )
             print(f"💰 ParticipantRefund created: {refund.refund_reference} - £{event_payment_total} (event registration)")
