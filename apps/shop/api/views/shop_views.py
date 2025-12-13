@@ -146,11 +146,11 @@ class EventCartViewSet(viewsets.ModelViewSet):
         user = self.request.user
         
         # Only staff and superusers can create carts
-        if not (user.is_staff or user.is_superuser):
-            raise exceptions.PermissionDenied(
-                "Only administrators can create merchandise carts. "
-                "If you need a cart created, please contact the event service team."
-            )
+        # if not (user.is_staff or user.is_superuser):
+        #     raise exceptions.PermissionDenied(
+        #         "Only administrators can create merchandise carts. "
+        #         "If you need a cart created, please contact the event service team."
+        #     )
         
         serializer.save()
     

@@ -69,7 +69,7 @@ class SecureTokenObtainView(APIView):
             max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
             httponly=True,  # Prevents JavaScript access (XSS protection)
             secure=not settings.DEBUG,  # HTTPS only in production
-            samesite='Strict',  # CSRF protection
+            samesite='Lax',  # CSRF protection while allowing WebSocket connections
             path='/'
         )
 
@@ -80,7 +80,7 @@ class SecureTokenObtainView(APIView):
             max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
             httponly=True,  # Prevents JavaScript access (XSS protection)
             secure=not settings.DEBUG,  # HTTPS only in production
-            samesite='Strict',  # CSRF protection
+            samesite='Lax',  # CSRF protection while allowing WebSocket connections
             path='/'
         )
 
@@ -92,7 +92,7 @@ class SecureTokenObtainView(APIView):
             max_age=31449600,  # 1 year
             httponly=False,  # Must be readable by JavaScript
             secure=not settings.DEBUG,
-            samesite='Strict',
+            samesite='Lax',
             path='/'
         )
 
@@ -132,7 +132,7 @@ class SecureTokenRefreshView(APIView):
                 max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
                 httponly=True,
                 secure=not settings.DEBUG,
-                samesite='Strict',
+                samesite='Lax',
                 path='/'
             )
 
@@ -148,7 +148,7 @@ class SecureTokenRefreshView(APIView):
                     max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
                     httponly=True,
                     secure=not settings.DEBUG,
-                    samesite='Strict',
+                    samesite='Lax',
                     path='/'
                 )
 
@@ -191,7 +191,7 @@ class SecureLogoutView(APIView):
             'path': '/',
             'httponly': True,
             'secure': not settings.DEBUG,
-            'samesite': 'Strict'
+            'samesite': 'Lax'
         }
         
         # Delete access token
