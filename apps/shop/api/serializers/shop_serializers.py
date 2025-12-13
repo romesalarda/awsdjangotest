@@ -131,13 +131,16 @@ class EventProductSerializer(serializers.ModelSerializer):
         return obj.available_sizes
     
     def get_user_purchased_count(self, obj):
-        """Get the count of how many of this product the requesting user has purchased"""
+        """Get the count of how many of this product the requesting user has purchased AND currently has in cart"""
         request = self.context.get('request')
         if not request or not request.user or not request.user.is_authenticated:
             return 0
         
         from apps.shop.models.shop_models import ProductPurchaseTracker
-        return ProductPurchaseTracker.get_user_purchased_quantity(request.user, obj)
+        # Include both completed purchases and items in active carts
+        completed = ProductPurchaseTracker.get_user_purchased_quantity(request.user, obj)
+        in_cart = ProductPurchaseTracker.get_user_cart_quantity(request.user, obj)
+        return completed + in_cart
     
     def get_can_purchase(self, obj):
         """Check if the current user can purchase this product"""

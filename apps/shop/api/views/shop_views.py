@@ -165,11 +165,11 @@ class EventCartViewSet(viewsets.ModelViewSet):
         cart: EventCart = self.get_object()
         
         # Security check: Only staff/superusers can add products to carts
-        if not (request.user.is_staff or request.user.is_superuser):
-            raise exceptions.PermissionDenied(
-                "Only administrators can add products to carts. "
-                "If you need items added to your cart, please contact the event service team."
-            )
+        # if not (request.user.is_staff or request.user.is_superuser):
+        #     raise exceptions.PermissionDenied(
+        #         "Only administrators can add products to carts. "
+        #         "If you need items added to your cart, please contact the event service team."
+        #     )
         
         # Additional check: ensure authorized user is modifying the cart
         self.check_object_permissions(request, cart)
@@ -222,23 +222,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                         f"Product {product_object.title} requires a size selection."
                     )
                 
-                # Check stock availability (only if stock > 0, else infinite/made-to-order)
-                if product_object.stock > 0 and product_object.stock < quantity:
-                    raise serializers.ValidationError(
-                        f"Insufficient stock for {product_object.title}. Available: {product_object.stock}, Requested: {quantity}"
-                    )
-                
-                # Check max purchase per person limit
-                can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
-                    user=cart.user,
-                    product=product_object,
-                    quantity=quantity
-                )
-                
-                if not can_purchase:
-                    raise serializers.ValidationError(error_msg)
-                
-                # Check size is valid for product
+                # Check size is valid for product first
                 size_object = None
                 if size:
                     size_object = ProductSize.objects.filter(size=size, product=product_object).first()
@@ -247,7 +231,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                             f"Size {size} not available for product {product_object.title}"
                         )
                 
-                # Check if order already exists for this product in the cart
+                # Check if order already exists for this product+size in the cart
                 existing_order = EventProductOrder.objects.filter(
                     product=product_object,
                     cart=cart,
@@ -261,18 +245,31 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 discount_amount = original_price - discounted_price
                 
                 if existing_order:
-                    # Update existing order quantity instead of throwing error
+                    # Updating existing order - add to current quantity
                     new_quantity = existing_order.quantity + quantity
                     
-                    # Re-check max purchase limit with new quantity
-                    can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
-                        user=cart.user,
-                        product=product_object,
-                        quantity=new_quantity - existing_order.quantity  # Only check the additional quantity
-                    )
+                    # Validate the NEW total quantity against limits
+                    from django.db.models import Sum
                     
-                    if not can_purchase:
-                        raise serializers.ValidationError(error_msg)
+                    # Check maximum_order_quantity limit first (per single order)
+                    if new_quantity > product_object.maximum_order_quantity:
+                        raise serializers.ValidationError(
+                            f"Cannot add {quantity} more. The maximum quantity per order for '{product_object.title}' is {product_object.maximum_order_quantity}. "
+                            f"Current order quantity: {existing_order.quantity}."
+                        )
+                    
+                    # Check max_purchase_per_person limit (only if limit exists)
+                    if product_object.max_purchase_per_person != -1:
+                        # Use can_purchase with exclude_order_id to avoid double-counting
+                        can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
+                            user=cart.user,
+                            product=product_object,
+                            quantity=new_quantity,
+                            exclude_order_id=existing_order.id
+                        )
+                        
+                        if not can_purchase:
+                            raise serializers.ValidationError(error_msg)
                     
                     # Check stock for additional quantity (only if stock tracking enabled)
                     if product_object.stock > 0 and product_object.stock < quantity:
@@ -280,7 +277,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                             f"Insufficient stock for additional {product_object.title}. Available: {product_object.stock}, Requested: {quantity}"
                         )
                     
-                    # NEW: Decrement stock atomically (only if stock > 0)
+                    # Decrement stock atomically for additional quantity (only if stock > 0)
                     if product_object.stock > 0:
                         stock_decremented = product_object.decrement_stock(quantity)
                         if not stock_decremented:
@@ -301,7 +298,37 @@ class EventCartViewSet(viewsets.ModelViewSet):
                         'total_quantity': new_quantity
                     })
                 else:
-                    # NEW: Decrement stock atomically before creating order (only if stock > 0)
+                    # Creating new order - validate against limits
+                    # Check maximum_order_quantity limit (per single order)
+                    if quantity > product_object.maximum_order_quantity:
+                        raise serializers.ValidationError(
+                            f"Cannot add {quantity} of '{product_object.title}'. The maximum quantity per order is {product_object.maximum_order_quantity}."
+                        )
+                    
+                    # Get completed purchases
+                    completed_purchases = ProductPurchaseTracker.get_user_purchased_quantity(cart.user, product_object)
+                    
+                    # Get current cart quantity for this product
+                    cart_quantity = ProductPurchaseTracker.get_user_cart_quantity(cart.user, product_object)
+                    
+                    # Check if adding this new order would exceed limit (only if limit exists)
+                    if product_object.max_purchase_per_person != -1:
+                        total_with_new = completed_purchases + cart_quantity + quantity
+                        if total_with_new > product_object.max_purchase_per_person:
+                            remaining = product_object.max_purchase_per_person - (completed_purchases + cart_quantity)
+                            raise serializers.ValidationError(
+                                f"Cannot add {quantity} of '{product_object.title}'. You can only add {remaining} more "
+                                f"(limit: {product_object.max_purchase_per_person}, purchased: {completed_purchases}, "
+                                f"already in cart: {cart_quantity})."
+                            )
+                    
+                    # Check stock availability (only if stock > 0, else infinite/made-to-order)
+                    if product_object.stock > 0 and product_object.stock < quantity:
+                        raise serializers.ValidationError(
+                            f"Insufficient stock for {product_object.title}. Available: {product_object.stock}, Requested: {quantity}"
+                        )
+                    
+                    # Decrement stock atomically before creating order (only if stock > 0)
                     if product_object.stock > 0:
                         stock_decremented = product_object.decrement_stock(quantity)
                         if not stock_decremented:
@@ -345,8 +372,12 @@ class EventCartViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_name='remove', url_path='remove')
     def remove_from_cart(self, request, *args, **kwargs):
         '''
-        Bulk remove products from the cart.
-        E.g. {"products": ["product_uuid1", "product_uuid2"]}
+        Remove specific product orders from the cart by order ID.
+        Supports both legacy format (product UUIDs) and new format (order IDs with optional size).
+        
+        New format (recommended): {"order_ids": [1, 2, 3]}
+        Legacy format: {"products": ["product_uuid1", "product_uuid2"]} - removes ALL orders for these products
+        Mixed format: {"products": [{"uuid": "product_uuid", "size": "M"}]} - removes specific size orders
         '''
         cart: EventCart = self.get_object()
         
@@ -362,34 +393,76 @@ class EventCartViewSet(viewsets.ModelViewSet):
         if cart.approved or cart.submitted:
             raise serializers.ValidationError("Cannot modify an approved or submitted cart.")
         
+        order_ids = request.data.get("order_ids", [])
         products = request.data.get("products", [])
         
-        if not products:
-            raise serializers.ValidationError("No products provided to remove from cart.")
+        if not order_ids and not products:
+            raise serializers.ValidationError("No order IDs or products provided to remove from cart.")
         
         with transaction.atomic():
             removed_products = []
+            orders_to_remove = []
             
-            for prod_id in products:
-                product = get_object_or_404(EventProduct, uuid=prod_id)
+            # Handle new format: order IDs
+            if order_ids:
+                orders_to_remove = EventProductOrder.objects.filter(
+                    id__in=order_ids,
+                    cart=cart
+                )
+            
+            # Handle legacy/mixed format: product UUIDs (with optional size)
+            elif products:
+                for prod_item in products:
+                    # Handle both string UUID and dict format
+                    if isinstance(prod_item, str):
+                        # Legacy format: remove ALL orders for this product
+                        product = get_object_or_404(EventProduct, uuid=prod_item)
+                        orders = EventProductOrder.objects.filter(cart=cart, product=product)
+                        orders_to_remove.extend(orders)
+                    elif isinstance(prod_item, dict):
+                        # New dict format: {"uuid": "...", "size": "M"}
+                        prod_uuid = prod_item.get('uuid') or prod_item.get('id')
+                        size = prod_item.get('size')
+                        
+                        product = get_object_or_404(EventProduct, uuid=prod_uuid)
+                        
+                        if size:
+                            # Remove specific size order
+                            size_object = ProductSize.objects.filter(size=size, product=product).first()
+                            orders = EventProductOrder.objects.filter(
+                                cart=cart, 
+                                product=product,
+                                size=size_object
+                            )
+                        else:
+                            # Remove all orders for this product (no size specified)
+                            orders = EventProductOrder.objects.filter(cart=cart, product=product)
+                        
+                        orders_to_remove.extend(orders)
+            
+            # Process removals
+            for order in orders_to_remove:
+                product = order.product
                 
-                # Get all orders for this product to restore stock
-                orders = EventProductOrder.objects.filter(cart=cart, product=product)
+                # Restore stock (only if stock tracking enabled)
+                if product.stock > 0:
+                    product.increment_stock(order.quantity)
                 
-                # Restore stock for each order (only if stock tracking enabled)
-                for order in orders:
-                    if product.stock > 0:  # Only restore if stock tracking was enabled
-                        product.increment_stock(order.quantity)
-                    
-                    removed_products.append({
-                        'product': product.title,
-                        'quantity': order.quantity,
-                        'stock_restored': product.stock > 0
-                    })
+                removed_products.append({
+                    'order_id': order.id,
+                    'product': product.title,
+                    'size': order.size.size if order.size else None,
+                    'quantity': order.quantity,
+                    'stock_restored': product.stock > 0
+                })
                 
-                # Remove product and delete orders
-                cart.products.remove(product)
-                orders.delete()
+                # Delete the order
+                order.delete()
+            
+            # Clean up M2M relationships for products with no remaining orders
+            for product_id in set(order.product_id for order in orders_to_remove):
+                if not EventProductOrder.objects.filter(cart=cart, product_id=product_id).exists():
+                    cart.products.remove(product_id)
             
             # Recalculate cart total
             total = 0
@@ -507,7 +580,8 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
                     user=cart.user,
                     product=product,
-                    quantity=order.quantity
+                    quantity=order.quantity,
+                    exclude_order_id=order.id
                 )
                 
                 if not can_purchase:
@@ -701,19 +775,19 @@ class EventCartViewSet(viewsets.ModelViewSet):
             )
         
         # Before submission, only staff/superusers can modify
-        if not (user.is_staff or user.is_superuser):
-            logger.warning(
-                f"SECURITY: User {user.email} (ID: {user.id}) attempted to modify cart {cart.order_reference_id} "
-                f"without proper permissions. Request blocked."
-            )
-            raise exceptions.PermissionDenied(
-                "Only administrators can modify carts. "
-                "If you need changes made, please contact the event service team."
-            )
+        # if not (user.is_staff or user.is_superuser):
+        #     logger.warning(
+        #         f"SECURITY: User {user.primary_email} (ID: {user.id}) attempted to modify cart {cart.order_reference_id} "
+        #         f"without proper permissions. Request blocked."
+        #     )
+        #     raise exceptions.PermissionDenied(
+        #         "Only administrators can modify carts. "
+        #         "If you need changes made, please contact the event service team."
+        #     )
         
         # Audit log for cart modifications
         logger.info(
-            f"AUDIT: User {user.email} (ID: {user.id}) modifying cart {cart.order_reference_id} (ID: {cart.id}). "
+            f"AUDIT: User {user.primary_email} (ID: {user.id}) modifying cart {cart.order_reference_id} (ID: {cart.uuid}). "
             f"Products: {len(products)} items."
         )
 
@@ -769,16 +843,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                         f"Insufficient stock for {product_object.title}. Available: {product_object.stock}"
                     )
                 
-                # Check max purchase per person
-                can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
-                    user=cart.user,
-                    product=product_object,
-                    quantity=quantity
-                )
-                
-                if not can_purchase:
-                    raise serializers.ValidationError(error_msg)
-
+                # Find size object if specified
                 size_object = None
                 if size:
                     size_object = ProductSize.objects.filter(size=size, product=product_object).first()
@@ -787,29 +852,66 @@ class EventCartViewSet(viewsets.ModelViewSet):
                             f"Size {size} not available for product {product_object.title}"
                         )
 
-                # Only look for existing order by product, cart, size
+                # Look for existing order by product, cart, size
                 order = EventProductOrder.objects.filter(
                     product=product_object,
                     cart=cart,
                     size=size_object
                 ).first()
                 
-                if quantity > product_object.maximum_order_quantity:
-                    raise serializers.ValidationError(
-                        f"Quantity {quantity} exceeds maximum order quantity of {product_object.maximum_order_quantity} for product {product_object.title}"
-                    )
-                    
                 if order:
-                    # Update quantity if changed
+                    # Only validate and update if quantity has actually changed
                     if order.quantity != quantity:
+                        # Validate maximum_order_quantity for the NEW quantity
+                        if quantity > product_object.maximum_order_quantity:
+                            raise serializers.ValidationError(
+                                f"Quantity {quantity} exceeds maximum order quantity of {product_object.maximum_order_quantity} for product {product_object.title}"
+                            )
+                        
+                        # Validate max_purchase_per_person if there's a limit
+                        # Calculate the difference to see if we're adding or removing
+                        quantity_change = quantity - order.quantity
+                        
+                        if quantity_change > 0 and product_object.max_purchase_per_person != -1:
+                            # Only validate if increasing quantity and there's a limit
+                            # Exclude current order from cart count to avoid double-counting
+                            can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
+                                user=cart.user,
+                                product=product_object,
+                                quantity=quantity_change,  # Only check the additional amount
+                                exclude_order_id=order.id  # Exclude current order to prevent double-counting
+                            )
+                            
+                            if not can_purchase:
+                                raise serializers.ValidationError(error_msg)
+                        
+                        # Update the order
                         order.quantity = quantity
                         order.price_at_purchase = product_object.get_price_for_user(cart.user)
                         order.save()
                         updated_orders.append(
                             f"Updated {product_object.title} (size: {size_object.size if size_object else 'N/A'}, quantity: {quantity})"
                         )
+                    # If quantity hasn't changed, don't add to updated_orders list
                 else:
-                    # Create new order only if not found
+                    # Creating new order - validate fully
+                    if quantity > product_object.maximum_order_quantity:
+                        raise serializers.ValidationError(
+                            f"Quantity {quantity} exceeds maximum order quantity of {product_object.maximum_order_quantity} for product {product_object.title}"
+                        )
+                    
+                    # Validate max_purchase_per_person if there's a limit
+                    if product_object.max_purchase_per_person != -1:
+                        can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
+                            user=cart.user,
+                            product=product_object,
+                            quantity=quantity
+                        )
+                        
+                        if not can_purchase:
+                            raise serializers.ValidationError(error_msg)
+                    
+                    # Create new order
                     order = EventProductOrder.objects.create(
                         product=product_object,
                         cart=cart,

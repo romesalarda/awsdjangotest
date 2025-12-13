@@ -542,7 +542,7 @@ class EventProductOrder(models.Model):
                 raise ValueError("Cart must be set and saved before saving an order.")
             if self.product is None or self.product.uuid is None:
                 raise ValueError("Product must be set and saved before saving an order.")
-            self.order_reference_id = f"ORD{self.cart.event.event_code}-{str(self.cart.uuid)[:10]}-{str(self.product.uuid)[:10]}"
+            self.order_reference_id = f"ORD{self.cart.event.event_code[:5]}-{str(self.cart.uuid)[:5]}-{str(self.product.uuid)[:5]}-{str(uuid.uuid4())[:5]}"
         if self.price_at_purchase is None:
             self.price_at_purchase = self.product.get_price_for_user(self.cart.user)
             self.price_at_purchase = round(self.price_at_purchase, 2)
@@ -597,7 +597,7 @@ class ProductPurchaseTracker(models.Model):
     @classmethod
     def get_user_purchased_quantity(cls, user, product):
         """
-        Get total quantity across ALL orders (pending, verified, cancelled) for this user and product.
+        Get total quantity across ALL completed purchases for this user and product.
         This enforces max_purchase_per_person event-wide, preventing users from circumventing 
         limits by creating multiple carts or orders.
         """
@@ -616,24 +616,67 @@ class ProductPurchaseTracker(models.Model):
         return total or 0
     
     @classmethod
-    def can_purchase(cls, user, product, quantity):
+    def get_user_cart_quantity(cls, user, product, exclude_order_id=None):
+        """
+        Get total quantity of this product currently in user's ACTIVE carts.
+        This includes items not yet purchased but already added to cart.
+        
+        Args:
+            user: The user whose cart items to count
+            product: The product to count
+            exclude_order_id: Optional order ID to exclude from count (for update operations)
+        """
+        from django.db.models import Sum
+        
+        # Count items in active carts (not yet completed/cancelled)
+        queryset = EventProductOrder.objects.filter(
+            product=product,
+            cart__user=user,
+            cart__event=product.event,
+            cart__active=True,
+            cart__cart_status__in=[EventCart.CartStatus.ACTIVE, EventCart.CartStatus.LOCKED],
+            status__in=[EventProductOrder.Status.PENDING]
+        )
+        
+        # Exclude specific order if updating (prevents double-counting)
+        if exclude_order_id is not None:
+            queryset = queryset.exclude(id=exclude_order_id)
+        
+        total = queryset.aggregate(total=Sum('quantity'))['total']
+        
+        return total or 0
+    
+    @classmethod
+    def can_purchase(cls, user, product, quantity, exclude_order_id=None):
         """
         Check if user can purchase the specified quantity of this product.
-        Counts ALL existing orders (pending, completed, cancelled) to enforce limits.
-        Returns (can_purchase: bool, remaining_quantity: int, error_message: str)
+        Counts BOTH completed purchases AND items in active carts to enforce limits.
+        
+        Args:
+            user: The user attempting to purchase
+            product: The product being purchased
+            quantity: The quantity attempting to add/purchase
+            exclude_order_id: Optional order ID to exclude from cart count (for updates)
+        
+        Returns:
+            tuple: (can_purchase: bool, remaining_quantity: int, error_message: str)
         """
         # If product has no limit, allow purchase
         if product.max_purchase_per_person == -1:
             return True, float('inf'), None
         
-        current_purchased = cls.get_user_purchased_quantity(user, product)
-        remaining = product.max_purchase_per_person - current_purchased
+        # Get both completed purchases and items in active carts
+        completed_purchases = cls.get_user_purchased_quantity(user, product)
+        cart_items = cls.get_user_cart_quantity(user, product, exclude_order_id=exclude_order_id)
+        current_total = completed_purchases + cart_items
+        
+        remaining = product.max_purchase_per_person - current_total
         
         if remaining <= 0:
-            return False, 0, f"You have already reached the maximum purchase limit ({product.max_purchase_per_person}) for this product across all orders."
+            return False, 0, f"You have already reached the maximum purchase limit ({product.max_purchase_per_person}) for this product. (Purchased: {completed_purchases}, In cart: {cart_items})"
         
         if quantity > remaining:
-            return False, remaining, f"You can only purchase {remaining} more of this product (limit: {product.max_purchase_per_person}, current orders total: {current_purchased})."
+            return False, remaining, f"You can only add {remaining} more of this product to your cart (limit: {product.max_purchase_per_person}, purchased: {completed_purchases}, already in cart: {cart_items})."
         
         return True, remaining, None
     
