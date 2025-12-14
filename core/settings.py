@@ -142,11 +142,11 @@ MIDDLEWARE = [
 
 # CORS Configuration - Applied globally
 CORS_ALLOWED_ORIGINS = [
+    'https://cems-nine.vercel.app',
     'https://rsalardadevelop.co.uk',
     'https://www.rsalardadevelop.co.uk',
     'https://rsalardadevelop.com',
     'https://www.rsalardadevelop.com',
-    'https://cems-nine.vercel.app',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
 ]
@@ -409,7 +409,7 @@ SIMPLE_JWT = {
 # CSRF Settings for production security
 CSRF_COOKIE_HTTPONLY = False  # Must be False so JavaScript can read it for CSRF header
 CSRF_COOKIE_SECURE = not DEBUG  # Only send over HTTPS in production
-CSRF_COOKIE_SAMESITE = 'Strict'  # Prevent CSRF attacks
+CSRF_COOKIE_SAMESITE = 'None' 
 CSRF_COOKIE_NAME = 'csrftoken'
 CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
 CSRF_USE_SESSIONS = False
@@ -418,7 +418,7 @@ CSRF_COOKIE_AGE = 31449600  # 1 year
 # Session cookie settings (for admin)
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = not DEBUG
-SESSION_COOKIE_SAMESITE = 'Strict'
+SESSION_COOKIE_SAMESITE = 'None'
 
 # Stripe Payment Configuration
 # TEST MODE by default - set to False for production
