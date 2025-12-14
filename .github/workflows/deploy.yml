@@ -48,7 +48,13 @@ jobs:
         run: |
           docker-compose --env-file .env.test up -d
           echo "Waiting for services to be healthy..."
+          echo "Checking container status..."
+          docker-compose --env-file .env.test ps
+          echo "Checking postgres logs..."
+          docker-compose --env-file .env.test logs db
           sleep 30
+          echo "Final container status..."
+          docker-compose --env-file .env.test ps
 
       - name: Run migrations
         run: |
