@@ -296,16 +296,18 @@ else:
 if not DEBUG:
     # Production HTTPS settings
     CSRF_TRUSTED_ORIGINS = [
+        'https://rsalardadevelop.co.uk',
+        'https://www.rsalardadevelop.co.uk',
         'https://rsalardadevelop.com',
         'https://www.rsalardadevelop.com',
         'https://cems-nine.vercel.app'
-
     ]
     CORS_ALLOWED_ORIGINS = [
+        'https://rsalardadevelop.co.uk',
+        'https://www.rsalardadevelop.co.uk',
         'https://rsalardadevelop.com',
         'https://www.rsalardadevelop.com',
         'https://cems-nine.vercel.app'
-
     ]
     CORS_ALLOW_CREDENTIALS = True  # Required for HTTPOnly cookies
     
