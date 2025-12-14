@@ -140,6 +140,41 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+# CORS Configuration - Applied globally
+CORS_ALLOWED_ORIGINS = [
+    'https://rsalardadevelop.co.uk',
+    'https://www.rsalardadevelop.co.uk',
+    'https://rsalardadevelop.com',
+    'https://www.rsalardadevelop.com',
+    'https://cems-nine.vercel.app',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+]
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = False
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
 ROOT_URLCONF = "core.urls"
 
 TEMPLATES = [
@@ -302,14 +337,6 @@ if not DEBUG:
         'https://www.rsalardadevelop.com',
         'https://cems-nine.vercel.app'
     ]
-    CORS_ALLOWED_ORIGINS = [
-        'https://rsalardadevelop.co.uk',
-        'https://www.rsalardadevelop.co.uk',
-        'https://rsalardadevelop.com',
-        'https://www.rsalardadevelop.com',
-        'https://cems-nine.vercel.app'
-    ]
-    CORS_ALLOW_CREDENTIALS = True  # Required for HTTPOnly cookies
     
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = True
@@ -322,24 +349,6 @@ else:
         'http://localhost:3000',
         'http://127.0.0.1:3000',
     ]
-    CORS_ALLOWED_ORIGINS = [
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-    ]
-    CORS_ALLOW_CREDENTIALS = True  # Required for HTTPOnly cookies
-
-# CORS Headers Configuration
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',  # Important for CSRF protection
-    'x-requested-with',
-]
 
 
 REST_FRAMEWORK = {
