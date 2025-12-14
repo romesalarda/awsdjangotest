@@ -36,31 +36,43 @@ sentry_sdk.init(
 
 load_dotenv()
 
-client = boto3.client('ssm', region_name='eu-west-2')
-
-try:
-    # simple tests to ensure that boto3 can find credentials, may need to be removed in the future
-    sts = boto3.client('sts')
-    session = Session()
-    cred_provider = session.get_component('credential_provider')
-    creds = cred_provider.load_credentials()
-    creds = session.get_credentials()
-except NoCredentialsError:
-    print("FAIL: No credentials found")
-except Exception as e:
-    print(f"ERROR: {str(e)}")
-    
 SSM_PARAM_SUFFIX = "/prod/amdg/v1/"
 
-try: # local development only
-    USE_ENV_FILE = os.getenv("DEBUG")
-except Exception:
-    USE_ENV_FILE = False
+# Check if we should use SSM or environment variables
+USE_SSM = False
+ssm_client = None
+
+try:
+    # Try to initialize SSM client and verify AWS credentials
+    ssm_client = boto3.client('ssm', region_name='eu-west-2')
+    sts = boto3.client('sts')
+    sts.get_caller_identity()  # This will raise an exception if credentials are invalid
+    USE_SSM = True
+    print("### Using AWS SSM for secrets ###")
+except (NoCredentialsError, Exception) as e:
+    print(f"### AWS SSM not available ({type(e).__name__}), using environment variables ###")
+    USE_SSM = False
 
 def get_secret(name):
-    # if USE_ENV_FILE:
-    #     return os.getenv(name)
-    return client.get_parameter(Name=SSM_PARAM_SUFFIX + name, WithDecryption=True)['Parameter']['Value']
+    """
+    Fetch secret from AWS SSM Parameter Store in production,
+    or fall back to environment variables in development/testing.
+    """
+    if USE_SSM and ssm_client:
+        try:
+            return ssm_client.get_parameter(
+                Name=SSM_PARAM_SUFFIX + name, 
+                WithDecryption=True
+            )['Parameter']['Value']
+        except Exception as e:
+            print(f"### Failed to get {name} from SSM, falling back to env: {e} ###")
+            return os.getenv(name)
+    else:
+        # Use environment variables (from .env file or container environment)
+        value = os.getenv(name)
+        if value is None:
+            raise ValueError(f"Required environment variable '{name}' is not set")
+        return value
 
 SECRET_KEY = get_secret('SECRET_KEY')
 # Build paths inside the project like this: BASE_DIR / 'subdir'.

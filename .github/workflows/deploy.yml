@@ -38,7 +38,19 @@ jobs:
 
       - name: Create .env.test file with DB password
         run: |
-          echo "DB_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}" > .env.test
+          cat > .env.test << EOF
+          DB_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}
+          SECRET_KEY=test-secret-key-for-ci-only-not-for-production
+          DEBUG=True
+          ALLOWED_HOSTS=localhost,127.0.0.1,web
+          DB_ENGINE=django.db.backends.postgresql
+          DB_NAME=awstestdb
+          DB_USER=postgres
+          DB_HOST=db
+          DB_PORT=5432
+          AWS_STORAGE_BUCKET_NAME=test-bucket
+          AWS_S3_REGION_NAME=eu-west-2
+          EOF
 
       - name: Clean up old volumes
         run: |
