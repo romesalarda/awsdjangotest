@@ -298,7 +298,7 @@ if not DEBUG:
     CSRF_TRUSTED_ORIGINS = [
         'https://rsalardadevelop.com',
         'https://www.rsalardadevelop.com',
-        'https://cems-nine.vercel.app/'
+        'https://cems-nine.vercel.app'
 
     ]
     CORS_ALLOWED_ORIGINS = [
