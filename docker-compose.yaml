@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Redis - Broker for Celery and Channel Layer for Django Channels
   redis:

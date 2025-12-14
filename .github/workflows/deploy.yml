@@ -74,19 +74,34 @@ jobs:
           echo "=== REDIS LOGS ==="
           docker-compose logs redis
           echo ""
-          echo "Waiting 30 seconds for health checks..."
-          sleep 30
+          echo "Waiting for health checks..."
+          for i in {1..30}; do
+            if docker inspect postgres_db --format='{{.State.Health.Status}}' | grep -q "healthy"; then
+              echo "Postgres is healthy!"
+              break
+            fi
+            echo "Attempt $i/30: Postgres not ready yet, waiting..."
+            sleep 5
+          done
+          echo ""
+          echo "=== WEB CONTAINER LOGS ==="
+          docker-compose logs web
           echo ""
           echo "=== FINAL STATUS ==="
           docker-compose ps
           echo ""
-          echo "=== POSTGRES LOGS AFTER WAIT ==="
-          docker-compose logs db
-          echo ""
-          # Fail if postgres is not healthy
+          # Check if postgres is healthy
           if ! docker inspect postgres_db --format='{{.State.Health.Status}}' | grep -q "healthy"; then
             echo "ERROR: postgres_db is not healthy"
             docker inspect postgres_db --format='{{json .State.Health}}'
+            exit 1
+          fi
+          # Check if web container is running (not just restarting)
+          WEB_STATUS=$(docker inspect django_app --format='{{.State.Status}}')
+          if [ "$WEB_STATUS" != "running" ]; then
+            echo "ERROR: django_app is not running (status: $WEB_STATUS)"
+            echo "=== FULL WEB LOGS ==="
+            docker-compose logs web
             exit 1
           fi
 
