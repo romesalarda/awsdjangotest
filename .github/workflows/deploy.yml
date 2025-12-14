@@ -46,15 +46,32 @@ jobs:
 
       - name: Start services
         run: |
-          docker-compose --env-file .env.test up -d
-          echo "Waiting for services to be healthy..."
-          echo "Checking container status..."
+          echo "Starting services..."
+          docker-compose --env-file .env.test up -d || true
+          echo "Services started, checking status..."
           docker-compose --env-file .env.test ps
-          echo "Checking postgres logs..."
+          echo ""
+          echo "=== POSTGRES LOGS ==="
           docker-compose --env-file .env.test logs db
+          echo ""
+          echo "=== REDIS LOGS ==="
+          docker-compose --env-file .env.test logs redis
+          echo ""
+          echo "Waiting 30 seconds for health checks..."
           sleep 30
-          echo "Final container status..."
+          echo ""
+          echo "=== FINAL STATUS ==="
           docker-compose --env-file .env.test ps
+          echo ""
+          echo "=== POSTGRES LOGS AFTER WAIT ==="
+          docker-compose --env-file .env.test logs db
+          echo ""
+          # Fail if postgres is not healthy
+          if ! docker inspect postgres_db --format='{{.State.Health.Status}}' | grep -q "healthy"; then
+            echo "ERROR: postgres_db is not healthy"
+            docker inspect postgres_db --format='{{json .State.Health}}'
+            exit 1
+          fi
 
       - name: Run migrations
         run: |
