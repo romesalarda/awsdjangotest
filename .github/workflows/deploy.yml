@@ -38,7 +38,7 @@ jobs:
 
       - name: Create .env.test file with DB password
         run: |
-          echo "DB_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}" > .env.test
+          echo "POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}" > .env.test
 
       - name: Build Docker containers
         run: |

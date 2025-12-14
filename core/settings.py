@@ -50,7 +50,7 @@ except NoCredentialsError:
 except Exception as e:
     print(f"ERROR: {str(e)}")
     
-SSM_PARAM_SUFFIX = "/prod/django/workoutapi/"
+SSM_PARAM_SUFFIX = "/prod/amdg/v1/"
 
 try: # local development only
     USE_ENV_FILE = os.getenv("DEBUG")
@@ -58,8 +58,8 @@ except Exception:
     USE_ENV_FILE = False
 
 def get_secret(name):
-    if USE_ENV_FILE:
-        return os.getenv(name)
+    # if USE_ENV_FILE:
+    #     return os.getenv(name)
     return client.get_parameter(Name=SSM_PARAM_SUFFIX + name, WithDecryption=True)['Parameter']['Value']
 
 SECRET_KEY = get_secret('SECRET_KEY')
