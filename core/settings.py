@@ -23,6 +23,8 @@ from botocore.config import Config
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 
+from django.utils.timezone import get_current_timezone
+
 # sentry_sdk.init(
 #     dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
 #     integrations=[DjangoIntegration()],
@@ -102,6 +104,8 @@ THIRD_PARTY_APPS = [
     'django_filters',
     'corsheaders',
     'channels',
+    'django_celery_beat',
+    'django_celery_results',
 ]
 
 LOCAL_APPS = [
@@ -407,3 +411,49 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@cems.org')
 
 # Template directories
 TEMPLATES[0]['DIRS'] = [os.path.join(BASE_DIR, 'templates')]
+
+# ============================================================================
+# CELERY CONFIGURATION
+# ============================================================================
+# Celery uses Redis DB 1 for broker, DB 2 for results
+# Django Channels uses Redis DB 0 (default)
+# This separation prevents key conflicts between systems
+
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/1'
+CELERY_RESULT_BACKEND = 'django-db'  # Store results in Django database
+CELERY_CACHE_BACKEND = 'default'
+
+# Task execution settings
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard limit
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft limit
+CELERY_TASK_ACKS_LATE = True  # Acknowledge tasks after completion for safety
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Only fetch one task at a time for long tasks
+
+# Timezone configuration (must match Django's timezone)
+CELERY_TIMEZONE = TIME_ZONE  # Use Django's timezone setting
+CELERY_ENABLE_UTC = True  # Store all times in UTC
+
+# Result backend settings
+CELERY_RESULT_EXTENDED = True  # Store task args/kwargs in results
+CELERY_RESULT_EXPIRES = 60 * 60 * 24 * 7  # Results expire after 7 days
+
+# Serialization settings (use JSON for security)
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+
+# Beat scheduler configuration
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Task routing and queue configuration
+CELERY_TASK_DEFAULT_QUEUE = 'default'
+CELERY_TASK_DEFAULT_EXCHANGE = 'default'
+CELERY_TASK_DEFAULT_ROUTING_KEY = 'default'
+
+# Logging configuration for Celery
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False  # Don't hijack Django's logger
+
+# ============================================================================
+# END CELERY CONFIGURATION
+# ============================================================================

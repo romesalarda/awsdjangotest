@@ -87,6 +87,17 @@ class EventViewSet(viewsets.ModelViewSet):
         # Base queryset - exclude DELETED events from all views (except Django admin)
         base_queryset = Event.objects.exclude(status=Event.EventStatus.DELETED)
         
+        # For direct retrieval (detail view), allow access to COMPLETED events
+        # For listing, exclude COMPLETED events from public discovery
+        if self.action == 'retrieve':
+            # Direct access: allow COMPLETED events to be viewed
+            # This ensures event pages remain accessible after completion
+            pass  # Use full base_queryset
+        else:
+            # Listing/discovery: exclude COMPLETED events from results
+            # This prevents completed events from appearing in home/search/discovery
+            base_queryset = base_queryset.exclude(status=Event.EventStatus.COMPLETED)
+        
         if user.is_superuser:
             queryset = base_queryset
             print(f"🔧 DEBUG get_queryset - superuser queryset count: {queryset.count()}")
@@ -950,8 +961,14 @@ class EventViewSet(viewsets.ModelViewSet):
     def my_events(self, request):
         '''
         Retrieve a list of events that the user is involved in (created, supervisor, participant, service team member).
+        
+        Query params:
+        - simple: 'true' for simplified serializer (default: 'true')
+        - include_completed: 'true' to include COMPLETED events (default: 'true')
         '''
         simple = request.query_params.get('simple', 'true').lower() == 'true'
+        include_completed = request.query_params.get('include_completed', 'true').lower() == 'true'
+        
         user = request.user
         if not user.is_authenticated:
             return Response(
@@ -964,7 +981,13 @@ class EventViewSet(viewsets.ModelViewSet):
             # models.Q(supervisors=user) |
             models.Q(participants__user=user) |
             models.Q(service_team_members__user=user)
-        ).distinct().filter(date_for_deletion__isnull=True).order_by('-start_date')
+        ).distinct().filter(date_for_deletion__isnull=True)
+        
+        # Optionally exclude COMPLETED events from user's event list
+        if not include_completed:
+            events = events.exclude(status=Event.EventStatus.COMPLETED)
+        
+        events = events.order_by('-start_date')
         
         page = self.paginate_queryset(events)
         if page is not None:
