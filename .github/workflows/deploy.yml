@@ -186,6 +186,8 @@ jobs:
               \"export ECR_REGISTRY=$ACCOUNT_ID.dkr.ecr.eu-west-2.amazonaws.com\",
               \"cd /home/ec2-user/awsdjangotest\",
               \"echo Deploying image: \$ECR_REGISTRY/amdg:\$IMAGE_TAG\",
+              \"echo Cleaning up old Docker images to free space...\",
+              \"docker system prune -af --volumes || true\",
               \"echo Logging in to ECR...\",
               \"aws ecr get-login-password --region eu-west-2 | docker login --username AWS --password-stdin \$ECR_REGISTRY\",
               \"echo Pulling image with tag \$IMAGE_TAG from ECR...\",
