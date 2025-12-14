@@ -33,7 +33,7 @@ services:
 
   # Django Web Application (HTTP + WebSockets via Uvicorn)
   web:
-    build: .
+    image: ${ECR_REGISTRY}/amdg:${IMAGE_TAG}
     container_name: django_app
     command: uvicorn core.asgi:application --host 0.0.0.0 --port 8000 --log-level info
     expose:
@@ -59,7 +59,7 @@ services:
 
   # Celery Worker - Background task execution
   celery_worker:
-    build: .
+    image: ${ECR_REGISTRY}/amdg:${IMAGE_TAG}
     container_name: celery_worker
     command: celery -A core worker --loglevel=info --concurrency=2
     restart: unless-stopped
@@ -81,7 +81,7 @@ services:
 
   # Celery Beat - Scheduled task dispatcher
   celery_beat:
-    build: .
+    image: ${ECR_REGISTRY}/amdg:${IMAGE_TAG}
     container_name: celery_beat
     command: celery -A core beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     restart: unless-stopped

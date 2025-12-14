@@ -1,4 +1,4 @@
-name: CI/CD with AWS SSM
+name: CI/CD with AWS ECR and SSM
 
 on:
   push:
@@ -6,9 +6,11 @@ on:
 
 env:
   AWS_REGION: eu-west-2
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.eu-west-2.amazonaws.com
+  ECR_REPOSITORY: awsdocker
 
 jobs:
-  build-and-test:
+  build-test-push:
     runs-on: ubuntu-latest
     
     steps:
@@ -29,6 +31,10 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Install Docker Compose
         run: |
@@ -57,7 +63,7 @@ jobs:
           docker-compose down -v || true
           docker volume rm awsdjangotest_postgres_data awsdjangotest_redis_data || true
 
-      - name: Build Docker containers
+      - name: Build Docker containers for testing
         run: |
           docker-compose build
 
@@ -126,20 +132,29 @@ jobs:
         run: |
           docker-compose down -v
 
+      - name: Build and push Django app image to ECR
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "Pushed images:"
+          echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+
   deploy:
-    needs: build-and-test
+    needs: build-test-push
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Verify EC2 Status
         run: |
@@ -152,15 +167,51 @@ jobs:
 
       - name: Deploy to EC2 via SSM
         id: deploy_ssm
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
         run: |
           aws ssm send-command \
-            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy Django Docker App" \
+            --comment "Deploy Django Docker App from ECR - Image: $IMAGE_TAG" \
             --timeout-seconds 3600 \
-            --parameters 'commands=["#!/bin/bash -xe","export HOME=/home/ec2-user","cd /home/ec2-user/awsdjangotest","git config --global --add safe.directory /home/ec2-user/awsdjangotest","git remote set-url origin https://github.com/${{ github.repository }}.git","git fetch --all","git reset --hard origin/main","echo Building containers...","docker-compose build","echo Stopping all containers...","docker-compose down","echo Starting db and redis only...","docker-compose up -d db redis","sleep 20","echo Starting web, celery_worker, but NOT celery_beat yet...","docker-compose up -d web celery_worker","echo Waiting for web to be ready...","sleep 45","echo Running migrations BEFORE starting celery_beat...","docker-compose exec -T web python manage.py migrate --noinput","echo Setting up Celery Beat tasks...","docker-compose exec -T web python manage.py setup_event_lifecycle_tasks","echo Now starting celery_beat after migrations complete...","docker-compose up -d celery_beat","echo Starting nginx...","docker-compose up -d nginx","sleep 10","echo Final status...","docker-compose ps"]' \
+            --parameters commands="[
+              \"#!/bin/bash -xe\",
+              \"export HOME=/home/ec2-user\",
+              \"export IMAGE_TAG=$IMAGE_TAG\",
+              \"export ECR_REGISTRY=$ACCOUNT_ID.dkr.ecr.eu-west-2.amazonaws.com\",
+              \"cd /home/ec2-user/awsdjangotest\",
+              \"echo Deploying image: \$ECR_REGISTRY/awsdocker:\$IMAGE_TAG\",
+              \"echo Logging in to ECR...\",
+              \"aws ecr get-login-password --region eu-west-2 | docker login --username AWS --password-stdin \$ECR_REGISTRY\",
+              \"echo Pulling image with tag \$IMAGE_TAG from ECR...\",
+              \"docker-compose pull\",
+              \"echo Stopping all containers...\",
+              \"docker-compose down\",
+              \"echo Starting db and redis only...\",
+              \"docker-compose up -d db redis\",
+              \"sleep 20\",
+              \"echo Starting web, celery_worker, but NOT celery_beat yet...\",
+              \"docker-compose up -d web celery_worker\",
+              \"echo Waiting for web to be ready...\",
+              \"sleep 45\",
+              \"echo Running migrations BEFORE starting celery_beat...\",
+              \"docker-compose exec -T web python manage.py migrate --noinput\",
+              \"echo Setting up Celery Beat tasks...\",
+              \"docker-compose exec -T web python manage.py setup_event_lifecycle_tasks\",
+              \"echo Now starting celery_beat after migrations complete...\",
+              \"docker-compose up -d celery_beat\",
+              \"echo Starting nginx...\",
+              \"docker-compose up -d nginx\",
+              \"sleep 10\",
+              \"echo Final status...\",
+              \"docker-compose ps\",
+              \"echo Deployment complete - Image tag: \$IMAGE_TAG\"
+            ]" \
             --output json > result.json
-
+          
           COMMAND_ID=$(jq -r '.Command.CommandId' result.json)
           echo "command_id=$COMMAND_ID" >> $GITHUB_OUTPUT
           echo "Command ID: $COMMAND_ID"
