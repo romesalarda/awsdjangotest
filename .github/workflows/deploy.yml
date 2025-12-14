@@ -56,6 +56,8 @@ jobs:
           DB_PORT=5432
           AWS_STORAGE_BUCKET_NAME=test-bucket
           AWS_S3_REGION_NAME=eu-west-2
+          ECR_REGISTRY=local-test-registry
+          IMAGE_TAG=test-build
           EOF
 
       - name: Clean up old volumes
