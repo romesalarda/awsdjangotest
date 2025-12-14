@@ -38,15 +38,21 @@ jobs:
 
       - name: Create .env.test file with DB password
         run: |
-          echo "POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}" > .env.test
+          echo "DB_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}" > .env.test
 
       - name: Build Docker containers
         run: |
           docker-compose --env-file .env.test build
 
+      - name: Start services
+        run: |
+          docker-compose --env-file .env.test up -d
+          echo "Waiting for services to be healthy..."
+          sleep 30
+
       - name: Run migrations
         run: |
-          docker-compose --env-file .env.test run --rm \
+          docker-compose --env-file .env.test exec -T \
             -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
             -e AWS_REGION=$AWS_REGION \
@@ -54,11 +60,16 @@ jobs:
 
       - name: Run Django tests
         run: |
-          docker-compose --env-file .env.test run --rm \
+          docker-compose --env-file .env.test exec -T \
             -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
             -e AWS_REGION=$AWS_REGION \
             web python manage.py test
+
+      - name: Cleanup test containers
+        if: always()
+        run: |
+          docker-compose --env-file .env.test down -v
 
   deploy:
     needs: build-and-test
