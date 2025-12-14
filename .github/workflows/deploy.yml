@@ -176,7 +176,20 @@ jobs:
                 git checkout main
                 git reset --hard origin/main
                 git log -1
-                export POSTGRES_PASSWORD=${{ env.DB_PASSWORD }}
+                echo '\''Creating .env file from SSM parameters...'\''
+                cat > .env << EOF
+DB_PASSWORD=${{ env.DB_PASSWORD }}
+SECRET_KEY=\$(aws ssm get-parameter --name /prod/amdg/v1/SECRET_KEY --with-decryption --query Parameter.Value --output text --region eu-west-2)
+DEBUG=\$(aws ssm get-parameter --name /prod/amdg/v1/DEBUG --query Parameter.Value --output text --region eu-west-2)
+ALLOWED_HOSTS=\$(aws ssm get-parameter --name /prod/amdg/v1/ALLOWED_HOSTS --query Parameter.Value --output text --region eu-west-2)
+DB_ENGINE=\$(aws ssm get-parameter --name /prod/amdg/v1/DB_ENGINE --query Parameter.Value --output text --region eu-west-2)
+DB_NAME=\$(aws ssm get-parameter --name /prod/amdg/v1/DB_NAME --query Parameter.Value --output text --region eu-west-2)
+DB_USER=\$(aws ssm get-parameter --name /prod/amdg/v1/DB_USER --query Parameter.Value --output text --region eu-west-2)
+DB_HOST=\$(aws ssm get-parameter --name /prod/amdg/v1/DB_HOST --query Parameter.Value --output text --region eu-west-2)
+DB_PORT=\$(aws ssm get-parameter --name /prod/amdg/v1/DB_PORT --query Parameter.Value --output text --region eu-west-2)
+AWS_STORAGE_BUCKET_NAME=\$(aws ssm get-parameter --name /prod/amdg/v1/AWS_STORAGE_BUCKET_NAME --query Parameter.Value --output text --region eu-west-2)
+AWS_S3_REGION_NAME=\$(aws ssm get-parameter --name /prod/amdg/v1/AWS_S3_REGION_NAME --query Parameter.Value --output text --region eu-west-2)
+EOF
                 echo '\''Stopping services...'\''
                 docker-compose down
                 echo '\''Building images...'\''
@@ -184,12 +197,14 @@ jobs:
                 echo '\''Starting services...'\''
                 docker-compose up -d
                 echo '\''Waiting for services to be healthy...'\''
-                sleep 15
+                sleep 30
+                echo '\''Checking service status...'\''
+                docker-compose ps
                 echo '\''Running migrations...'\''
                 docker-compose exec -T web python manage.py migrate --noinput
                 echo '\''Setting up Celery Beat tasks...'\''
                 docker-compose exec -T web python manage.py setup_event_lifecycle_tasks
-                echo '\''Verifying services...'\''
+                echo '\''Final verification...'\''
                 docker-compose ps
               \""
             ]' \
