@@ -40,6 +40,11 @@ jobs:
         run: |
           echo "DB_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}" > .env.test
 
+      - name: Clean up old volumes
+        run: |
+          docker-compose --env-file .env.test down -v || true
+          docker volume rm awsdjangotest_postgres_data awsdjangotest_redis_data || true
+
       - name: Build Docker containers
         run: |
           docker-compose --env-file .env.test build
