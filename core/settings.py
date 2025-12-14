@@ -50,7 +50,7 @@ except NoCredentialsError:
 except Exception as e:
     print(f"ERROR: {str(e)}")
     
-SSM_PARAM_SUFFIX = "/prod/amdg/v1/"
+SSM_PARAM_SUFFIX = "/prod/django/workoutapi/"
 
 try: # local development only
     USE_ENV_FILE = os.getenv("DEBUG")
