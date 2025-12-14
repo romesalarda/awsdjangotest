@@ -25,14 +25,14 @@ from sentry_sdk.integrations.django import DjangoIntegration
 
 from django.utils.timezone import get_current_timezone
 
-# sentry_sdk.init(
-#     dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
-#     integrations=[DjangoIntegration()],
+sentry_sdk.init(
+    dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
+    integrations=[DjangoIntegration()],
 
-#     # Add data like request headers and IP for users,
-#     # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-#     send_default_pii=True,
-# )
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+)
 
 load_dotenv()
 
@@ -50,7 +50,7 @@ except NoCredentialsError:
 except Exception as e:
     print(f"ERROR: {str(e)}")
     
-SSM_PARAM_SUFFIX = "/prod/django/workoutapi/"
+SSM_PARAM_SUFFIX = "/prod/amdg/v1/"
 
 try: # local development only
     USE_ENV_FILE = os.getenv("DEBUG")
@@ -150,21 +150,23 @@ WSGI_APPLICATION = "core.wsgi.application"
 ASGI_APPLICATION = "core.asgi.application"
 
 # Channel layer configuration for Django Channels
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
-        },
-    },
-}
-
-# For development without Redis, use in-memory channel layer (not recommended for production)
 if DEBUG:
+    # Development: Use in-memory channel layer (no Redis required)
+    print("### DEBUG MODE - Using in-memory channel layer ###")
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels.layers.InMemoryChannelLayer"
         }
+    }
+else:
+    # Production: Use Redis for channel layer
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [("redis", 6379)],  # Use docker-compose service name
+            },
+        },
     }
 
 SECURITY_HEADERS = {
@@ -419,8 +421,19 @@ TEMPLATES[0]['DIRS'] = [os.path.join(BASE_DIR, 'templates')]
 # Django Channels uses Redis DB 0 (default)
 # This separation prevents key conflicts between systems
 
-CELERY_BROKER_URL = 'redis://127.0.0.1:6379/1'
-CELERY_RESULT_BACKEND = 'django-db'  # Store results in Django database
+if DEBUG:
+    # Development: Execute tasks synchronously (no Redis/worker required)
+    print("### DEBUG MODE - Celery tasks run synchronously ###")
+    CELERY_TASK_ALWAYS_EAGER = True  # Execute tasks immediately in the same process
+    CELERY_TASK_EAGER_PROPAGATES = True  # Propagate exceptions immediately
+    CELERY_BROKER_URL = 'memory://'  # In-memory broker
+    CELERY_RESULT_BACKEND = 'cache+memory://'  # In-memory results
+else:
+    # Production: Use Redis and async execution
+    CELERY_BROKER_URL = 'redis://redis:6379/1'  # Use docker-compose service name
+    CELERY_RESULT_BACKEND = 'django-db'  # Store results in Django database
+    CELERY_TASK_ALWAYS_EAGER = False  # Run tasks asynchronously
+
 CELERY_CACHE_BACKEND = 'default'
 
 # Task execution settings

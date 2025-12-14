@@ -101,7 +101,7 @@ jobs:
           aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy Django Docker App (RESET MODE)" \
+            --comment "Deploy Django Docker App with Celery and Redis" \
             --parameters 'commands=[
               "sudo -u ec2-user bash -lc \"set -e
                 cd /home/ec2-user/awsdjangotest
@@ -111,10 +111,20 @@ jobs:
                 git reset --hard origin/main
                 git log -1
                 export POSTGRES_PASSWORD=${{ env.DB_PASSWORD }}
-                docker-compose down -v
+                echo '\''Stopping services...'\''
+                docker-compose down
+                echo '\''Building images...'\''
                 docker-compose build --no-cache
+                echo '\''Starting services...'\''
                 docker-compose up -d
-                docker-compose run --rm web python manage.py migrate --noinput
+                echo '\''Waiting for services to be healthy...'\''
+                sleep 15
+                echo '\''Running migrations...'\''
+                docker-compose exec -T web python manage.py migrate --noinput
+                echo '\''Setting up Celery Beat tasks...'\''
+                docker-compose exec -T web python manage.py setup_event_lifecycle_tasks
+                echo '\''Verifying services...'\''
+                docker-compose ps
               \""
             ]' \
             --output json > result.json

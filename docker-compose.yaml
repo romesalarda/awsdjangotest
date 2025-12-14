@@ -1,24 +1,21 @@
 version: '3.8'
 
 services:
-  web:
-    build: .
-    container_name: django_app
-    command: gunicorn --bind 0.0.0.0:8000 --access-logfile /var/log/django/access.log awstest.wsgi:application
-    expose:
-      - "8000"
+  # Redis - Broker for Celery and Channel Layer for Django Channels
+  redis:
+    image: redis:7-alpine
+    container_name: redis_server
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "http://web:8000"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
       retries: 5
     volumes:
-      - ./logs:/var/log/django  # Logs directory
-    depends_on:
-      db:
-        condition: service_healthy
+      - redis_data:/data
+    command: redis-server --appendonly yes
 
+  # PostgreSQL Database
   db:
     image: postgres:latest
     container_name: postgres_db
@@ -28,13 +25,72 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d awstestdb"] # change this
+      test: ["CMD-SHELL", "pg_isready -U postgres -d awstestdb"]
       interval: 10s
       timeout: 5s
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # Django Web Application (HTTP + WebSockets via Uvicorn)
+  web:
+    build: .
+    container_name: django_app
+    command: uvicorn core.asgi:application --host 0.0.0.0 --port 8000 --log-level info
+    expose:
+      - "8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/users/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    volumes:
+      - ./logs:/var/log/django
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings
+
+  # Celery Worker - Background task execution
+  celery_worker:
+    build: .
+    container_name: celery_worker
+    command: celery -A core worker --loglevel=info --concurrency=2
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A core inspect ping -d celery@$${HOSTNAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Celery Beat - Scheduled task dispatcher
+  celery_beat:
+    build: .
+    container_name: celery_beat
+    command: celery -A core beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings
+
+  # Nginx Reverse Proxy
   nginx:
     image: nginx:latest
     container_name: nginx_server
@@ -52,3 +108,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

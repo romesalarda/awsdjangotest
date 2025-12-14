@@ -577,3 +577,17 @@ class CurrentUserView(views.APIView):
     def get(self, request):
         serializer = CommunityUserSerializer(request.user)
         return response.Response(serializer.data)
+
+
+class HealthCheckView(views.APIView):
+    """
+    Simple health check endpoint for container health monitoring.
+    Returns 200 OK if Django is running.
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request):
+        return response.Response(
+            {"status": "healthy", "service": "django"},
+            status=status.HTTP_200_OK
+        )
