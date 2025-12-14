@@ -7,7 +7,7 @@ on:
 env:
   AWS_REGION: eu-west-2
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.eu-west-2.amazonaws.com
-  ECR_REPOSITORY: awsdocker
+  ECR_REPOSITORY: amdg
 
 jobs:
   build-test-push:
@@ -185,7 +185,7 @@ jobs:
               \"export IMAGE_TAG=$IMAGE_TAG\",
               \"export ECR_REGISTRY=$ACCOUNT_ID.dkr.ecr.eu-west-2.amazonaws.com\",
               \"cd /home/ec2-user/awsdjangotest\",
-              \"echo Deploying image: \$ECR_REGISTRY/awsdocker:\$IMAGE_TAG\",
+              \"echo Deploying image: \$ECR_REGISTRY/amdg:\$IMAGE_TAG\",
               \"echo Logging in to ECR...\",
               \"aws ecr get-login-password --region eu-west-2 | docker login --username AWS --password-stdin \$ECR_REGISTRY\",
               \"echo Pulling image with tag \$IMAGE_TAG from ECR...\",
