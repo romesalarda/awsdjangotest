@@ -54,6 +54,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings
 
@@ -68,6 +70,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings
     healthcheck:
@@ -88,6 +92,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings
 

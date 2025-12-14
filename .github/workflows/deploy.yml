@@ -38,7 +38,7 @@ jobs:
 
       - name: Create .env.test file with DB password
         run: |
-          cat > .env.test << EOF
+          cat > .env << EOF
           DB_PASSWORD=${{ secrets.TEST_DB_PASSWORD }}
           SECRET_KEY=test-secret-key-for-ci-only-not-for-production
           DEBUG=True
@@ -54,34 +54,34 @@ jobs:
 
       - name: Clean up old volumes
         run: |
-          docker-compose --env-file .env.test down -v || true
+          docker-compose down -v || true
           docker volume rm awsdjangotest_postgres_data awsdjangotest_redis_data || true
 
       - name: Build Docker containers
         run: |
-          docker-compose --env-file .env.test build
+          docker-compose build
 
       - name: Start services
         run: |
           echo "Starting services..."
-          docker-compose --env-file .env.test up -d || true
+          docker-compose up -d || true
           echo "Services started, checking status..."
-          docker-compose --env-file .env.test ps
+          docker-compose ps
           echo ""
           echo "=== POSTGRES LOGS ==="
-          docker-compose --env-file .env.test logs db
+          docker-compose logs db
           echo ""
           echo "=== REDIS LOGS ==="
-          docker-compose --env-file .env.test logs redis
+          docker-compose logs redis
           echo ""
           echo "Waiting 30 seconds for health checks..."
           sleep 30
           echo ""
           echo "=== FINAL STATUS ==="
-          docker-compose --env-file .env.test ps
+          docker-compose ps
           echo ""
           echo "=== POSTGRES LOGS AFTER WAIT ==="
-          docker-compose --env-file .env.test logs db
+          docker-compose logs db
           echo ""
           # Fail if postgres is not healthy
           if ! docker inspect postgres_db --format='{{.State.Health.Status}}' | grep -q "healthy"; then
@@ -92,7 +92,7 @@ jobs:
 
       - name: Run migrations
         run: |
-          docker-compose --env-file .env.test exec -T \
+          docker-compose exec -T \
             -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
             -e AWS_REGION=$AWS_REGION \
@@ -100,7 +100,7 @@ jobs:
 
       - name: Run Django tests
         run: |
-          docker-compose --env-file .env.test exec -T \
+          docker-compose exec -T \
             -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
             -e AWS_REGION=$AWS_REGION \
@@ -109,7 +109,7 @@ jobs:
       - name: Cleanup test containers
         if: always()
         run: |
-          docker-compose --env-file .env.test down -v
+          docker-compose down -v
 
   deploy:
     needs: build-and-test
