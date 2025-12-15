@@ -96,7 +96,7 @@ class EventViewSet(viewsets.ModelViewSet):
         else:
             # Listing/discovery: exclude ARCHIEVED events from results
             # This prevents completed events from appearing in home/search/discovery
-            base_queryset = base_queryset.exclude(status=Event.EventStatus.ARCHIVED)
+            base_queryset = base_queryset.exclude(Q(status=Event.EventStatus.ARCHIVED) & ~Q(created_by=user))
         
         if user.is_superuser:
             queryset = base_queryset
@@ -953,9 +953,21 @@ class EventViewSet(viewsets.ModelViewSet):
         Query params:
         - simple: 'true' for simplified serializer (default: 'true')
         - include_completed: 'true' to include COMPLETED events (default: 'true')
+        - filter_by: 'created', 'participant', 'service_team', 'upcoming', 'ongoing', 'past', 'archived' (default: all)
+        - role_id: Filter service team events by specific role UUID
+        - event_type: Filter by event type (e.g., 'YOUTH_CAMP', 'CONFERENCE', etc.)
+        - status: Filter by event status
+        - search: Search by event name (case-insensitive partial match)
+        - page: Page number for pagination
+        - page_size: Number of results per page (default: 10)
         '''
         simple = request.query_params.get('simple', 'true').lower() == 'true'
         include_completed = request.query_params.get('include_completed', 'true').lower() == 'true'
+        filter_by = request.query_params.get('filter_by', 'all')
+        role_id = request.query_params.get('role_id', None)
+        event_type = request.query_params.get('event_type', None)
+        event_status = request.query_params.get('status', None)
+        search_query = request.query_params.get('search', None)
         
         user = request.user
         if not user.is_authenticated:
@@ -964,18 +976,90 @@ class EventViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED
             )
         
-        events = Event.objects.filter(
-            models.Q(created_by=user) |
-            # models.Q(supervisors=user) |
-            models.Q(participants__user=user) |
-            models.Q(service_team_members__user=user)
-        ).distinct().filter(date_for_deletion__isnull=True)
+        # Base query - exclude DELETED and PENDING_DELETION events (soft deleted)
+        events = Event.objects.exclude(
+            status__in=[Event.EventStatus.DELETED, Event.EventStatus.PENDING_DELETION]
+        ).filter(date_for_deletion__isnull=True)
         
-        # Optionally exclude COMPLETED events from user's event list
-        if not include_completed:
-            events = events.exclude(status=Event.EventStatus.COMPLETED)
+        # Get current date for time-based filters
+        from django.utils import timezone
+        today = timezone.now().date()
         
-        events = events.order_by('-start_date')
+        # Apply role-based filtering first
+        if filter_by == 'created':
+            events = events.filter(created_by=user)
+        elif filter_by == 'participant':
+            events = events.filter(participants__user=user)
+        elif filter_by == 'service_team':
+            if role_id:
+                # Filter by specific role
+                events = events.filter(
+                    service_team_members__user=user,
+                    service_team_members__roles__id=role_id
+                )
+            else:
+                # All service team events
+                events = events.filter(service_team_members__user=user)
+        elif filter_by == 'upcoming':
+            # Events that haven't started yet (start_date > today)
+            events = events.filter(
+                models.Q(created_by=user) |
+                models.Q(participants__user=user) |
+                models.Q(service_team_members__user=user),
+                start_date__gt=today
+            ).exclude(status__in=[Event.EventStatus.COMPLETED, Event.EventStatus.ARCHIVED])
+        elif filter_by == 'ongoing':
+            # Events currently happening (start_date <= today <= end_date OR status=ONGOING)
+            events = events.filter(
+                models.Q(created_by=user) |
+                models.Q(participants__user=user) |
+                models.Q(service_team_members__user=user)
+            ).filter(
+                models.Q(status=Event.EventStatus.ONGOING) |
+                models.Q(start_date__lte=today, end_date__gte=today)
+            )
+        elif filter_by == 'past':
+            # Show COMPLETED events only
+            events = events.filter(
+                models.Q(created_by=user) |
+                models.Q(participants__user=user) |
+                models.Q(service_team_members__user=user),
+                status=Event.EventStatus.COMPLETED
+            )
+        elif filter_by == 'archived':
+            # Show ARCHIVED events only
+            events = events.filter(
+                models.Q(created_by=user) |
+                models.Q(participants__user=user) |
+                models.Q(service_team_members__user=user),
+                status=Event.EventStatus.ARCHIVED
+            )
+        else:
+            # 'all' - show events where user is involved (excluding COMPLETED and ARCHIVED by default)
+            events = events.filter(
+                models.Q(created_by=user) |
+                models.Q(participants__user=user) |
+                models.Q(service_team_members__user=user)
+            )
+            
+            # Optionally exclude COMPLETED and ARCHIVED events from default view
+            if not include_completed:
+                events = events.exclude(status__in=[Event.EventStatus.COMPLETED, Event.EventStatus.ARCHIVED])
+        
+        # Apply event type filter
+        if event_type:
+            events = events.filter(event_type=event_type)
+        
+        # Apply status filter
+        if event_status:
+            events = events.filter(status=event_status)
+        
+        # Apply search filter (case-insensitive name search)
+        if search_query:
+            events = events.filter(name__icontains=search_query)
+        
+        # Remove duplicates and order
+        events = events.distinct().order_by('-start_date')
         
         page = self.paginate_queryset(events)
         if page is not None:
@@ -2967,6 +3051,56 @@ class EventViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response(
                 {'error': f'Failed to archive event: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['post'], url_name="unarchive", url_path="unarchive")
+    def unarchive_event(self, request, id=None):
+        """
+        Unarchive an archived event and set it back to COMPLETED with public=False.
+        - Event must have ARCHIVED status to be unarchived
+        - Sets status to COMPLETED and is_public to False
+        - Only event creators or users with full event access can unarchive
+        
+        Request body:
+        - confirmation: Optional confirmation message
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check if user has permission to unarchive
+        if not has_full_event_access(user, event):
+            return Response(
+                {'error': 'You do not have permission to unarchive this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Validate event is ARCHIVED
+        if event.status != Event.EventStatus.ARCHIVED:
+            return Response(
+                {'error': 'Only archived events can be unarchived. Current status: ' + event.get_status_display()},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Update status to COMPLETED and set public to False
+            event.status = Event.EventStatus.COMPLETED
+            event.is_public = False
+            event.save(update_fields=['status', 'is_public'])
+            
+            # Serialize response
+            serializer = self.get_serializer(event)
+            
+            return Response({
+                'message': f'Event "{event.name}" has been successfully unarchived and set to COMPLETED (private).',
+                'event': serializer.data,
+                'status': 'COMPLETED',
+                'is_public': False
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to unarchive event: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
