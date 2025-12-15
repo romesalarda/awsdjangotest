@@ -47,7 +47,7 @@ try:
     ssm_client = boto3.client('ssm', region_name='eu-west-2')
     sts = boto3.client('sts')
     sts.get_caller_identity()  # This will raise an exception if credentials are invalid
-    # USE_SSM = True
+    USE_SSM = True
     print("### Using AWS SSM for secrets ###")
 except (NoCredentialsError, Exception) as e:
     print(f"### AWS SSM not available ({type(e).__name__}), using environment variables ###")
