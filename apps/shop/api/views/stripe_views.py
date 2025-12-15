@@ -7,7 +7,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse
 import logging
 
@@ -16,7 +15,6 @@ from apps.shop.stripe_service import StripePaymentService
 logger = logging.getLogger(__name__)
 
 
-@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Stripe webhooks don't use standard auth
 def stripe_webhook(request):
@@ -25,7 +23,6 @@ def stripe_webhook(request):
     
     Security:
     - Verifies webhook signature
-    - Uses CSRF exempt (Stripe doesn't send CSRF token)
     - Validates event structure
     
     Supported events:

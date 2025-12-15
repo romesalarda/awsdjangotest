@@ -344,31 +344,27 @@ else:
 if not DEBUG:
     print("### PRODUCTION SECURITY SETTINGS ENABLED ###")
     # Production HTTPS settings
-    CSRF_TRUSTED_ORIGINS = [
-        'https://rsalardadevelop.co.uk',
-        'https://www.rsalardadevelop.co.uk',
-        'https://rsalardadevelop.com',
-        'https://www.rsalardadevelop.com',
-        'https://cems-nine.vercel.app'
-    ]
+    # CSRF_TRUSTED_ORIGINS = [
+    #     'https://rsalardadevelop.co.uk',
+    #     'https://www.rsalardadevelop.co.uk',
+    #     'https://rsalardadevelop.com',
+    #     'https://www.rsalardadevelop.com',
+    #     'https://cems-nine.vercel.app'
+    # ]
     
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     # SECURE_SSL_REDIRECT = True
     USE_X_FORWARDED_HOST = True
     
-    CSRF_COOKIE_SECURE = True
-    CSRF_COOKIE_SAMESITE = 'None'
+    # CSRF_COOKIE_SECURE = True
+    # CSRF_COOKIE_SAMESITE = 'None'
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = 'None'
 
     
 else:
     print("### DEVELOPMENT SECURITY SETTINGS ENABLED ###")
-    # Development settings
-    CSRF_TRUSTED_ORIGINS = [
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-    ]
+    # Development settings - no CSRF needed with JWT
 
 
 REST_FRAMEWORK = {

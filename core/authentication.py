@@ -5,8 +5,6 @@ instead of the Authorization header.
 
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFailed
-from rest_framework.authentication import CSRFCheck
-from rest_framework import exceptions
 
 
 class JWTCookieAuthentication(JWTAuthentication):
@@ -18,7 +16,6 @@ class JWTCookieAuthentication(JWTAuthentication):
     CORS-Safe Design:
     - Returns None when no token present (allows anonymous access)
     - Does not add WWW-Authenticate header (handled by exception handler)
-    - CSRF validation happens AFTER authentication succeeds
     """
 
     def authenticate(self, request):
@@ -50,9 +47,6 @@ class JWTCookieAuthentication(JWTAuthentication):
         
         # Get the user from the token
         user = self.get_user(validated_token)
-        
-        # CSRF check is now handled by middleware (see CORSCSRFMiddleware)
-        # This separation ensures CSRF failures don't bypass CORS headers
         
         return user, validated_token
 

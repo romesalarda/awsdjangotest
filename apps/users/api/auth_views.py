@@ -1,7 +1,7 @@
 """
 Secure Authentication Views with HTTPOnly Cookies
 This module provides secure JWT authentication using HTTPOnly cookies
-to prevent XSS attacks and includes CSRF protection.
+to prevent XSS attacks.
 """
 
 from rest_framework import status
