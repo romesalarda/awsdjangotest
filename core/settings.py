@@ -343,18 +343,20 @@ else:
 if not DEBUG:
     print("### PRODUCTION SECURITY SETTINGS ENABLED ###")
     # Production HTTPS settings
-    # CSRF_TRUSTED_ORIGINS = [
-    #     'https://rsalardadevelop.co.uk',
-    #     'https://www.rsalardadevelop.co.uk',
-    #     'https://rsalardadevelop.com',
-    #     'https://www.rsalardadevelop.com',
-    #     'https://cems-nine.vercel.app'
-    # ]
+    CSRF_TRUSTED_ORIGINS = [
+        'https://rsalardadevelop.co.uk',
+        'https://www.rsalardadevelop.co.uk',
+        'https://rsalardadevelop.com',
+        'https://www.rsalardadevelop.com',
+        'https://cems-nine.vercel.app'
+    ]
     
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     # SECURE_SSL_REDIRECT = True
     USE_X_FORWARDED_HOST = True
     
+    SESSION_COOKIE_DOMAIN = ".rsalardadevelop.co.uk"
+    CSRF_COOKIE_DOMAIN = ".rsalardadevelop.co.uk"
     # CSRF_COOKIE_SECURE = True
     # CSRF_COOKIE_SAMESITE = 'None'
     SESSION_COOKIE_SECURE = True
