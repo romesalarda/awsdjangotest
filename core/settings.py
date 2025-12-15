@@ -129,7 +129,6 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',    
-    'core.middleware.ForceRedirectCORSMiddleware',  # CRITICAL: Ensure CORS on 301/302 redirects    'core.middleware.CORSCSRFMiddleware',  # CORS-safe CSRF check AFTER auth
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -345,6 +344,7 @@ else:
 ## SECURITY SETTINGS - PRODUCTION & DEVELOPMENT
 
 if not DEBUG:
+    print("### PRODUCTION SECURITY SETTINGS ENABLED ###")
     # Production HTTPS settings
     CSRF_TRUSTED_ORIGINS = [
         'https://rsalardadevelop.co.uk',
@@ -355,11 +355,17 @@ if not DEBUG:
     ]
     
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
+    # SECURE_SSL_REDIRECT = True
+    USE_X_FORWARDED_HOST = True
+    
     CSRF_COOKIE_SECURE = True
+    CSRF_COOKIE_SAMESITE = 'None'
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_SAMESITE = 'None'
+
     
 else:
+    print("### DEVELOPMENT SECURITY SETTINGS ENABLED ###")
     # Development settings
     CSRF_TRUSTED_ORIGINS = [
         'http://localhost:3000',
@@ -428,9 +434,8 @@ JWT_AUTH_COOKIE_SAMESITE = 'None'
 JWT_AUTH_COOKIE_SECURE = True
 
 # CSRF Settings for production security
-CSRF_COOKIE_HTTPONLY = False  # Must be False so JavaScript can read it for CSRF header
-CSRF_COOKIE_SECURE = not DEBUG  # Only send over HTTPS in production
-CSRF_COOKIE_SAMESITE = 'None'  # Required for cross-origin with credentials 
+CSRF_COOKIE_HTTPONLY = False 
+
 CSRF_COOKIE_NAME = 'csrftoken'
 CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
 CSRF_USE_SESSIONS = False
@@ -447,9 +452,6 @@ CSRF_TRUSTED_ORIGINS = [
 
 # Session cookie settings (for admin)
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SECURE = not DEBUG
-SESSION_COOKIE_SAMESITE = 'None'
-
 # Stripe Payment Configuration
 # TEST MODE by default - set to False for production
 STRIPE_TEST_MODE = os.getenv('STRIPE_TEST_MODE', 'True') == 'True'

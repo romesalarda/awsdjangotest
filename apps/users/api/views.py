@@ -588,6 +588,6 @@ class HealthCheckView(views.APIView):
     
     def get(self, request):
         return response.Response(
-            {"status": "healthy", "service": "django"},
+            {"status": "healthy", "service": "django", "secure": request.is_secure(), "scheme": request.scheme},
             status=status.HTTP_200_OK
         )
