@@ -197,7 +197,7 @@ jobs:
               \"echo Starting db and redis with fresh containers...\",
               \"docker-compose up -d --force-recreate --no-build db redis\",
               \"sleep 20\",
-              "echo Starting web and celery_worker with force-recreate - NEW IMAGES...",
+              \"echo Starting web and celery_worker with force-recreate - NEW IMAGES...\",
               \"docker-compose up -d --force-recreate --no-build web celery_worker\",
               \"echo Waiting for web to be ready...\",
               \"sleep 45\",
@@ -214,8 +214,8 @@ jobs:
               \"docker-compose ps\",
               \"echo Verifying new image is running...\",
               \"docker ps\",
-              "echo Expected image tag: \$IMAGE_TAG",
-              "docker images | grep amdg | head -5 || echo No amdg images found",
+              \"echo Expected image tag: \$IMAGE_TAG\",
+              \"docker images | grep amdg | head -5 || echo No amdg images found\",
               \"echo Deployment complete - Image tag: \$IMAGE_TAG\"
             ]" \
             --output json > result.json
