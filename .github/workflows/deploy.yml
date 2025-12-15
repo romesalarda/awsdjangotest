@@ -56,35 +56,37 @@ jobs:
           DB_PORT=5432
           AWS_STORAGE_BUCKET_NAME=test-bucket
           AWS_S3_REGION_NAME=eu-west-2
-          ECR_REGISTRY=local-test-registry
-          IMAGE_TAG=test-build
+          IMAGE_TAG=ci-build-${{ github.sha }}
           EOF
 
       - name: Clean up old volumes
         run: |
-          docker-compose down -v || true
-          docker volume rm awsdjangotest_postgres_data awsdjangotest_redis_data || true
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml down -v || true
+          docker volume rm awsdocker_postgres_data awsdocker_redis_data || true
 
       - name: Build Docker containers for testing
         run: |
-          docker-compose build
+          # Use CI-specific compose file that includes build contexts
+          export IMAGE_TAG=ci-build-${{ github.sha }}
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml build
 
       - name: Start services
         run: |
-          echo "Starting services..."
-          docker-compose up -d
+          export IMAGE_TAG=ci-build-${{ github.sha }}
+          echo "Starting services with IMAGE_TAG=$IMAGE_TAG..."
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml up -d
           echo "Services started, checking status..."
-          docker-compose ps
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml ps
           echo ""
           echo "=== POSTGRES LOGS ==="
-          docker-compose logs db
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml logs db
           echo ""
           echo "=== REDIS LOGS ==="
-          docker-compose logs redis
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml logs redis
           echo ""
           echo "Waiting for health checks..."
           for i in {1..30}; do
-            if docker inspect postgres_db --format='{{.State.Health.Status}}' | grep -q "healthy"; then
+            if docker inspect postgres_db --format='{{.State.Health.Status}}' 2>/dev/null | grep -q "healthy"; then
               echo "Postgres is healthy!"
               break
             fi
@@ -93,29 +95,30 @@ jobs:
           done
           echo ""
           echo "=== WEB CONTAINER LOGS ==="
-          docker-compose logs web
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml logs web
           echo ""
           echo "=== FINAL STATUS ==="
-          docker-compose ps
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml ps
           echo ""
           # Check if postgres is healthy
-          if ! docker inspect postgres_db --format='{{.State.Health.Status}}' | grep -q "healthy"; then
+          if ! docker inspect postgres_db --format='{{.State.Health.Status}}' 2>/dev/null | grep -q "healthy"; then
             echo "ERROR: postgres_db is not healthy"
-            docker inspect postgres_db --format='{{json .State.Health}}'
+            docker inspect postgres_db --format='{{json .State.Health}}' 2>/dev/null || echo "Container does not exist"
             exit 1
           fi
           # Check if web container is running (not just restarting)
-          WEB_STATUS=$(docker inspect django_app --format='{{.State.Status}}')
+          WEB_STATUS=$(docker inspect django_app_test --format='{{.State.Status}}' 2>/dev/null || echo "missing")
           if [ "$WEB_STATUS" != "running" ]; then
-            echo "ERROR: django_app is not running (status: $WEB_STATUS)"
+            echo "ERROR: django_app_test is not running (status: $WEB_STATUS)"
             echo "=== FULL WEB LOGS ==="
-            docker-compose logs web
+            docker-compose -f docker-compose.yml -f docker-compose.ci.yml logs web
             exit 1
           fi
 
       - name: Run migrations
         run: |
-          docker-compose exec -T \
+          export IMAGE_TAG=ci-build-${{ github.sha }}
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml exec -T \
             -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
             -e AWS_REGION=$AWS_REGION \
@@ -123,7 +126,8 @@ jobs:
 
       - name: Run Django tests
         run: |
-          docker-compose exec -T \
+          export IMAGE_TAG=ci-build-${{ github.sha }}
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml exec -T \
             -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
             -e AWS_REGION=$AWS_REGION \
@@ -132,17 +136,23 @@ jobs:
       - name: Cleanup test containers
         if: always()
         run: |
-          docker-compose down -v
+          export IMAGE_TAG=ci-build-${{ github.sha }}
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
       - name: Build and push Django app image to ECR
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          # Build the production image directly (not via docker-compose)
+          # This ensures the image is tagged correctly for ECR
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          # Push both tags to ECR
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "Pushed images:"
+          
+          echo "✅ Successfully pushed images to ECR:"
           echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
@@ -185,38 +195,56 @@ jobs:
               \"export IMAGE_TAG=$IMAGE_TAG\",
               \"export ECR_REGISTRY=$ACCOUNT_ID.dkr.ecr.eu-west-2.amazonaws.com\",
               \"cd /home/ec2-user/awsdjangotest\",
+              \"echo ===================================================\",
               \"echo Deploying image: \$ECR_REGISTRY/amdg:\$IMAGE_TAG\",
-              \"echo Cleaning up old Docker images to free space...\",
+              \"echo ===================================================\",
+              \"echo\",
+              \"echo [1/9] Cleaning up old Docker resources...\",
               \"docker system prune -af --volumes || true\",
-              \"echo Logging in to ECR...\",
+              \"echo\",
+              \"echo [2/9] Logging in to Amazon ECR...\",
               \"aws ecr get-login-password --region eu-west-2 | docker login --username AWS --password-stdin \$ECR_REGISTRY\",
-              \"echo Pulling image with tag \$IMAGE_TAG from ECR...\",
-              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose pull\",
-              \"echo Stopping all containers and removing old containers...\",
+              \"echo\",
+              \"echo [3/9] Pulling image \$IMAGE_TAG from ECR (production compose)...\",
+              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose pull web celery_worker celery_beat\",
+              \"echo\",
+              \"echo [4/9] Verifying pulled images...\",
+              \"docker images | grep amdg | head -5 || echo 'Warning: No amdg images found after pull'\",
+              \"echo\",
+              \"echo [5/9] Stopping all containers and removing orphans...\",
               \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose down --remove-orphans\",
-              \"echo Starting db and redis with fresh containers...\",
-              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose up -d --force-recreate --no-build db redis\",
+              \"echo\",
+              \"echo [6/9] Starting database and redis services...\",
+              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose up -d --no-build db redis\",
               \"sleep 20\",
-              \"echo Starting web and celery_worker with force-recreate - NEW IMAGES...\",
-              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose up -d --force-recreate --no-build web celery_worker\",
-              \"echo Waiting for web to be ready...\",
+              \"echo\",
+              \"echo [7/9] Starting web and celery_worker with NEW ECR IMAGE (no build)...\",
+              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose up -d --no-build web celery_worker\",
+              \"echo Waiting for web service to be healthy...\",
               \"sleep 45\",
-              \"echo Running migrations BEFORE starting celery_beat...\",
+              \"echo\",
+              \"echo [8/9] Running database migrations...\",
               \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose exec -T web python manage.py migrate --noinput\",
-              \"echo Setting up Celery Beat tasks...\",
+              \"echo\",
+              \"echo Setting up Celery Beat scheduled tasks...\",
               \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose exec -T web python manage.py setup_event_lifecycle_tasks\",
-              \"echo Now starting celery_beat with force-recreate after migrations complete...\",
-              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose up -d --force-recreate --no-build celery_beat\",
-              \"echo Starting nginx with force-recreate...\",
-              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose up -d --force-recreate --no-build nginx\",
+              \"echo\",
+              \"echo Starting celery_beat service (after migrations)...\",
+              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose up -d --no-build celery_beat\",
+              \"echo\",
+              \"echo [9/9] Starting nginx reverse proxy...\",
+              \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose up -d --no-build nginx\",
               \"sleep 10\",
-              \"echo Final status...\",
+              \"echo\",
+              \"echo ===================================================\",
+              \"echo Deployment Complete - Final Status\",
+              \"echo ===================================================\",
               \"IMAGE_TAG=\$IMAGE_TAG ECR_REGISTRY=\$ECR_REGISTRY docker-compose ps\",
-              \"echo Verifying new image is running...\",
-              \"docker ps\",
-              \"echo Expected image tag: \$IMAGE_TAG\",
-              \"docker images | grep amdg | head -5 || echo No amdg images found\",
-              \"echo Deployment complete - Image tag: \$IMAGE_TAG\"
+              \"echo\",
+              \"echo Running containers:\",
+              \"docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'\",
+              \"echo\",
+              \"echo ✅ Successfully deployed image tag: \$IMAGE_TAG\"
             ]" \
             --output json > result.json
           

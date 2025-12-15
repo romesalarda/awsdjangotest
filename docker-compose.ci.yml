@@ -1,0 +1,26 @@
+# CI-specific docker-compose override
+# This file is used ONLY in GitHub Actions for building and testing
+# It adds build contexts and uses local image tags
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amdg-test:${IMAGE_TAG:-ci-build}
+    container_name: django_app_test
+    # No ECR registry needed for CI tests
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amdg-test:${IMAGE_TAG:-ci-build}
+    container_name: celery_worker_test
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amdg-test:${IMAGE_TAG:-ci-build}
+    container_name: celery_beat_test

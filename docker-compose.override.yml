@@ -1,0 +1,24 @@
+# Local development docker-compose override
+# This file is automatically used by docker-compose for local development
+# It adds build contexts so you can develop without pushing to ECR
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amdg-local:latest
+    # Override the image for local development
+    # You can also mount code volumes here for hot-reload during development
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amdg-local:latest
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amdg-local:latest
