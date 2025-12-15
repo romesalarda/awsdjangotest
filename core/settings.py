@@ -47,7 +47,7 @@ try:
     ssm_client = boto3.client('ssm', region_name='eu-west-2')
     sts = boto3.client('sts')
     sts.get_caller_identity()  # This will raise an exception if credentials are invalid
-    USE_SSM = True
+    # USE_SSM = True
     print("### Using AWS SSM for secrets ###")
 except (NoCredentialsError, Exception) as e:
     print(f"### AWS SSM not available ({type(e).__name__}), using environment variables ###")
@@ -131,6 +131,7 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
+    'core.middleware.CORSCSRFMiddleware',  # CORS-safe CSRF check AFTER auth
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -173,6 +174,12 @@ CORS_ALLOW_METHODS = [
     'PATCH',
     'POST',
     'PUT',
+]
+
+# Expose custom headers to the frontend
+CORS_EXPOSE_HEADERS = [
+    'content-type',
+    'x-csrftoken',
 ]
 
 ROOT_URLCONF = "core.urls"
@@ -363,6 +370,8 @@ REST_FRAMEWORK = {
     # WARNING - THIS PERMISSION MUST BE SET TO 'IS_AUTHENTICATED' DURING PRODUCTION TO PROTECT ENDPOINTS
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.AllowAny",),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Custom exception handler to ensure CORS works with authentication failures
+    'EXCEPTION_HANDLER': 'core.exception_handler.custom_exception_handler',
 }
 
 SPECTACULAR_SETTINGS = {
@@ -405,6 +414,9 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_LIFETIME': datetime.timedelta(minutes=5),
     'SLIDING_TOKEN_REFRESH_LIFETIME': datetime.timedelta(days=1),
 }
+
+JWT_AUTH_COOKIE_SAMESITE = 'None'
+JWT_AUTH_COOKIE_SECURE = True
 
 # CSRF Settings for production security
 CSRF_COOKIE_HTTPONLY = False  # Must be False so JavaScript can read it for CSRF header

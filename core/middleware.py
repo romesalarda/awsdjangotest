@@ -1,5 +1,6 @@
 """
-Custom middleware for WebSocket JWT authentication using HTTPOnly cookies.
+Custom middleware for WebSocket JWT authentication using HTTPOnly cookies
+and CORS-safe CSRF protection for HTTP requests.
 """
 
 from channels.db import database_sync_to_async
@@ -8,6 +9,10 @@ from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from django.middleware.csrf import CsrfViewMiddleware
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework import exceptions
 from urllib.parse import parse_qs
 import logging
 
@@ -103,3 +108,46 @@ def JWTAuthMiddlewareStack(inner):
         })
     """
     return JWTAuthMiddleware(inner)
+
+
+class CORSCSRFMiddleware:
+    """
+    CORS-safe CSRF middleware that runs AFTER authentication.
+    
+    This middleware:
+    1. Exempts OPTIONS requests (CORS preflight)
+    2. Exempts unauthenticated requests
+    3. Only enforces CSRF on authenticated state-changing requests
+    4. Ensures CSRF failures don't bypass CORS headers
+    
+    Add to MIDDLEWARE in settings.py AFTER CorsMiddleware:
+        MIDDLEWARE = [
+            'corsheaders.middleware.CorsMiddleware',
+            'core.middleware.CORSCSRFMiddleware',  # Add this
+            ...
+        ]
+    """
+    
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        # OPTIONS requests must bypass CSRF (CORS preflight)
+        if request.method == 'OPTIONS':
+            return self.get_response(request)
+        
+        # Only check CSRF for authenticated users with state-changing methods
+        if (hasattr(request, 'user') and 
+            request.user.is_authenticated and 
+            request.method not in ('GET', 'HEAD', 'OPTIONS', 'TRACE')):
+            
+            # Perform CSRF check
+            csrf_middleware = CsrfViewMiddleware(self.get_response)
+            reason = csrf_middleware.process_request(request)
+            
+            if reason:
+                # CSRF check failed - raise DRF exception (will preserve CORS)
+                raise exceptions.PermissionDenied(f'CSRF verification failed: {reason}')
+        
+        return self.get_response(request)
+

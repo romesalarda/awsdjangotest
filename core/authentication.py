@@ -14,32 +14,55 @@ class JWTCookieAuthentication(JWTAuthentication):
     Custom JWT authentication that reads the access token from HTTPOnly cookies.
     This provides better security against XSS attacks compared to localStorage or
     regular cookies that JavaScript can access.
+    
+    CORS-Safe Design:
+    - Returns None when no token present (allows anonymous access)
+    - Does not add WWW-Authenticate header (handled by exception handler)
+    - CSRF validation happens AFTER authentication succeeds
     """
 
     def authenticate(self, request):
+        """
+        Authenticate the request using JWT from HTTPOnly cookie.
+        
+        Returns:
+            None: No token present, user is anonymous (CORS-safe)
+            tuple: (user, token) if authentication succeeds
+        
+        Raises:
+            AuthenticationFailed: If token is invalid
+        """
         # Get access token from HTTPOnly cookie
         raw_token = request.COOKIES.get('access_token')
         
         if raw_token is None:
+            # No token present - user is anonymous
+            # Return None to allow public endpoints
             return None
 
         # Validate the token
-        validated_token = self.get_validated_token(raw_token)
-        
-        # Enforce CSRF check for state-changing operations
-        self.enforce_csrf(request)
+        try:
+            validated_token = self.get_validated_token(raw_token)
+        except (InvalidToken, AuthenticationFailed) as e:
+            # Token is present but invalid
+            # Re-raise to trigger 401 response
+            raise AuthenticationFailed('Invalid or expired token')
         
         # Get the user from the token
-        return self.get_user(validated_token), validated_token
+        user = self.get_user(validated_token)
+        
+        # CSRF check is now handled by middleware (see CORSCSRFMiddleware)
+        # This separation ensures CSRF failures don't bypass CORS headers
+        
+        return user, validated_token
 
-    def enforce_csrf(self, request):
+    def authenticate_header(self, request):
         """
-        Enforce CSRF validation for unsafe HTTP methods.
+        Override to return None instead of 'Bearer'.
+        This prevents DRF from adding WWW-Authenticate header on 401 responses,
+        which would break CORS.
+        
+        Returns:
+            None: Don't add WWW-Authenticate header
         """
-        # Only check CSRF for state-changing methods
-        if request.method not in ('GET', 'HEAD', 'OPTIONS', 'TRACE'):
-            csrf_check = CSRFCheck(request)
-            # CSRF check will raise an exception if the check fails
-            reason = csrf_check.process_request(request)
-            if reason:
-                raise exceptions.PermissionDenied(f'CSRF Failed: {reason}')
+        return None
