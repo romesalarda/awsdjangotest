@@ -213,11 +213,10 @@ jobs:
               \"echo Final status...\",
               \"docker-compose ps\",
               \"echo Verifying new image is running...\",
-              \"docker inspect django_app --format='Image: {{.Image}}' || true\",
-              \"docker inspect django_app --format='ImageID: {{.Image}}' || true\",
-              \"docker inspect django_app --format='Created: {{.Created}}' || true\",
+              \"docker inspect django_app --format '{{.Config.Image}}' 2>/dev/null || echo 'Container inspect failed'\",
+              \"docker inspect django_app --format '{{.Created}}' 2>/dev/null || echo 'Container inspect failed'\",
               \"echo Expected image tag: \$IMAGE_TAG\",
-              \"docker images | grep amdg | head -5\",
+              \"docker images | grep amdg | head -5 || echo 'No amdg images found'\",
               \"echo Deployment complete - Image tag: \$IMAGE_TAG\"
             ]" \
             --output json > result.json
