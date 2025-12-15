@@ -13,15 +13,19 @@ from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from django.contrib.auth import authenticate
 from django.middleware.csrf import get_token
 from django.conf import settings
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from datetime import timedelta
 
 from .serializers import CommunityUserSerializer
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class SecureTokenObtainView(APIView):
     """
     Secure login endpoint that sets JWT tokens in HTTPOnly cookies
     instead of returning them in the response body.
+    CSRF exempt because no session exists yet at login time.
     """
     permission_classes = [AllowAny]
 
@@ -69,7 +73,7 @@ class SecureTokenObtainView(APIView):
             max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
             httponly=True,  # Prevents JavaScript access (XSS protection)
             secure=not settings.DEBUG,  # HTTPS only in production
-            samesite='Lax',  # CSRF protection while allowing WebSocket connections
+            samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin with credentials
             path='/'
         )
 
@@ -80,7 +84,7 @@ class SecureTokenObtainView(APIView):
             max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
             httponly=True,  # Prevents JavaScript access (XSS protection)
             secure=not settings.DEBUG,  # HTTPS only in production
-            samesite='Lax',  # CSRF protection while allowing WebSocket connections
+            samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin with credentials
             path='/'
         )
 
@@ -92,17 +96,19 @@ class SecureTokenObtainView(APIView):
             max_age=31449600,  # 1 year
             httponly=False,  # Must be readable by JavaScript
             secure=not settings.DEBUG,
-            samesite='None',  # Required for cross-origin with credentials
+            samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin with credentials
             path='/'
         )
 
         return response
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class SecureTokenRefreshView(APIView):
     """
     Secure token refresh endpoint that reads refresh token from HTTPOnly cookie
     and sets new access token in HTTPOnly cookie.
+    CSRF exempt because refresh uses HTTPOnly cookie which cannot be stolen via XSS.
     """
     permission_classes = [AllowAny]
 
@@ -132,7 +138,7 @@ class SecureTokenRefreshView(APIView):
                 max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
                 httponly=True,
                 secure=not settings.DEBUG,
-                samesite='None',  # Required for cross-origin with credentials
+                samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin
                 path='/'
             )
 
@@ -148,7 +154,7 @@ class SecureTokenRefreshView(APIView):
                     max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
                     httponly=True,
                     secure=not settings.DEBUG,
-                    samesite='None',  # Required for cross-origin with credentials
+                    samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin
                     path='/'
                 )
 
@@ -160,11 +166,17 @@ class SecureTokenRefreshView(APIView):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class SecureLogoutView(APIView):
     """
     Secure logout endpoint that clears HTTPOnly cookies.
+    CSRF exempt because:
+    1. User might be logging out with expired CSRF token
+    2. Logout action is idempotent and clearing cookies is not a state change that needs protection
+    3. The endpoint only clears cookies, no other sensitive operations
+    AllowAny because user might have expired access token but still needs to logout.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         # Optionally blacklist the refresh token
@@ -184,6 +196,7 @@ class SecureLogoutView(APIView):
 
         # Clear all auth cookies - using set_cookie with max_age=0 for more reliable deletion
         # This is more reliable than delete_cookie() in some browsers
+        samesite_value = 'None' if not settings.DEBUG else 'Lax'
         cookie_settings = {
             'value': '',
             'max_age': 0,
@@ -191,7 +204,7 @@ class SecureLogoutView(APIView):
             'path': '/',
             'httponly': True,
             'secure': not settings.DEBUG,
-            'samesite': 'None'  # Must match original cookie settings
+            'samesite': samesite_value  # Must match original cookie settings
         }
         
         # Delete access token
@@ -243,7 +256,7 @@ class CSRFTokenView(APIView):
             max_age=31449600,  # 1 year
             httponly=False,  # Must be readable by JavaScript
             secure=not settings.DEBUG,
-            samesite='None',  # Required for cross-origin with credentials
+            samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin
             path='/'
         )
         

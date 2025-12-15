@@ -441,6 +441,14 @@ CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
 CSRF_USE_SESSIONS = False
 CSRF_COOKIE_AGE = 31449600  # 1 year
 
+# Cookie SameSite settings - critical for cross-origin
+if not DEBUG:
+    CSRF_COOKIE_SAMESITE = 'None'
+    CSRF_COOKIE_SECURE = True
+else:
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SECURE = False
+
 # CSRF Trusted Origins - Required for cross-origin POST requests
 CSRF_TRUSTED_ORIGINS = [
     'https://cems-nine.vercel.app',
@@ -448,6 +456,8 @@ CSRF_TRUSTED_ORIGINS = [
     'https://www.rsalardadevelop.co.uk',
     'https://rsalardadevelop.com',
     'https://www.rsalardadevelop.com',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
 ]
 
 # Session cookie settings (for admin)
