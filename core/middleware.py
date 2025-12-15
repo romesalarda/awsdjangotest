@@ -151,3 +151,56 @@ class CORSCSRFMiddleware:
         
         return self.get_response(request)
 
+
+class ForceRedirectCORSMiddleware:
+    """
+    Ensures CORS headers are present on ALL redirect responses (301, 302, 303, 307, 308).
+    
+    Problem: django-cors-headers sometimes doesn't add headers to redirect responses,
+    causing browsers to reject the redirect with a CORS error.
+    
+    Solution: This middleware runs AFTER django-cors-headers and forcibly adds
+    Access-Control-Allow-Origin header to redirect responses if missing.
+    
+    Add to MIDDLEWARE in settings.py AFTER CorsMiddleware:
+        MIDDLEWARE = [
+            'corsheaders.middleware.CorsMiddleware',
+            'core.middleware.ForceRedirectCORSMiddleware',  # Add this BEFORE CORSCSRFMiddleware
+            'core.middleware.CORSCSRFMiddleware',
+            ...
+        ]
+    """
+    
+    def __init__(self, get_response):
+        self.get_response = get_response
+        # Import here to avoid circular dependency
+        from django.conf import settings
+        self.allowed_origins = set(getattr(settings, 'CORS_ALLOWED_ORIGINS', []))
+        self.allow_all = getattr(settings, 'CORS_ALLOW_ALL_ORIGINS', False)
+    
+    def __call__(self, request):
+        response = self.get_response(request)
+        
+        # Only process redirect responses (301, 302, 303, 307, 308)
+        if response.status_code not in (301, 302, 303, 307, 308):
+            return response
+        
+        # Get the origin from the request
+        origin = request.headers.get('Origin')
+        
+        if not origin:
+            return response
+        
+        # Check if CORS headers are already present
+        has_cors = 'Access-Control-Allow-Origin' in response
+        
+        # If CORS headers are missing, add them
+        if not has_cors:
+            # Validate origin
+            if self.allow_all or origin in self.allowed_origins:
+                response['Access-Control-Allow-Origin'] = origin
+                response['Access-Control-Allow-Credentials'] = 'true'
+                response['Vary'] = 'Origin'
+        
+        return response
+

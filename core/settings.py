@@ -128,8 +128,8 @@ LOCAL_APPS = [
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
-    'core.middleware.CORSCSRFMiddleware',  # CORS-safe CSRF check AFTER auth
+    'corsheaders.middleware.CorsMiddleware',    
+    'core.middleware.ForceRedirectCORSMiddleware',  # CRITICAL: Ensure CORS on 301/302 redirects    'core.middleware.CORSCSRFMiddleware',  # CORS-safe CSRF check AFTER auth
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -184,8 +184,12 @@ CORS_EXPOSE_HEADERS = [
     'x-csrftoken',
 ]
 
-# Critical: Ensure CORS headers are added to ALL responses (including errors)
+# Critical: Ensure CORS headers are added to ALL responses (including errors and redirects)
 CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
+
+# CRITICAL FIX: Force CORS headers on redirect responses (301, 302, etc.)
+# Without this, browsers reject redirects from missing trailing slashes
+CORS_ALLOW_PRIVATE_NETWORK = False  # Explicitly disable to avoid conflicts
 
 ROOT_URLCONF = "core.urls"
 
