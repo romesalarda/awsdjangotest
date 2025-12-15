@@ -60,7 +60,6 @@ services:
 
   # Celery Worker - Background task execution
   celery_worker:
-    build: .
     image: ${ECR_REGISTRY}/amdg:${IMAGE_TAG}
     container_name: celery_worker
     command: celery -A core worker --loglevel=info --concurrency=2
@@ -83,7 +82,6 @@ services:
 
   # Celery Beat - Scheduled task dispatcher
   celery_beat:
-    build: .
     image: ${ECR_REGISTRY}/amdg:${IMAGE_TAG}
     container_name: celery_beat
     command: celery -A core beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
