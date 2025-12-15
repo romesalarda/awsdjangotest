@@ -94,9 +94,9 @@ class EventViewSet(viewsets.ModelViewSet):
             # This ensures event pages remain accessible after completion
             pass  # Use full base_queryset
         else:
-            # Listing/discovery: exclude COMPLETED events from results
+            # Listing/discovery: exclude ARCHIEVED events from results
             # This prevents completed events from appearing in home/search/discovery
-            base_queryset = base_queryset.exclude(status=Event.EventStatus.COMPLETED)
+            base_queryset = base_queryset.exclude(status=Event.EventStatus.ARCHIVED)
         
         if user.is_superuser:
             queryset = base_queryset
@@ -870,12 +870,6 @@ class EventViewSet(viewsets.ModelViewSet):
             payment_details["method_info"] = None
             
         payment_details["payment_deadline"] = payment_deadline
-        # payment_details["bank_reference"] = 
-        # print()
-        
-        # print("❗ payment_details:", payment_details)
-        
-        # extra_questions = event_data.pop("extra_questions", [])
 
         question_answers = QuestionAnswer.objects.filter(participant=event_participant).prefetch_related("selected_choices")
         question_answer_serializer = QuestionAnswerSerializer(question_answers, many=True)
@@ -902,24 +896,18 @@ class EventViewSet(viewsets.ModelViewSet):
         
         data["registration"] = registration_data
         
-        #! user info
         user_serializer = SimplifiedCommunityUserSerializer(user)
         user_data = user_serializer.data
         user_data["primary_email"] = user.primary_email
         data["user"] = user_data
         
-        #! Handle merch
         # show only carts relating to that event, and also show carts that are created by admin 
         carts = EventCart.objects.filter(user=user, event=event).exclude(active=True, created_via_admin=False) 
         cart_serializer = EventCartMinimalSerializer(carts, many=True)
         data["merch"] = cart_serializer.data        
-        
-        
-         #! resources
+    
         resources = event_data.pop("resources", [])
         data["resources"] = resources
-        #! questions
-
         participant_questions = ParticipantQuestion.objects.filter(participant=event_participant, event=event)
         participant_question_serializer = ParticipantQuestionSerializer(participant_questions, many=True)
         
@@ -2923,6 +2911,62 @@ class EventViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response(
                 {'error': f'Failed to delete event: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['post'], url_name="archive", url_path="archive")
+    def archive_event(self, request, id=None):
+        """
+        Archive a completed event.
+        - Event must have COMPLETED status to be archived
+        - Archived events are hidden from public listings but remain accessible to creator
+        - Archived events cannot be managed (read-only access only)
+        - Only event creators or users with full event access can archive
+        
+        Request body:
+        - confirmation: Optional confirmation message
+        """
+        event = self.get_object()
+        user = request.user
+        
+        # Check if user has permission to archive
+        if not has_full_event_access(user, event):
+            return Response(
+                {'error': 'You do not have permission to archive this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Validate event is COMPLETED
+        if event.status != Event.EventStatus.COMPLETED:
+            return Response(
+                {'error': 'Only completed events can be archived. Current status: ' + event.get_status_display()},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if already archived
+        if event.status == Event.EventStatus.ARCHIVED:
+            return Response(
+                {'error': 'This event is already archived'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Update status to ARCHIVED
+            event.status = Event.EventStatus.ARCHIVED
+            event.save(update_fields=['status'])
+            
+            # Serialize response
+            serializer = self.get_serializer(event)
+            
+            return Response({
+                'message': f'Event "{event.name}" has been successfully archived.',
+                'event': serializer.data,
+                'status': 'ARCHIVED'
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to archive event: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     

@@ -244,6 +244,8 @@ class Event(models.Model):
         CONFIRMED = "CONFIRMED", _("Confirmed")
         ONGOING = "ONGOING", _("Ongoing")
         COMPLETED = "COMPLETED", _("Completed")
+        ARCHIVED = "ARCHIVED", _("Archived")
+        
         CANCELLED = "CANCELLED", _("Cancelled")
         POSTPONED = "POSTPONED", _("Postponed") 
         
