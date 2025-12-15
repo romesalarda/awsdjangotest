@@ -180,7 +180,7 @@ jobs:
             --comment "Deploy Django Docker App from ECR - Image: $IMAGE_TAG" \
             --timeout-seconds 3600 \
             --parameters commands="[
-              \"#!/bin/bash -xe\",
+              \"set -e\",              
               \"export HOME=/home/ec2-user\",
               \"export IMAGE_TAG=$IMAGE_TAG\",
               \"export ECR_REGISTRY=$ACCOUNT_ID.dkr.ecr.eu-west-2.amazonaws.com\",
