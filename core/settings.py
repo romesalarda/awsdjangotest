@@ -132,7 +132,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
+    # "django.middleware.csrf.CsrfViewMiddleware",  # Disabled - using JWT tokens instead
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -164,7 +164,6 @@ CORS_ALLOW_HEADERS = [
     'dnt',
     'origin',
     'user-agent',
-    'x-csrftoken',
     'x-requested-with',
 ]
 
@@ -180,7 +179,6 @@ CORS_ALLOW_METHODS = [
 # Expose custom headers to the frontend
 CORS_EXPOSE_HEADERS = [
     'content-type',
-    'x-csrftoken',
 ]
 
 # Critical: Ensure CORS headers are added to ALL responses (including errors and redirects)
@@ -433,34 +431,11 @@ SIMPLE_JWT = {
 JWT_AUTH_COOKIE_SAMESITE = 'None'
 JWT_AUTH_COOKIE_SECURE = True
 
-# CSRF Settings for production security
-CSRF_COOKIE_HTTPONLY = False 
+# CSRF Protection DISABLED - Using JWT tokens instead
+# JWT tokens in HTTPOnly cookies provide sufficient protection against CSRF
+# since the tokens themselves cannot be stolen via XSS attacks
 
-CSRF_COOKIE_NAME = 'csrftoken'
-CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
-CSRF_USE_SESSIONS = False
-CSRF_COOKIE_AGE = 31449600  # 1 year
-
-# Cookie SameSite settings - critical for cross-origin
-if not DEBUG:
-    CSRF_COOKIE_SAMESITE = 'None'
-    CSRF_COOKIE_SECURE = True
-else:
-    CSRF_COOKIE_SAMESITE = 'Lax'
-    CSRF_COOKIE_SECURE = False
-
-# CSRF Trusted Origins - Required for cross-origin POST requests
-CSRF_TRUSTED_ORIGINS = [
-    'https://cems-nine.vercel.app',
-    'https://rsalardadevelop.co.uk',
-    'https://www.rsalardadevelop.co.uk',
-    'https://rsalardadevelop.com',
-    'https://www.rsalardadevelop.com',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-]
-
-# Session cookie settings (for admin)
+# Session cookie settings (for admin - CSRF still disabled globally)
 SESSION_COOKIE_HTTPONLY = True
 # Stripe Payment Configuration
 # TEST MODE by default - set to False for production

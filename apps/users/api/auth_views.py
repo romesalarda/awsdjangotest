@@ -11,21 +11,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from django.contrib.auth import authenticate
-from django.middleware.csrf import get_token
 from django.conf import settings
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 from datetime import timedelta
 
 from .serializers import CommunityUserSerializer
 
 
-@method_decorator(csrf_exempt, name='dispatch')
 class SecureTokenObtainView(APIView):
     """
     Secure login endpoint that sets JWT tokens in HTTPOnly cookies
     instead of returning them in the response body.
-    CSRF exempt because no session exists yet at login time.
     """
     permission_classes = [AllowAny]
 
@@ -88,27 +83,13 @@ class SecureTokenObtainView(APIView):
             path='/'
         )
 
-        # Set CSRF token cookie (readable by JS for CSRF header)
-        csrf_token = get_token(request)
-        response.set_cookie(
-            key='csrftoken',
-            value=csrf_token,
-            max_age=31449600,  # 1 year
-            httponly=False,  # Must be readable by JavaScript
-            secure=not settings.DEBUG,
-            samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin with credentials
-            path='/'
-        )
-
         return response
 
 
-@method_decorator(csrf_exempt, name='dispatch')
 class SecureTokenRefreshView(APIView):
     """
     Secure token refresh endpoint that reads refresh token from HTTPOnly cookie
     and sets new access token in HTTPOnly cookie.
-    CSRF exempt because refresh uses HTTPOnly cookie which cannot be stolen via XSS.
     """
     permission_classes = [AllowAny]
 
@@ -166,14 +147,9 @@ class SecureTokenRefreshView(APIView):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
 
-@method_decorator(csrf_exempt, name='dispatch')
 class SecureLogoutView(APIView):
     """
     Secure logout endpoint that clears HTTPOnly cookies.
-    CSRF exempt because:
-    1. User might be logging out with expired CSRF token
-    2. Logout action is idempotent and clearing cookies is not a state change that needs protection
-    3. The endpoint only clears cookies, no other sensitive operations
     AllowAny because user might have expired access token but still needs to logout.
     """
     permission_classes = [AllowAny]
@@ -213,11 +189,6 @@ class SecureLogoutView(APIView):
         # Delete refresh token
         response.set_cookie('refresh_token', **cookie_settings)
         
-        # Delete CSRF token (not httponly)
-        csrf_settings = cookie_settings.copy()
-        csrf_settings['httponly'] = False
-        response.set_cookie('csrftoken', **csrf_settings)
-        
         # Also clear any Django session cookie if it exists
         response.set_cookie('sessionid', **cookie_settings)
 
@@ -234,30 +205,3 @@ class CurrentUserView(APIView):
         return Response({
             'user': serializer.data
         }, status=status.HTTP_200_OK)
-
-
-class CSRFTokenView(APIView):
-    """
-    Get CSRF token for making authenticated requests.
-    This is useful for the client to get a CSRF token on initial load.
-    """
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        csrf_token = get_token(request)
-        
-        response = Response({
-            'message': 'CSRF token generated'
-        }, status=status.HTTP_200_OK)
-        
-        response.set_cookie(
-            key='csrftoken',
-            value=csrf_token,
-            max_age=31449600,  # 1 year
-            httponly=False,  # Must be readable by JavaScript
-            secure=not settings.DEBUG,
-            samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin
-            path='/'
-        )
-        
-        return response

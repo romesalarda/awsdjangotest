@@ -10,7 +10,6 @@ from apps.users.api.auth_views import (
     SecureTokenObtainView,
     SecureTokenRefreshView,
     SecureLogoutView,
-    CSRFTokenView,
 )
 
 
@@ -51,7 +50,6 @@ urlpatterns = [
     path('api/auth/login/', SecureTokenObtainView.as_view(), name='auth_login'),
     path('api/auth/refresh/', SecureTokenRefreshView.as_view(), name='auth_refresh'),
     path('api/auth/logout/', SecureLogoutView.as_view(), name='auth_logout'),
-    path('api/auth/csrf/', CSRFTokenView.as_view(), name='auth_csrf'),
     
     # Legacy token endpoints (deprecated - redirect to new secure endpoints)
     path('api/token/', SecureTokenObtainView.as_view(), name='token_obtain_pair'),
