@@ -56,10 +56,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    env_file:
-      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings
+      # All other env vars are set via shell environment on EC2
+      # Never use env_file in production - use AWS Systems Manager Parameter Store
 
   # Celery Worker - Background task execution
   celery_worker:
@@ -72,8 +72,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    env_file:
-      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings
     healthcheck:
@@ -96,8 +94,6 @@ services:
         condition: service_healthy
       web:
         condition: service_healthy
-    env_file:
-      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings
 

@@ -8,17 +8,21 @@ services:
       context: .
       dockerfile: Dockerfile
     image: amdg-local:latest
-    # Override the image for local development
-    # You can also mount code volumes here for hot-reload during development
+    env_file:
+      - .env
 
   celery_worker:
     build:
       context: .
       dockerfile: Dockerfile
     image: amdg-local:latest
+    env_file:
+      - .env
 
   celery_beat:
     build:
       context: .
       dockerfile: Dockerfile
     image: amdg-local:latest
+    env_file:
+      - .env

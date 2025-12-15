@@ -9,7 +9,8 @@ services:
       dockerfile: Dockerfile
     image: amdg-test:${IMAGE_TAG:-ci-build}
     container_name: django_app_test
-    # No ECR registry needed for CI tests
+    env_file:
+      - .env
 
   celery_worker:
     build:
@@ -17,6 +18,8 @@ services:
       dockerfile: Dockerfile
     image: amdg-test:${IMAGE_TAG:-ci-build}
     container_name: celery_worker_test
+    env_file:
+      - .env
 
   celery_beat:
     build:
@@ -24,3 +27,5 @@ services:
       dockerfile: Dockerfile
     image: amdg-test:${IMAGE_TAG:-ci-build}
     container_name: celery_beat_test
+    env_file:
+      - .env
