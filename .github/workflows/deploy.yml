@@ -177,12 +177,24 @@ jobs:
           aws ssm describe-instance-information \
             --filters "Key=InstanceIds,Values=${{ secrets.EC2_INSTANCE_ID }}"
 
+      - name: Fetch secrets from SSM
+        id: fetch_secrets
+        run: |
+          echo "SECRET_KEY=$(aws ssm get-parameter --name /prod/amdg/v1/SECRET_KEY --with-decryption --query Parameter.Value --output text)" >> $GITHUB_OUTPUT
+          echo "DB_PASSWORD=$(aws ssm get-parameter --name /prod/amdg/v1/DB_PASSWORD --with-decryption --query Parameter.Value --output text)" >> $GITHUB_OUTPUT
+          echo "AWS_STORAGE_BUCKET_NAME=$(aws ssm get-parameter --name /prod/amdg/v1/AWS_STORAGE_BUCKET_NAME --query Parameter.Value --output text)" >> $GITHUB_OUTPUT
+          echo "ALLOWED_HOSTS=$(aws ssm get-parameter --name /prod/amdg/v1/ALLOWED_HOSTS --query Parameter.Value --output text)" >> $GITHUB_OUTPUT
+
       - name: Deploy to EC2 via SSM
         id: deploy_ssm
         env:
           IMAGE_TAG: ${{ github.sha }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          SECRET_KEY: ${{ steps.fetch_secrets.outputs.SECRET_KEY }}
+          DB_PASSWORD: ${{ steps.fetch_secrets.outputs.DB_PASSWORD }}
+          AWS_STORAGE_BUCKET_NAME: ${{ steps.fetch_secrets.outputs.AWS_STORAGE_BUCKET_NAME }}
+          ALLOWED_HOSTS: ${{ steps.fetch_secrets.outputs.ALLOWED_HOSTS }}
         run: |
           aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
@@ -194,12 +206,10 @@ jobs:
               \"export HOME=/home/ec2-user\",
               \"export IMAGE_TAG=$IMAGE_TAG\",
               \"export ECR_REGISTRY=$ACCOUNT_ID.dkr.ecr.eu-west-2.amazonaws.com\",
-              \"cd /home/ec2-user/awsdjangotest\",
-              \"echo Loading environment variables from AWS SSM Parameter Store...\",
-              \"export SECRET_KEY=\\$(aws ssm get-parameter --name /awsdocker/SECRET_KEY --with-decryption --query Parameter.Value --output text)\",
-              \"export DB_PASSWORD=\\$(aws ssm get-parameter --name /awsdocker/DB_PASSWORD --with-decryption --query Parameter.Value --output text)\",
-              \"export AWS_STORAGE_BUCKET_NAME=\\$(aws ssm get-parameter --name /awsdocker/AWS_STORAGE_BUCKET_NAME --query Parameter.Value --output text)\",
-              \"export ALLOWED_HOSTS=\\$(aws ssm get-parameter --name /awsdocker/ALLOWED_HOSTS --query Parameter.Value --output text)\",
+              \"export SECRET_KEY='$SECRET_KEY'\",
+              \"export DB_PASSWORD='$DB_PASSWORD'\",
+              \"export AWS_STORAGE_BUCKET_NAME='$AWS_STORAGE_BUCKET_NAME'\",
+              \"export ALLOWED_HOSTS='$ALLOWED_HOSTS'\",
               \"export DEBUG=False\",
               \"export DB_ENGINE=django.db.backends.postgresql\",
               \"export DB_NAME=awstestdb\",
@@ -208,6 +218,7 @@ jobs:
               \"export DB_PORT=5432\",
               \"export AWS_S3_REGION_NAME=eu-west-2\",
               \"export DJANGO_SETTINGS_MODULE=core.settings\",
+              \"cd /home/ec2-user/awsdjangotest\",
               \"echo ===================================================\",
               \"echo Deploying image: \$ECR_REGISTRY/amdg:\$IMAGE_TAG\",
               \"echo ===================================================\",
