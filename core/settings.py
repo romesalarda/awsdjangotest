@@ -155,7 +155,7 @@ CORS_ALLOW_ALL_ORIGINS = False
 
 # Additional CORS settings for django-cors-headers
 CORS_ALLOWED_ORIGIN_REGEXES = []
-CORS_URLS_REGEX = r'^/api/.*$'  # Only apply CORS to /api/ URLs
+CORS_URLS_REGEX = r'^/.*$'  # Apply CORS to ALL URLs (not just /api/)
 
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -183,6 +183,9 @@ CORS_EXPOSE_HEADERS = [
     'content-type',
     'x-csrftoken',
 ]
+
+# Critical: Ensure CORS headers are added to ALL responses (including errors)
+CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
 
 ROOT_URLCONF = "core.urls"
 
