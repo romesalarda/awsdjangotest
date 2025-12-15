@@ -153,6 +153,10 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = False
 
+# Additional CORS settings for django-cors-headers
+CORS_ALLOWED_ORIGIN_REGEXES = []
+CORS_URLS_REGEX = r'^/api/.*$'  # Only apply CORS to /api/ URLs
+
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
@@ -419,11 +423,20 @@ JWT_AUTH_COOKIE_SECURE = True
 # CSRF Settings for production security
 CSRF_COOKIE_HTTPONLY = False  # Must be False so JavaScript can read it for CSRF header
 CSRF_COOKIE_SECURE = not DEBUG  # Only send over HTTPS in production
-CSRF_COOKIE_SAMESITE = 'None' 
+CSRF_COOKIE_SAMESITE = 'None'  # Required for cross-origin with credentials 
 CSRF_COOKIE_NAME = 'csrftoken'
 CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
 CSRF_USE_SESSIONS = False
 CSRF_COOKIE_AGE = 31449600  # 1 year
+
+# CSRF Trusted Origins - Required for cross-origin POST requests
+CSRF_TRUSTED_ORIGINS = [
+    'https://cems-nine.vercel.app',
+    'https://rsalardadevelop.co.uk',
+    'https://www.rsalardadevelop.co.uk',
+    'https://rsalardadevelop.com',
+    'https://www.rsalardadevelop.com',
+]
 
 # Session cookie settings (for admin)
 SESSION_COOKIE_HTTPONLY = True

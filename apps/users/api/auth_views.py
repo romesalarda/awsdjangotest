@@ -92,7 +92,7 @@ class SecureTokenObtainView(APIView):
             max_age=31449600,  # 1 year
             httponly=False,  # Must be readable by JavaScript
             secure=not settings.DEBUG,
-            samesite='Lax',
+            samesite='None',  # Required for cross-origin with credentials
             path='/'
         )
 
@@ -132,7 +132,7 @@ class SecureTokenRefreshView(APIView):
                 max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
                 httponly=True,
                 secure=not settings.DEBUG,
-                samesite='Lax',
+                samesite='None',  # Required for cross-origin with credentials
                 path='/'
             )
 
@@ -148,7 +148,7 @@ class SecureTokenRefreshView(APIView):
                     max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
                     httponly=True,
                     secure=not settings.DEBUG,
-                    samesite='Lax',
+                    samesite='None',  # Required for cross-origin with credentials
                     path='/'
                 )
 
@@ -191,7 +191,7 @@ class SecureLogoutView(APIView):
             'path': '/',
             'httponly': True,
             'secure': not settings.DEBUG,
-            'samesite': 'Lax'
+            'samesite': 'None'  # Must match original cookie settings
         }
         
         # Delete access token
@@ -243,7 +243,7 @@ class CSRFTokenView(APIView):
             max_age=31449600,  # 1 year
             httponly=False,  # Must be readable by JavaScript
             secure=not settings.DEBUG,
-            samesite='Strict',
+            samesite='None',  # Required for cross-origin with credentials
             path='/'
         )
         
