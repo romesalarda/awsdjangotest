@@ -72,7 +72,7 @@ jobs:
       - name: Start services
         run: |
           echo "Starting services..."
-          docker-compose up -d || true
+          docker-compose up -d
           echo "Services started, checking status..."
           docker-compose ps
           echo ""
