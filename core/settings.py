@@ -295,8 +295,8 @@ if not DEBUG:
     AWS_S3_OBJECT_PARAMETERS = {
         "CacheControl": "max-age=86400"
     }
-    STATICFILES_STORAGE = "core.storage.StaticStorage"
-    DEFAULT_FILE_STORAGE = "core.storage.MediaStorage"
+    # STATICFILES_STORAGE = "core.storage.StaticStorage"
+    # DEFAULT_FILE_STORAGE = "core.storage.MediaStorage"
 
     STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/static/"
     MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
@@ -315,17 +315,16 @@ if not DEBUG:
                 "bucket_name": AWS_STORAGE_BUCKET_NAME,
                 "region_name": AWS_S3_REGION_NAME,
                 "location": "static",  # Folder in the bucket for static files
-                "default_acl": "public-read",
                 "file_overwrite": False,
         },
     },
     }
     
+    AWS_DEFAULT_ACL = None
     AWS_S3_OBJECT_PARAMETERS = {
         "CacheControl": "max-age=86400",
-        "ACL": "public-read",
     }
-    STATICFILES_DIRS = (os.path.join(BASE_DIR, 'static'),)
+    # STATICFILES_DIRS = (os.path.join(BASE_DIR, 'static'),)
 
 else:
     print("\n ### DEBUG is ON - Local storage in use ### ")
