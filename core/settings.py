@@ -374,7 +374,6 @@ REST_FRAMEWORK = {
         # Custom JWT Cookie Authentication (HTTPOnly cookies)
         'core.authentication.JWTCookieAuthentication',
         # Fallback to session authentication for admin
-        "rest_framework.authentication.SessionAuthentication",
     ),
     # WARNING - THIS PERMISSION MUST BE SET TO 'IS_AUTHENTICATED' DURING PRODUCTION TO PROTECT ENDPOINTS
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.AllowAny",),
