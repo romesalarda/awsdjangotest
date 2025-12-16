@@ -1089,6 +1089,8 @@ class EventViewSet(viewsets.ModelViewSet):
         - ?status= (filter by participant status)
         - ?order_by=recent_updates (order by most recent activity)
         - ?search= (general search across multiple fields)
+        - ?page= (page number, default: 1)
+        - ?page_size= (items per page, default: 10 from REST_FRAMEWORK settings)
         '''
         # Handle both pk and id parameters from DRF routing
         event_lookup = id if id is not None else pk
@@ -2359,7 +2361,7 @@ class EventViewSet(viewsets.ModelViewSet):
 
         
     @action(detail=True, methods=["GET"], url_name="questions-asked", url_path="questions-asked")
-    def questions_asked(self, request, id=None):
+    def questions_asked(self, request, id=None, pk=None):
         """
         Get participant questions for a specific event with same filtering as participants.
         Supports the same filter parameters as the participants endpoint.
@@ -2368,8 +2370,14 @@ class EventViewSet(viewsets.ModelViewSet):
             from apps.events.models import ParticipantQuestion
             from apps.events.api.serializers.registration_serializers import ParticipantQuestionSerializer
             
-            # Get the current event
-            event = self.get_object()
+            # Get the current event - use direct lookup to avoid query param issues
+            event_lookup = id if id is not None else pk
+            queryset = self.get_queryset()
+            
+            try:
+                event = queryset.get(id=event_lookup)
+            except Event.DoesNotExist:
+                return Response({'error': 'Event not found'}, status=404)
             
             query_params = []
             
