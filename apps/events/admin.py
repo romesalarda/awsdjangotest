@@ -446,13 +446,13 @@ class EventDayAttendanceInline(admin.TabularInline):
     model = EventDayAttendance
     extra = 1
     autocomplete_fields = ('user', 'event')
-    readonly_fields = ('duration',)
-    fields = ('user', 'event', 'day_date', 'day_id', 'check_in_time', 'check_out_time', 'duration')
+    readonly_fields = ('duration', 'day_date', 'day_index')
+    fields = ('user', 'event', 'day_date', 'day_index', 'check_in_time', 'check_out_time', 'duration')
 
 @admin.register(EventDayAttendance)
 class EventDayAttendanceAdmin(admin.ModelAdmin):
-    list_display = ('user', 'event', 'day_date', 'day_id', 'check_in_time', 'check_out_time', 'duration')
-    list_filter = ('event', 'day_date')
+    list_display = ('user', 'event', 'day_index', 'check_in_time', 'check_out_time', 'duration')
+    list_filter = ('event',)
     search_fields = ('user__first_name', 'user__last_name', 'event__name')
     autocomplete_fields = ('user', 'event')
     readonly_fields = ('duration',)

@@ -40,14 +40,14 @@ from sentry_sdk.integrations.django import DjangoIntegration
 
 from django.utils.timezone import get_current_timezone
 
-sentry_sdk.init(
-    dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
-    integrations=[DjangoIntegration()],
+# sentry_sdk.init(
+#     dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
+#     integrations=[DjangoIntegration()],
 
-    # Add data like request headers and IP for users,
-    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-    send_default_pii=True,
-)
+#     # Add data like request headers and IP for users,
+#     # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+#     send_default_pii=True,
+# )
 
 load_dotenv()
 

@@ -172,10 +172,25 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
             'type': 'checkin_update',
             'participant': event['participant'],
             'action': event['action'],  # 'checkin' or 'checkout'
+            'source': event.get('source', 'automatic'),  # 'manual' or 'automatic'
             'timestamp': event['timestamp']
         }))
         
         print(f"✅ WebSocket SENT checkin_update to client")
+    
+    async def bulk_action_summary(self, event):
+        """
+        Handle bulk action summary notifications.
+        This is sent as a SINGLE notification instead of flooding with individual check-ins.
+        """
+        await self.send(text_data=safe_json_dumps({
+            'type': 'bulk_action_summary',
+            'action': event['action'],
+            'checked_in_count': event.get('checked_in_count', 0),
+            'checked_out_count': event.get('checked_out_count', 0),
+            'skipped_count': event.get('skipped_count', 0),
+            'timestamp': event['timestamp']
+        }))
 
     async def participant_registered(self, event):
         """
@@ -343,7 +358,7 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                         from datetime import date
                         today = date.today()
                         filter_conditions &= (
-                            Q(user__event_attendance__day_date=today) &
+                            Q(user__event_attendance__check_in_time__date=today) &
                             Q(user__event_attendance__check_in_time__isnull=False) &
                             Q(user__event_attendance__check_out_time__isnull=True)
                         )
@@ -352,7 +367,7 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                         from datetime import date
                         today = date.today()
                         filter_conditions &= ~Q(
-                            user__event_attendance__day_date=today,
+                            user__event_attendance__check_in_time__date=today,
                             user__event_attendance__check_in_time__isnull=False
                         )
                     elif status_upper == 'PENDING_PAYMENT':
@@ -683,34 +698,40 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
             checked_in_count = 0
             skipped_count = 0
             
-            # Get or create attendance records for each participant
+            # Check for already checked-in participants today
+            from datetime import timedelta
+            now = timezone.now()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            
             for participant in participants:
-                # Check if already checked in today
-                attendance, created = EventDayAttendance.objects.get_or_create(
+                # Check if already checked in today (not yet checked out)
+                existing_attendance = EventDayAttendance.objects.filter(
                     event=event,
                     user=participant.user,
-                    day_date=today,
-                    day_id=1,  # TODO: Update this to the correct day ID
-                    defaults={'check_in_time': timezone.now().time()}
-                )
+                    check_in_time__gte=today_start,
+                    check_in_time__lt=today_end,
+                    check_out_time__isnull=True
+                ).first()
                 
-                if created or not attendance.check_in_time:
-                    # Check in the participant
-                    if not attendance.check_in_time:
-                        attendance.check_in_time = timezone.now().time()
-                        attendance.save()
-                    
-                    checked_in_count += 1
-                    
-                    # Send WebSocket notification for this check-in
-                    participant_data = serialize_participant_for_websocket(participant)
-                    websocket_notifier.notify_checkin_update(
-                        event_id=str(event.id),
-                        participant_data=participant_data,
-                        action='checkin'
+                if not existing_attendance:
+                    # Create new attendance record
+                    EventDayAttendance.objects.create(
+                        event=event,
+                        user=participant.user,
+                        check_in_time=now
                     )
+                    checked_in_count += 1
                 else:
                     skipped_count += 1
+            
+            # Send SINGLE batched notification instead of individual ones
+            if checked_in_count > 0:
+                websocket_notifier.notify_bulk_checkin_update(
+                    event_id=str(event.id),
+                    checked_in_count=checked_in_count,
+                    skipped_count=skipped_count
+                )
             
             message = f"Checked in {checked_in_count} participant(s). {skipped_count} already checked in."
             
@@ -794,37 +815,38 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
             checked_out_count = 0
             skipped_count = 0
             
-            # Check out each participant
+            # Check out each participant with current check-in
+            from datetime import timedelta
+            now = timezone.now()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            
             for participant in participants:
-                # Find today's attendance record
-                try:
-                    attendance = EventDayAttendance.objects.get(
-                        event=event,
-                        user=participant.user,
-                        day_date=today,
-                        check_in_time__isnull=False
-                    )
-                    
-                    if not attendance.check_out_time:
-                        # Check out the participant
-                        attendance.check_out_time = timezone.now().time()
-                        attendance.save()
-                        
-                        checked_out_count += 1
-                        
-                        # Send WebSocket notification for this check-out
-                        participant_data = serialize_participant_for_websocket(participant)
-                        websocket_notifier.notify_checkin_update(
-                            event_id=str(event.id),
-                            participant_data=participant_data,
-                            action='checkout'
-                        )
-                    else:
-                        skipped_count += 1
-                        
-                except EventDayAttendance.DoesNotExist:
-                    # Not checked in, skip
+                # Find today's attendance record that hasn't been checked out
+                attendance = EventDayAttendance.objects.filter(
+                    event=event,
+                    user=participant.user,
+                    check_in_time__gte=today_start,
+                    check_in_time__lt=today_end,
+                    check_out_time__isnull=True
+                ).first()
+                
+                if attendance:
+                    # Check out the participant
+                    attendance.check_out_time = now
+                    attendance.save()
+                    checked_out_count += 1
+                else:
+                    # Not checked in or already checked out
                     skipped_count += 1
+            
+            # Send SINGLE batched notification instead of individual ones
+            if checked_out_count > 0:
+                websocket_notifier.notify_bulk_checkout_update(
+                    event_id=str(event.id),
+                    checked_out_count=checked_out_count,
+                    skipped_count=skipped_count
+                )
             
             message = f"Checked out {checked_out_count} participant(s). {skipped_count} not eligible."
             

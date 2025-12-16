@@ -1327,32 +1327,84 @@ class EventWorkshop(models.Model):
 
 class EventDayAttendance (models.Model):
     '''
-    Represents attendance records for events
+    Represents attendance records for events - supports multiple check-ins per day
     '''
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event = models.ForeignKey("Event", on_delete=models.CASCADE, related_name="attendance_records")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="event_attendance")
     
-    day_date = models.DateField(_("attendance day"), blank=True, null=True)
-    day_id = models.IntegerField(_("day id"), validators=[validators.MinValueValidator(1)])
+    check_in_time = models.DateTimeField(_("check-in timestamp"))
+    check_out_time = models.DateTimeField(_("check-out timestamp"), blank=True, null=True)
     
-    check_in_time = models.TimeField(_("check-in time"), blank=True, null=True)
-    check_out_time = models.TimeField(_("check-out time"), blank=True, null=True)
     stale = models.BooleanField(editable=False, default=False, help_text=_("marks this attendance object as stale and can no longer be updated"))
     
     class Meta:
         verbose_name = _("Event Day Attendance")
         verbose_name_plural = _("Event Day Attendances")
-        unique_together = ("event", "user", "check_in_time", "day_id")
         ordering = ['-check_in_time']
+        indexes = [
+            models.Index(fields=['event', 'user', 'check_in_time']),
+            models.Index(fields=['event', 'check_in_time']),
+        ]
     
     def __str__(self):
-        return f"Attendance: {self.user} - {self.event.name}"
+        return f"Attendance: {self.user} - {self.event.name} - {self.check_in_time}"
+    
+    @property
+    def day_index(self):
+        """
+        Calculate 1-based day index from event start date.
+        Day 1 = event start date, Day 2 = start + 1 day, etc.
+        """
+        if not self.check_in_time or not self.event.start_date:
+            return None
+        
+        # Extract date from check_in_time (should be datetime)
+        from datetime import datetime, date, time
+        if isinstance(self.check_in_time, datetime):
+            check_in_date = self.check_in_time.date()
+        elif isinstance(self.check_in_time, date):
+            check_in_date = self.check_in_time
+        elif isinstance(self.check_in_time, time):
+            # Old data format - time only, assume today's date for calculation
+            return 1
+        else:
+            return None
+        
+        # Extract date from event start_date
+        if isinstance(self.event.start_date, datetime):
+            event_start = self.event.start_date.date()
+        elif isinstance(self.event.start_date, date):
+            event_start = self.event.start_date
+        else:
+            return None
+        
+        delta = (check_in_date - event_start).days
+        return max(1, delta + 1)
+    
+    @property
+    def day_date(self):
+        """The date of this attendance record"""
+        if not self.check_in_time:
+            return None
+        
+        from datetime import datetime, date, time
+        if isinstance(self.check_in_time, datetime):
+            return self.check_in_time.date()
+        elif isinstance(self.check_in_time, date):
+            return self.check_in_time
+        elif isinstance(self.check_in_time, time):
+            # Old data format - time only, return today's date
+            from datetime import date as date_today
+            return date_today.today()
+        return None
 
     @property
     def duration(self):
-        # if self.check_in_time and self.check_out_time:
-            # return self.check_out_time - self.check_in_time
+        from datetime import datetime, date
+        """Calculate duration if both check-in and check-out exist"""
+        if self.check_in_time and self.check_out_time:
+            return self.check_out_time - self.check_in_time
         return None
     
     @property
@@ -1360,15 +1412,31 @@ class EventDayAttendance (models.Model):
         '''
         this attendance object is declared as "finished" if the user has checked out
         '''
-        return (self.check_in_time is not None) & (self.check_out_time is not None)
+        return self.check_in_time is not None and self.check_out_time is not None
+    
+    def clean(self):
+        """Validate attendance record"""
+        super().clean()
+        
+        if self.check_in_time and self.event.start_date and self.event.end_date:
+            check_in_date = self.check_in_time.date() if hasattr(self.check_in_time, 'date') else self.check_in_time
+            event_start = self.event.start_date.date() if hasattr(self.event.start_date, 'date') else self.event.start_date
+            event_end = self.event.end_date.date() if hasattr(self.event.end_date, 'date') else self.event.end_date
+            
+            if check_in_date < event_start:
+                raise ValidationError(_("Check-in date cannot be before event start date"))
+            if check_in_date > event_end:
+                raise ValidationError(_("Check-in date cannot be after event end date"))
+        
+        if self.check_out_time and self.check_in_time:
+            if self.check_out_time <= self.check_in_time:
+                raise ValidationError(_("Check-out must be after check-in"))
     
     def save(self, *args, **kwargs):
-        if self.day_date is None and self.check_in_time:
-            # pull start date from event + the day id and set that to date
-            event_start_date = self.event.start_date.date() if self.event.start_date else None
-            if event_start_date:
-                self.day_date = event_start_date + timedelta(days=self.day_id - 1)
-            
+        # Run validation
+        self.full_clean()
+        
+        # Mark as stale if finished
         if self.is_finished:
             self.stale = True
                 

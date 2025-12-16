@@ -1967,7 +1967,6 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
         today = date.today()
         return obj.user.event_attendance.filter(
             event=obj.event,
-            day_date=today,
             check_in_time__isnull=False,
             check_out_time__isnull=True
         ).exists()
@@ -1979,7 +1978,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
         
         latest_attendance = obj.user.event_attendance.filter(
             event=obj.event,
-            day_date=today
+            check_in_time__date=today
         ).order_by('-check_in_time').first()
         
         if not latest_attendance or not latest_attendance.check_in_time:
@@ -1996,7 +1995,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
         
         latest_attendance = obj.user.event_attendance.filter(
             event=obj.event,
-            day_date=today,
+            check_in_time__date=today,
             check_in_time__isnull=False
         ).order_by('-check_in_time').first()
         
@@ -2009,7 +2008,7 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
         
         latest_attendance = obj.user.event_attendance.filter(
             event=obj.event,
-            day_date=today,
+            check_in_time__date=today,
             check_out_time__isnull=False
         ).order_by('-check_out_time').first()
         
@@ -2018,13 +2017,13 @@ class ParticipantManagementSerializer(serializers.ModelSerializer):
     def get_attendance_records(self, obj):
         """Get all attendance records for this participant"""
         records = []
-        for attendance in obj.user.event_attendance.filter(event=obj.event).order_by('-day_date', '-check_in_time'):
+        for attendance in obj.user.event_attendance.filter(event=obj.event).order_by('-check_in_time'):
             records.append({
                 'id': str(attendance.id),
                 'day_date': attendance.day_date.isoformat() if attendance.day_date else None,
                 'check_in_time': attendance.check_in_time.isoformat() if attendance.check_in_time else None,
                 'check_out_time': attendance.check_out_time.isoformat() if attendance.check_out_time else None,
-                'day_id': attendance.day_id
+                'day_id': attendance.day_index
             })
         return records
 
@@ -2101,7 +2100,9 @@ class EventDayAttendanceSerializer(serializers.ModelSerializer): #! used for fut
     '''
     user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
     event_code = serializers.CharField(source="event.event_code", read_only=True)
-    duration = serializers.DurationField(read_only=True)
+    duration = serializers.SerializerMethodField()
+    day_date = serializers.SerializerMethodField(read_only=True)
+    day_id = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = EventDayAttendance
@@ -2117,7 +2118,19 @@ class EventDayAttendanceSerializer(serializers.ModelSerializer): #! used for fut
             "check_out_time",
             "duration",
         ]
-        read_only_fields = ["id", "duration", "event_code", "user_details"]
+        read_only_fields = ["id", "duration", "event_code", "user_details", "day_date", "day_id"]
+    
+    def get_day_date(self, obj):
+        """Get the computed day_date property"""
+        return obj.day_date.isoformat() if obj.day_date else None
+    
+    def get_day_id(self, obj):
+        """Get the computed day_index property"""
+        return obj.day_index
+    
+    def get_duration(self, obj):
+        """Get duration from model property"""
+        return obj.duration
         
 class ParticipantQuestionSerializer(serializers.ModelSerializer):
     """
@@ -2380,6 +2393,8 @@ class EventDayAttendanceSerializer(serializers.ModelSerializer):
     user_details = SimplifiedCommunityUserSerializer(source="user", read_only=True)
     event_code = serializers.CharField(source="event.event_code", read_only=True)
     duration = serializers.SerializerMethodField()
+    day_date = serializers.SerializerMethodField(read_only=True)
+    day_id = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = EventDayAttendance
@@ -2396,21 +2411,21 @@ class EventDayAttendanceSerializer(serializers.ModelSerializer):
             "duration",
             "stale"
         ]
-        read_only_fields = ["id", "duration", "event_code", "user_details"]
-
+        read_only_fields = ["id", "duration", "event_code", "user_details", "day_date", "day_id"]
+    
+    def get_day_date(self, obj):
+        """Get the computed day_date property"""
+        return obj.day_date.isoformat() if obj.day_date else None
+    
+    def get_day_id(self, obj):
+        """Get the computed day_index property"""
+        return obj.day_index
+        
     def get_duration(self, obj):
-        """Calculate duration between check-in and check-out"""
-        if obj.check_in_time and obj.check_out_time:
-            # Convert time to datetime for calculation
-            from datetime import datetime, date
-            check_in_dt = datetime.combine(date.today(), obj.check_in_time)
-            check_out_dt = datetime.combine(date.today(), obj.check_out_time)
-            
-            # Handle case where check-out is next day
-            if check_out_dt < check_in_dt:
-                from datetime import timedelta
-                check_out_dt += timedelta(days=1)
-            
-            duration = check_out_dt - check_in_dt
-            return str(duration)
-        return None
+        """Get duration from model property"""
+        if obj.check_out_time < obj.check_in_time:
+            from datetime import timedelta
+            check_out_dt += timedelta(days=1)
+        
+        duration = obj.check_out_time - obj.check_in_time
+        return str(duration)

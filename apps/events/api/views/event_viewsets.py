@@ -1291,7 +1291,7 @@ class EventViewSet(viewsets.ModelViewSet):
                 from datetime import date
                 today = date.today()
                 query_params.append(
-                    Q(user__event_attendance__day_date=today) &
+                    Q(user__event_attendance__check_in_time__date=today) &
                     Q(user__event_attendance__check_in_time__isnull=False) &
                     Q(user__event_attendance__check_out_time__isnull=True)
                 )
@@ -1301,7 +1301,7 @@ class EventViewSet(viewsets.ModelViewSet):
                 from datetime import date
                 today = date.today()
                 query_params.append(
-                    ~Q(user__event_attendance__day_date=today, 
+                    ~Q(user__event_attendance__check_in_time__date=today, 
                        user__event_attendance__check_in_time__isnull=False)
                 )
             
@@ -3723,16 +3723,14 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         is_checked_in = EventDayAttendance.objects.filter(
             event=participant.event, 
             user=participant.user,
-            day_date = check_in_datetime.date(),
+            check_in_time__date=check_in_datetime.date(),
             check_out_time=None,
         ).exists()
         if not is_checked_in:
             EventDayAttendance.objects.create(
-                event = participant.event,
-                user = participant.user,
-                check_in_time = check_in_datetime.time(),  # Now stores London time
-                day_date = check_in_datetime.date(),
-                day_id = data.get("day_id", 1)
+                event=participant.event,
+                user=participant.user,
+                check_in_time=check_in_datetime,
             )
             
             # Broadcast WebSocket update for check-in
@@ -3747,7 +3745,8 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 websocket_notifier.notify_checkin_update(
                     event_id=str(participant.event.id),
                     participant_data=participant_data,
-                    action='checkin'
+                    action='checkin',
+                    source='automatic'  # Silent update for other clients; calling client handles its own notification
                 )
                 
                 # Notify dashboard users about participant count change
@@ -3800,12 +3799,12 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         checked_in = EventDayAttendance.objects.filter(
             event=participant.event, 
             user=participant.user,
-            day_date = check_out_datetime.date(),
+            check_in_time__date=check_out_datetime.date(),
             check_out_time=None
         )
         if checked_in.exists():
             first = checked_in.first()
-            first.check_out_time = check_out_datetime.time()  # Now stores London time
+            first.check_out_time = check_out_datetime
             first.save()
             
             # Broadcast WebSocket update for check-out
@@ -3820,7 +3819,8 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                 websocket_notifier.notify_checkin_update(
                     event_id=str(participant.event.id),
                     participant_data=participant_data,
-                    action='checkout'
+                    action='checkout',
+                    source='automatic'  # Silent update for other clients; calling client handles its own notification
                 )
                 
                 # Notify dashboard users about participant count change
@@ -4828,8 +4828,9 @@ class EventDayAttendanceViewSet(viewsets.ModelViewSet):
     queryset = EventDayAttendance.objects.select_related("event", "user")
     serializer_class = EventDayAttendanceSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["event", "user", "day_date", "day_id"]
+    filterset_fields = ["event", "user"]
     search_fields = ["user__first_name", "user__last_name", "event__name"]
-    ordering_fields = ["day_date", "check_in_time", "check_out_time"]
+    ordering_fields = ["check_in_time", "check_out_time"]
     ordering = ["-check_in_time"]
     permission_classes = [permissions.IsAuthenticated]
+    

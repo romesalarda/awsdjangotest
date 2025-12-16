@@ -34,7 +34,7 @@ class WebSocketNotifier:
     def __init__(self):
         self.channel_layer = get_channel_layer()
     
-    def notify_checkin_update(self, event_id, participant_data, action='checkin'):
+    def notify_checkin_update(self, event_id, participant_data, action='checkin', source='manual'):
         """
         Send check-in update to all connected clients monitoring this event
         
@@ -42,9 +42,10 @@ class WebSocketNotifier:
             event_id (str/UUID): The event ID
             participant_data (dict): Participant information
             action (str): 'checkin' or 'checkout'
+            source (str): 'manual' (user-initiated) or 'automatic' (system/bulk)
         """
         participant_name = participant_data.get('user', {}).get('first_name', 'Unknown')
-        print(f"🚀 NOTIFY_CHECKIN_UPDATE - Event ID: {event_id}, Participant: {participant_name}, Action: {action}")
+        print(f"🚀 NOTIFY_CHECKIN_UPDATE - Event ID: {event_id}, Participant: {participant_name}, Action: {action}, Source: {source}")
         
         if not self.channel_layer:
             print(f"❌ NOTIFY_CHECKIN_UPDATE FAILED - No channel layer available")
@@ -57,6 +58,7 @@ class WebSocketNotifier:
             'type': 'checkin_update',
             'participant': participant_data,
             'action': action,
+            'source': source,
             'timestamp': datetime.now().isoformat()
         }
         
@@ -93,6 +95,74 @@ class WebSocketNotifier:
             event_group_name,
             message
         )
+    
+    def notify_bulk_checkin_update(self, event_id, checked_in_count, skipped_count):
+        """
+        Send a SINGLE batched notification for bulk check-ins.
+        Prevents UI flooding from individual check-in events.
+        
+        Args:
+            event_id (str/UUID): The event ID
+            checked_in_count (int): Number of participants checked in
+            skipped_count (int): Number skipped (already checked in)
+        """
+        if not self.channel_layer:
+            print(f"❌ NOTIFY_BULK_CHECKIN_UPDATE FAILED - No channel layer available")
+            return
+        
+        event_group_name = f'event_checkin_{event_id}'
+        print(f"📡 NOTIFY_BULK_CHECKIN_UPDATE - Sending to group: {event_group_name} ({checked_in_count} checked in)")
+        
+        message = {
+            'type': 'bulk_action_summary',
+            'action': 'bulk_checkin',
+            'checked_in_count': checked_in_count,
+            'skipped_count': skipped_count,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        try:
+            async_to_sync(self.channel_layer.group_send)(
+                event_group_name,
+                message
+            )
+            print(f"✅ NOTIFY_BULK_CHECKIN_UPDATE SUCCESS - Sent to group {event_group_name}")
+        except Exception as e:
+            print(f"❌ NOTIFY_BULK_CHECKIN_UPDATE FAILED - Error: {e}")
+    
+    def notify_bulk_checkout_update(self, event_id, checked_out_count, skipped_count):
+        """
+        Send a SINGLE batched notification for bulk check-outs.
+        Prevents UI flooding from individual check-out events.
+        
+        Args:
+            event_id (str/UUID): The event ID
+            checked_out_count (int): Number of participants checked out
+            skipped_count (int): Number skipped (already checked out)
+        """
+        if not self.channel_layer:
+            print(f"❌ NOTIFY_BULK_CHECKOUT_UPDATE FAILED - No channel layer available")
+            return
+        
+        event_group_name = f'event_checkin_{event_id}'
+        print(f"📡 NOTIFY_BULK_CHECKOUT_UPDATE - Sending to group: {event_group_name} ({checked_out_count} checked out)")
+        
+        message = {
+            'type': 'bulk_action_summary',
+            'action': 'bulk_checkout',
+            'checked_out_count': checked_out_count,
+            'skipped_count': skipped_count,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        try:
+            async_to_sync(self.channel_layer.group_send)(
+                event_group_name,
+                message
+            )
+            print(f"✅ NOTIFY_BULK_CHECKOUT_UPDATE SUCCESS - Sent to group {event_group_name}")
+        except Exception as e:
+            print(f"❌ NOTIFY_BULK_CHECKOUT_UPDATE FAILED - Error: {e}")
     
     def notify_event_update(self, user_ids, event_id, update_type, data):
         """
@@ -148,7 +218,7 @@ def serialize_participant_for_websocket(participant):
         all_attendance = EventDayAttendance.objects.filter(
             event=participant.event,
             user=participant.user
-        ).order_by('-day_date', '-check_in_time')
+        ).order_by('-check_in_time')
         
         print(f"📅 SERIALIZING - Found {all_attendance.count()} attendance records")
         
@@ -190,7 +260,7 @@ def serialize_participant_for_websocket(participant):
                 'day_date': attendance.day_date.isoformat() if attendance.day_date else None,
                 'check_in_time': str(london_check_in) if london_check_in else None,
                 'check_out_time': str(london_check_out) if london_check_out else None,
-                'day_id': attendance.day_id,
+                'day_id': attendance.day_index,
             })
         
         # Get payment information for priority sorting
