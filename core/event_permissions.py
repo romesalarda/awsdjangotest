@@ -262,7 +262,7 @@ def get_user_event_permissions(user, event):
                 'can_manage_resources': False,
                 'can_manage_questions': False,
                 'event_approved': event.approved,
-                'can_approve': True,
+                'can_approve': can_user_approve_event(user),
 
             }
 
@@ -326,7 +326,7 @@ def can_user_access_event_dashboard(user, event):
     ])
 
 def can_user_approve_event(user):
-    return user.community_roles.through.objects.filter(
-            Q(role__role_name=CommunityRole.RoleType.COMMUNITY_ADMIN.name) |
-            Q(role__role_name=CommunityRole.RoleType.EVENT_APPROVER.name)
+    return user.community_roles.filter(
+            Q(role_name=CommunityRole.RoleType.COMMUNITY_ADMIN.name) |
+            Q(role_name=CommunityRole.RoleType.EVENT_APPROVER.name)
         ).exists()

@@ -286,8 +286,8 @@ class UserAwareEventSerializer(SimplifiedEventSerializer):
             return True
             
         # Check if user has encoder permissions (can manage events)
-        if hasattr(request.user, 'community') and request.user.community.encoder:
-            return True
+        # if hasattr(request.user, 'community') and request.user.community.encoder:
+        #     return True
             
         return False
         

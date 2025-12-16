@@ -456,7 +456,7 @@ class EventViewSet(viewsets.ModelViewSet):
         '''
         event = self.get_object()
         permissions = get_user_event_permissions(request.user, event)
-        
+        print("permissions:", permissions)
         if permissions is None:
             return Response(
                 {'error': 'You do not have access to this event'}, 
