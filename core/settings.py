@@ -8,6 +8,21 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
+
+IMPORTANT - AWS SSM/KMS USAGE:
+==============================
+ALL secrets are loaded from SSM Parameter Store in a SINGLE batch call at startup.
+This prevents KMS quota exhaustion from repeated decrypt operations.
+
+DO NOT add runtime SSM calls anywhere in the application:
+- NO get_parameter() calls in views, tasks, or middleware
+- ALL secrets must be loaded via get_secret() which uses startup cache
+- New secrets must be added to REQUIRED_SECRETS list below
+
+If you need a new secret:
+1. Add it to REQUIRED_SECRETS list
+2. Access it via get_secret('SECRET_NAME')
+3. Never call boto3 SSM client directly
 """
 
 from pathlib import Path
@@ -41,6 +56,22 @@ SSM_PARAM_SUFFIX = "/prod/amdg/v1/"
 # Check if we should use SSM or environment variables
 USE_SSM = False
 ssm_client = None
+_SECRET_CACHE = {}  # In-memory cache for secrets loaded at startup
+
+# Define all required secret keys upfront
+REQUIRED_SECRETS = [
+    'SECRET_KEY',
+    'DEBUG',
+    'ALLOWED_HOSTS',
+    'DB_ENGINE',
+    'DB_NAME',
+    'DB_USER',
+    'DB_PASSWORD',
+    'DB_HOST',
+    'DB_PORT',
+    'AWS_STORAGE_BUCKET_NAME',
+    'AWS_S3_REGION_NAME',
+]
 
 try:
     # Try to initialize SSM client and verify AWS credentials
@@ -53,26 +84,60 @@ except (NoCredentialsError, Exception) as e:
     print(f"### AWS SSM not available ({type(e).__name__}), using environment variables ###")
     USE_SSM = False
 
+def _load_all_secrets_from_ssm():
+    """
+    Load ALL secrets from SSM Parameter Store in a SINGLE batch call.
+    This executes ONCE at startup to minimize KMS decrypt operations.
+    """
+    if not USE_SSM or not ssm_client:
+        return
+    
+    try:
+        # Build full parameter names with prefix
+        param_names = [SSM_PARAM_SUFFIX + name for name in REQUIRED_SECRETS]
+        
+        # SINGLE batch call to get all parameters
+        print(f"### Loading {len(param_names)} secrets from SSM in single batch call ###")
+        response = ssm_client.get_parameters(
+            Names=param_names,
+            WithDecryption=True  # Single KMS decrypt operation for all parameters
+        )
+        
+        # Cache all retrieved parameters
+        for param in response['Parameters']:
+            # Strip the prefix to get the original key name
+            key = param['Name'].replace(SSM_PARAM_SUFFIX, '')
+            _SECRET_CACHE[key] = param['Value']
+        
+        # Check for any missing parameters
+        if response.get('InvalidParameters'):
+            missing = [p.replace(SSM_PARAM_SUFFIX, '') for p in response['InvalidParameters']]
+            print(f"### WARNING: Missing SSM parameters: {missing} ###")
+        
+        print(f"### Successfully loaded {len(_SECRET_CACHE)} secrets from SSM ###")
+        
+    except Exception as e:
+        print(f"### Failed to batch load secrets from SSM: {e} ###")
+        print(f"### Falling back to environment variables ###")
+
+# Load all secrets ONCE at startup
+_load_all_secrets_from_ssm()
+
 def get_secret(name):
     """
-    Fetch secret from AWS SSM Parameter Store in production,
-    or fall back to environment variables in development/testing.
+    Fetch secret from in-memory cache (loaded at startup) or environment variables.
+    NO runtime SSM/KMS calls are made - all secrets loaded once at container startup.
     """
-    if USE_SSM and ssm_client:
-        try:
-            return ssm_client.get_parameter(
-                Name=SSM_PARAM_SUFFIX + name, 
-                WithDecryption=True
-            )['Parameter']['Value']
-        except Exception as e:
-            print(f"### Failed to get {name} from SSM, falling back to env: {e} ###")
-            return os.getenv(name)
-    else:
-        # Use environment variables (from .env file or container environment)
-        value = os.getenv(name)
-        if value is None:
-            raise ValueError(f"Required environment variable '{name}' is not set")
-        return value
+    # First check the cache (populated from SSM batch load at startup)
+    if name in _SECRET_CACHE:
+        return _SECRET_CACHE[name]
+    
+    # Fall back to environment variables
+    value = os.getenv(name)
+    if value is None:
+        raise ValueError(f"Required secret '{name}' not found in SSM cache or environment variables")
+    
+    return value
 
 SECRET_KEY = get_secret('SECRET_KEY')
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
