@@ -108,6 +108,48 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                 page = text_data_json.get('page', 1)
                 page_size = text_data_json.get('page_size', 50)
                 await self.send_participants_data(filters, order_by, page, page_size)
+            elif message_type == 'bulk_checkin_filtered':
+                # Bulk check-in for filtered participants
+                filters = text_data_json.get('filters', {})
+                result = await self.bulk_checkin(filters, all_participants=False)
+                await self.send(text_data=safe_json_dumps({
+                    'type': 'bulk_checkin_result',
+                    'success': result['success'],
+                    'checked_in_count': result['checked_in_count'],
+                    'skipped_count': result['skipped_count'],
+                    'message': result['message']
+                }))
+            elif message_type == 'bulk_checkout_filtered':
+                # Bulk check-out for filtered participants
+                filters = text_data_json.get('filters', {})
+                result = await self.bulk_checkout(filters, all_participants=False)
+                await self.send(text_data=safe_json_dumps({
+                    'type': 'bulk_checkout_result',
+                    'success': result['success'],
+                    'checked_out_count': result['checked_out_count'],
+                    'skipped_count': result['skipped_count'],
+                    'message': result['message']
+                }))
+            elif message_type == 'bulk_checkin_all':
+                # Bulk check-in for all confirmed participants
+                result = await self.bulk_checkin({}, all_participants=True)
+                await self.send(text_data=safe_json_dumps({
+                    'type': 'bulk_checkin_result',
+                    'success': result['success'],
+                    'checked_in_count': result['checked_in_count'],
+                    'skipped_count': result['skipped_count'],
+                    'message': result['message']
+                }))
+            elif message_type == 'bulk_checkout_all':
+                # Bulk check-out for all checked-in participants
+                result = await self.bulk_checkout({}, all_participants=True)
+                await self.send(text_data=safe_json_dumps({
+                    'type': 'bulk_checkout_result',
+                    'success': result['success'],
+                    'checked_out_count': result['checked_out_count'],
+                    'skipped_count': result['skipped_count'],
+                    'message': result['message']
+                }))
             elif message_type == 'ping':
                 await self.send(text_data=json.dumps({
                     'type': 'pong',
@@ -247,7 +289,12 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
             event = Event.objects.get(id=self.event_id)
             
             # Base queryset with optimized joins
-            participants = EventParticipant.objects.filter(event=event).select_related(
+            # IMPORTANT: Exclude cancelled participants by default
+            participants = EventParticipant.objects.filter(
+                event=event
+            ).exclude(
+                status='CANCELLED'
+            ).select_related(
                 'user', 'user__area_from', 'user__area_from__unit__chapter', 
                 'user__area_from__unit__chapter__cluster'
             ).prefetch_related(
@@ -464,7 +511,12 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
             paginated_participants = participants[start_index:end_index]
             
             # Collect filter options from all participants (not just paginated)
-            all_participants = EventParticipant.objects.filter(event=event).select_related(
+            # Also exclude cancelled participants from filter options
+            all_participants = EventParticipant.objects.filter(
+                event=event
+            ).exclude(
+                status='CANCELLED'
+            ).select_related(
                 'user__area_from__unit__chapter__cluster'
             ).prefetch_related(
                 'user__community_user_emergency_contacts',
@@ -570,6 +622,233 @@ class EventCheckInConsumer(AsyncWebsocketConsumer):
                     'medical_condition_names': [],
                     'medical_condition_severities': []
                 }
+            }
+    
+    @database_sync_to_async
+    def bulk_checkin(self, filters=None, all_participants=False):
+        """
+        Perform bulk check-in operation
+        Args:
+            filters: Filter conditions to apply (if all_participants is False)
+            all_participants: If True, check in all confirmed participants regardless of filters
+        Returns:
+            dict with success status, counts, and message
+        """
+        from django.db.models import Q, Max
+        from datetime import date, datetime
+        from apps.events.websocket_utils import serialize_participant_for_websocket, websocket_notifier
+        
+        try:
+            event = Event.objects.get(id=self.event_id)
+            today = date.today()
+            
+            # Start with base queryset - exclude cancelled, only confirmed
+            participants = EventParticipant.objects.filter(
+                event=event,
+                status__in=["CONFIRMED", "ATTENDED"]  # Only check in confirmed participants
+            ).exclude(
+                status='CANCELLED'
+            ).select_related('user')
+            
+            # Apply filters if not checking in all participants
+            
+            if not all_participants and filters:
+                filter_conditions = Q()
+                
+                # Apply same filters as get_participants_data (simplified)
+                if filters.get('search'):
+                    search_term = filters['search']
+                    filter_conditions &= (
+                        Q(user__first_name__icontains=search_term) |
+                        Q(user__last_name__icontains=search_term) |
+                        Q(user__primary_email__icontains=search_term) |
+                        Q(event_pax_id__icontains=search_term)
+                    )
+                
+                if filters.get('area'):
+                    area_term = filters['area']
+                    filter_conditions &= (
+                        Q(user__area_from__area_name__icontains=area_term) |
+                        Q(user__area_from__area_code__icontains=area_term)
+                    )
+                
+                if filters.get('chapter'):
+                    filter_conditions &= Q(user__area_from__unit__chapter__chapter_name__icontains=filters['chapter'])
+                
+                if filters.get('cluster'):
+                    filter_conditions &= Q(user__area_from__unit__chapter__cluster__cluster_id__icontains=filters['cluster'])
+                
+                participants = participants.filter(filter_conditions).distinct()
+            
+            checked_in_count = 0
+            skipped_count = 0
+            
+            # Get or create attendance records for each participant
+            for participant in participants:
+                # Check if already checked in today
+                attendance, created = EventDayAttendance.objects.get_or_create(
+                    event=event,
+                    user=participant.user,
+                    day_date=today,
+                    day_id=1,  # TODO: Update this to the correct day ID
+                    defaults={'check_in_time': timezone.now().time()}
+                )
+                
+                if created or not attendance.check_in_time:
+                    # Check in the participant
+                    if not attendance.check_in_time:
+                        attendance.check_in_time = timezone.now().time()
+                        attendance.save()
+                    
+                    checked_in_count += 1
+                    
+                    # Send WebSocket notification for this check-in
+                    participant_data = serialize_participant_for_websocket(participant)
+                    websocket_notifier.notify_checkin_update(
+                        event_id=str(event.id),
+                        participant_data=participant_data,
+                        action='checkin'
+                    )
+                else:
+                    skipped_count += 1
+            
+            message = f"Checked in {checked_in_count} participant(s). {skipped_count} already checked in."
+            
+            return {
+                'success': True,
+                'checked_in_count': checked_in_count,
+                'skipped_count': skipped_count,
+                'message': message
+            }
+            
+        except Event.DoesNotExist:
+            return {
+                'success': False,
+                'checked_in_count': 0,
+                'skipped_count': 0,
+                'message': 'Event not found'
+            }
+        except Exception as e:
+            print(f"❌ Bulk check-in error: {e}")
+            return {
+                'success': False,
+                'checked_in_count': 0,
+                'skipped_count': 0,
+                'message': f'Error: {str(e)}'
+            }
+    
+    @database_sync_to_async
+    def bulk_checkout(self, filters=None, all_participants=False):
+        """
+        Perform bulk check-out operation
+        Args:
+            filters: Filter conditions to apply (if all_participants is False)
+            all_participants: If True, check out all checked-in participants regardless of filters
+        Returns:
+            dict with success status, counts, and message
+        """
+        from django.db.models import Q
+        from datetime import date, datetime
+        from apps.events.websocket_utils import serialize_participant_for_websocket, websocket_notifier
+        
+        try:
+            event = Event.objects.get(id=self.event_id)
+            today = date.today()
+            
+            # Start with base queryset - exclude cancelled
+            participants = EventParticipant.objects.filter(
+                event=event
+            ).exclude(
+                status='CANCELLED'
+            ).select_related('user')
+            
+            # Apply filters if not checking out all participants
+            if not all_participants and filters:
+                filter_conditions = Q()
+                
+                # Apply same filters as get_participants_data (simplified)
+                if filters.get('search'):
+                    search_term = filters['search']
+                    filter_conditions &= (
+                        Q(user__first_name__icontains=search_term) |
+                        Q(user__last_name__icontains=search_term) |
+                        Q(user__primary_email__icontains=search_term) |
+                        Q(event_pax_id__icontains=search_term)
+                    )
+                
+                if filters.get('area'):
+                    area_term = filters['area']
+                    filter_conditions &= (
+                        Q(user__area_from__area_name__icontains=area_term) |
+                        Q(user__area_from__area_code__icontains=area_term)
+                    )
+                
+                if filters.get('chapter'):
+                    filter_conditions &= Q(user__area_from__unit__chapter__chapter_name__icontains=filters['chapter'])
+                
+                if filters.get('cluster'):
+                    filter_conditions &= Q(user__area_from__unit__chapter__cluster__cluster_id__icontains=filters['cluster'])
+                
+                participants = participants.filter(filter_conditions).distinct()
+            
+            checked_out_count = 0
+            skipped_count = 0
+            
+            # Check out each participant
+            for participant in participants:
+                # Find today's attendance record
+                try:
+                    attendance = EventDayAttendance.objects.get(
+                        event=event,
+                        user=participant.user,
+                        day_date=today,
+                        check_in_time__isnull=False
+                    )
+                    
+                    if not attendance.check_out_time:
+                        # Check out the participant
+                        attendance.check_out_time = timezone.now().time()
+                        attendance.save()
+                        
+                        checked_out_count += 1
+                        
+                        # Send WebSocket notification for this check-out
+                        participant_data = serialize_participant_for_websocket(participant)
+                        websocket_notifier.notify_checkin_update(
+                            event_id=str(event.id),
+                            participant_data=participant_data,
+                            action='checkout'
+                        )
+                    else:
+                        skipped_count += 1
+                        
+                except EventDayAttendance.DoesNotExist:
+                    # Not checked in, skip
+                    skipped_count += 1
+            
+            message = f"Checked out {checked_out_count} participant(s). {skipped_count} not eligible."
+            
+            return {
+                'success': True,
+                'checked_out_count': checked_out_count,
+                'skipped_count': skipped_count,
+                'message': message
+            }
+            
+        except Event.DoesNotExist:
+            return {
+                'success': False,
+                'checked_out_count': 0,
+                'skipped_count': 0,
+                'message': 'Event not found'
+            }
+        except Exception as e:
+            print(f"❌ Bulk check-out error: {e}")
+            return {
+                'success': False,
+                'checked_out_count': 0,
+                'skipped_count': 0,
+                'message': f'Error: {str(e)}'
             }
 
 
