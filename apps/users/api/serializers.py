@@ -537,11 +537,12 @@ class CommunityUserSerializer(serializers.ModelSerializer):
     
     def update(self, instance, validated_data):
         # Extract nested relationship data
+        
+        print("update called", validated_data)
         password = validated_data.pop('password', None)
-        emergency_contacts_data = validated_data.pop('emergency_contacts_data', None)
-        allergies_data = validated_data.pop('allergies_data', None)
-        medical_conditions_data = validated_data.pop('medical_conditions_data', None)
+        emergency_contacts = validated_data.pop('emergency_contacts_data', {})
         roles_data = validated_data.pop('roles_data', None)
+        
         
         with transaction.atomic():
             # Update basic user fields
@@ -602,6 +603,17 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                 for role_id in existing_role_ids:
                     if role_id not in processed_role_ids:
                         UserCommunityRole.objects.filter(id=role_id).delete()
+            
+            if emergency_contacts:
+                # Clear existing emergency contacts
+                instance.community_user_emergency_contacts.all().delete()
+                
+                # Create new emergency contacts
+                for contact_data in emergency_contacts:
+                    contact_data['user'] = instance.id
+                    contact_serializer = EmergencyContactSerializer(data=contact_data)
+                    if contact_serializer.is_valid(raise_exception=True):
+                        contact_serializer.save()
             
             instance.save()
         

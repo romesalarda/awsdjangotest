@@ -207,17 +207,20 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
     
     def get_serializer_class(self):
         # signed in users can only view full data about themselves
-        if getattr(self, 'swagger_fake_view', False):
+        print("get_serializer_class called for action:", self.action)
+        if getattr(self, 'swagger_fake_view', False) and self.action == 'retrieve':
             return SimplifiedCommunityUserSerializer
         
         user = self.request.user
-        if not user.is_authenticated or not user.is_superuser:
+        if not user.is_authenticated:
             return SimplifiedCommunityUserSerializer
 
         if self.action in ['retrieve', 'update', 'partial_update']:
             obj = self.get_object()
             if obj == user or user.is_superuser:
+                print("Returning full serializer for user:", user.username)
                 return CommunityUserSerializer 
+            print("Returning simplified serializer for user:", user.username)
             return SimplifiedCommunityUserSerializer
         return CommunityUserSerializer
 

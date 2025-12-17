@@ -919,10 +919,8 @@ class EventSerializer(serializers.ModelSerializer):
         venue_data = validated_data.pop('venue_data', [])
         resource_data = validated_data.pop('resource_data', [])
         memo_data = validated_data.pop('memo_data', {})
-        supervisor_ids = validated_data.pop('supervisor_ids', [])
         supervising_adults = validated_data.pop("supervising_CFC_coordinators", [])
         supervising_youth = validated_data.pop("supervising_youth_heads", [])
-        cfc_coordinator_ids = validated_data.pop('cfc_coordinator_ids', [])
         landing_image_file = validated_data.pop('landing_image_file', None)
         
         # Payment-related data - accept both field names for compatibility
@@ -982,13 +980,45 @@ class EventSerializer(serializers.ModelSerializer):
                     if venue_id not in processed_ids:
                         instance.venues.remove(venue)
                         venue.delete()
-
+                        
+            print("After venue processing")
+            print("supervising_youth:", supervising_youth)
+            print("supervising_adults:", supervising_adults)
+            instance.supervising_youth_heads.set([])
+            instance.supervising_CFC_coordinators.set([])
+            if supervising_youth or supervising_adults:
+                # ensure roles exist in the database
+                e_head, _ = EventRole.objects.get_or_create(role_name=EventRole.EventRoleTypes.EVENT_HEADS)
+                e_cfc, _ = EventRole.objects.get_or_create(role_name=EventRole.EventRoleTypes.CFC_COORDINATOR)
+                e_team_leader, _ = EventRole.objects.get_or_create(role_name=EventRole.EventRoleTypes.TEAM_LEADER)
+                
             # Supervisors
             if supervising_youth:
                 instance.supervising_youth_heads.set(supervising_youth)
+                for supervisor in supervising_youth:
+                    member, created = EventServiceTeamMember.objects.get_or_create(
+                        event=instance,
+                        user=supervisor,
+                        assigned_by=self.context['request'].user if 'request' in self.context else None,
+                    )
+                    if created:
+                        member.roles.set([e_head, e_team_leader])
+                        member.head_of_role = True
+                        member.save()
+
             if supervising_adults:
                 instance.supervising_CFC_coordinators.set(supervising_adults)
-
+                for coordinator in supervising_adults:
+                    member, created = EventServiceTeamMember.objects.get_or_create(
+                        event=instance,
+                        user=coordinator,
+                        assigned_by=self.context['request'].user if 'request' in self.context else None,
+                    )
+                    if created:
+                        member.roles.set([e_cfc, e_team_leader, e_head])
+                        member.head_of_role = True
+                        member.save()
+                        
             # Resources - Handle CRUD operations
             if resource_data is not None:
                 # Keep track of existing and new resource IDs
