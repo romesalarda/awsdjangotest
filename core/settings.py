@@ -78,49 +78,48 @@ try:
     ssm_client = boto3.client('ssm', region_name='eu-west-2')
     sts = boto3.client('sts')
     sts.get_caller_identity()  # This will raise an exception if credentials are invalid
-    USE_SSM = True # ! Temporarily disabled SSM usage
+    USE_SSM = True 
     print("### Using AWS SSM for secrets ###")
 except (NoCredentialsError, Exception) as e:
     print(f"### AWS SSM not available ({type(e).__name__}), using environment variables ###")
     USE_SSM = False
 
+def _chunked(iterable, size=10):
+    for i in range(0, len(iterable), size):
+        yield iterable[i:i + size]
+
 def _load_all_secrets_from_ssm():
-    """
-    Load ALL secrets from SSM Parameter Store in a SINGLE batch call.
-    This executes ONCE at startup to minimize KMS decrypt operations.
-    """
     if not USE_SSM or not ssm_client:
         return
-    
-    try:
-        # Build full parameter names with prefix
-        param_names = [SSM_PARAM_SUFFIX + name for name in REQUIRED_SECRETS]
-        
-        # SINGLE batch call to get all parameters
-        print(f"### Loading {len(param_names)} secrets from SSM in single batch call ###")
-        response = ssm_client.get_parameters(
-            Names=param_names,
-            WithDecryption=True  # Single KMS decrypt operation for all parameters
-        )
-        
-        # Cache all retrieved parameters
-        for param in response['Parameters']:
-            # Strip the prefix to get the original key name
-            key = param['Name'].replace(SSM_PARAM_SUFFIX, '')
-            _SECRET_CACHE[key] = param['Value']
-        
-        # Check for any missing parameters
-        if response.get('InvalidParameters'):
-            missing = [p.replace(SSM_PARAM_SUFFIX, '') for p in response['InvalidParameters']]
-            print(f"### WARNING: Missing SSM parameters: {missing} ###")
-        
-        print(f"### Successfully loaded {len(_SECRET_CACHE)} secrets from SSM ###")
-        
-    except Exception as e:
-        print(f"### Failed to batch load secrets from SSM: {e} ###")
-        print(f"### Falling back to environment variables ###")
 
-# Load all secrets ONCE at startup
+    try:
+        param_names = [SSM_PARAM_SUFFIX + name for name in REQUIRED_SECRETS]
+
+        print(f"### Loading {len(param_names)} secrets from SSM in batches ###")
+
+        for batch in _chunked(param_names, 10):
+            response = ssm_client.get_parameters(
+                Names=batch,
+                WithDecryption=True
+            )
+
+            for param in response.get('Parameters', []):
+                key = param['Name'].replace(SSM_PARAM_SUFFIX, '')
+                _SECRET_CACHE[key] = param['Value']
+
+            if response.get('InvalidParameters'):
+                missing = [
+                    p.replace(SSM_PARAM_SUFFIX, '')
+                    for p in response['InvalidParameters']
+                ]
+                print(f"### WARNING: Missing SSM parameters: {missing} ###")
+
+        print(f"### Successfully loaded {len(_SECRET_CACHE)} secrets from SSM ###")
+
+    except Exception as e:
+        print(f"### Failed to load secrets from SSM: {e} ###")
+        print("### Falling back to environment variables ###")
+        
 _load_all_secrets_from_ssm()
 
 def get_secret(name, default=None):
