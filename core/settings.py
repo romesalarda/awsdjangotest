@@ -123,7 +123,7 @@ def _load_all_secrets_from_ssm():
 # Load all secrets ONCE at startup
 _load_all_secrets_from_ssm()
 
-def get_secret(name):
+def get_secret(name, default=None):
     """
     Fetch secret from in-memory cache (loaded at startup) or environment variables.
     NO runtime SSM/KMS calls are made - all secrets loaded once at container startup.
@@ -133,7 +133,7 @@ def get_secret(name):
         return _SECRET_CACHE[name]
     
     # Fall back to environment variables
-    value = os.getenv(name)
+    value = os.getenv(name, default)
     if value is None:
         raise ValueError(f"Required secret '{name}' not found in SSM cache or environment variables")
     
@@ -500,21 +500,21 @@ JWT_AUTH_COOKIE_SECURE = True
 SESSION_COOKIE_HTTPONLY = True
 # Stripe Payment Configuration
 # TEST MODE by default - set to False for production
-STRIPE_TEST_MODE = os.getenv('STRIPE_TEST_MODE', 'True') == 'True'
-STRIPE_SECRET_KEY_TEST = os.getenv('STRIPE_SECRET_KEY_TEST', '')
-STRIPE_SECRET_KEY_LIVE = os.getenv('STRIPE_SECRET_KEY_LIVE', '')
-STRIPE_PUBLISHABLE_KEY_TEST = os.getenv('STRIPE_PUBLISHABLE_KEY_TEST', '')
-STRIPE_PUBLISHABLE_KEY_LIVE = os.getenv('STRIPE_PUBLISHABLE_KEY_LIVE', '')
-STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+STRIPE_TEST_MODE = get_secret('STRIPE_TEST_MODE', 'True') == 'True'
+STRIPE_SECRET_KEY_TEST = get_secret('STRIPE_SECRET_KEY_TEST', '')
+STRIPE_SECRET_KEY_LIVE = get_secret('STRIPE_SECRET_KEY_LIVE', '')
+STRIPE_PUBLISHABLE_KEY_TEST = get_secret('STRIPE_PUBLISHABLE_KEY_TEST', '')
+STRIPE_PUBLISHABLE_KEY_LIVE = get_secret('STRIPE_PUBLISHABLE_KEY_LIVE', '')
+STRIPE_WEBHOOK_SECRET = get_secret('STRIPE_WEBHOOK_SECRET', '')
 
 # Email Configuration
-EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@cems.org')
+EMAIL_BACKEND = get_secret('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = get_secret('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(get_secret('EMAIL_PORT', 587))
+EMAIL_USE_TLS = get_secret('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = get_secret('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = get_secret('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = get_secret('DEFAULT_FROM_EMAIL', 'noreply@cems.org')
 
 # Template directories
 TEMPLATES[0]['DIRS'] = [os.path.join(BASE_DIR, 'templates')]
