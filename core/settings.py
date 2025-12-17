@@ -133,8 +133,8 @@ def get_secret(name, default=None):
     
     # Fall back to environment variables
     value = os.getenv(name, default)
-    if value is None:
-        raise ValueError(f"Required secret '{name}' not found in SSM cache or environment variables")
+    # if value is None:
+    #     raise ValueError(f"Required secret '{name}' not found in SSM cache or environment variables")
     
     return value
 
