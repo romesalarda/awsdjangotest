@@ -40,14 +40,14 @@ from sentry_sdk.integrations.django import DjangoIntegration
 
 from django.utils.timezone import get_current_timezone
 
-# sentry_sdk.init(
-#     dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
-#     integrations=[DjangoIntegration()],
+sentry_sdk.init(
+    dsn="https://4350eff86c6b7bf12498665064bf3b1e@o4509949719085056.ingest.de.sentry.io/4509949720330320",
+    integrations=[DjangoIntegration()],
 
-#     # Add data like request headers and IP for users,
-#     # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-#     send_default_pii=True,
-# )
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+)
 
 load_dotenv()
 
@@ -78,7 +78,7 @@ try:
     ssm_client = boto3.client('ssm', region_name='eu-west-2')
     sts = boto3.client('sts')
     sts.get_caller_identity()  # This will raise an exception if credentials are invalid
-    # USE_SSM = True # ! Temporarily disabled SSM usage
+    USE_SSM = True # ! Temporarily disabled SSM usage
     print("### Using AWS SSM for secrets ###")
 except (NoCredentialsError, Exception) as e:
     print(f"### AWS SSM not available ({type(e).__name__}), using environment variables ###")
