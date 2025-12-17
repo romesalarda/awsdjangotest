@@ -20,7 +20,7 @@ import re
 
 from apps.events.models import (
     Event, EventServiceTeamMember, EventRole, EventParticipant,
-    EventTalk, EventWorkshop, EventPayment
+    EventTalk, EventWorkshop, EventPayment, EventDayAttendance
 )
 from apps.events.models.location_models import AreaLocation
 from apps.users.models import EmergencyContact
@@ -2925,6 +2925,352 @@ class EventViewSet(viewsets.ModelViewSet):
             'has_sensitive_data': has_sensitive_data,
             'deletion_date': event.date_for_deletion
         }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['get'], url_name="daily_checkin_status", url_path="live-dashboard/daily-checkin-status")
+    def daily_checkin_status(self, request, id=None):
+        """
+        Get check-in status counts for a specific day.
+        
+        Status definitions:
+        - Signed In: Currently checked in (has attendance record with NULL check_out_time)
+        - Not Signed In: Has attendance records for the day but all are checked out
+        - Did Not Turn Up: No attendance records for this day at all
+        
+        Query params:
+        - day: Date in ISO format (YYYY-MM-DD) - required
+        - cluster: Filter by cluster name (optional)
+        - chapter: Filter by chapter name (optional)
+        - area: Filter by area name (optional)
+        """
+        from django.db.models import Count, Q, Case, When, IntegerField
+        from datetime import datetime, timedelta
+        
+        # Get event directly without queryset filters
+        event = get_object_or_404(Event, id=id)
+        
+        # Check permissions
+        if not has_event_permission(request.user, event, 'can_access_live_dashboard'):
+            return Response(
+                {'error': 'You do not have permission to access live dashboard statistics'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get parameters
+        day_param = request.query_params.get('day')
+        if not day_param:
+            return Response(
+                {'error': 'day parameter is required (format: YYYY-MM-DD)'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            selected_date = datetime.strptime(day_param, '%Y-%m-%d').date()
+        except ValueError:
+            return Response(
+                {'error': 'Invalid date format. Use YYYY-MM-DD'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Location filters
+        cluster = request.query_params.get('cluster')
+        chapter = request.query_params.get('chapter')
+        area = request.query_params.get('area')
+        
+        # Get all participants for this event
+        participants = EventParticipant.objects.filter(event=event).select_related(
+            'user',
+            'user__area_from',
+            'user__area_from__unit',
+            'user__area_from__unit__chapter',
+            'user__area_from__unit__chapter__cluster'
+        )
+        print("\n CHAPTER IS ", chapter)
+        # Apply location filters
+        if area:
+            participants = participants.filter(user__area_from__area_name__icontains=area)
+        elif chapter:
+            participants = participants.filter(user__area_from__unit__chapter__chapter_name__icontains=chapter)
+        elif cluster:
+            participants = participants.filter(user__area_from__unit__chapter__cluster__cluster_id__icontains=cluster)
+        
+        # Get set of participant user IDs for this event (with location filters applied)
+        participant_user_ids = set(participants.values_list('user_id', flat=True))
+        total_participants = len(participant_user_ids)
+        
+        # Get attendance records for the specific day
+        day_start = datetime.combine(selected_date, datetime.min.time())
+        day_end = day_start + timedelta(days=1)
+        
+        # Get all attendance records for this day
+        day_attendance = EventDayAttendance.objects.filter(
+            event=event,
+            check_in_time__gte=day_start,
+            check_in_time__lt=day_end
+        ).select_related('user')
+        
+        # Build sets of DISTINCT user IDs by status
+        # Signed In: Users with at least one attendance record where check_out_time is NULL
+        signed_in_user_ids = set()
+        # Has Attendance: Users with at least one attendance record for this day
+        has_attendance_user_ids = set()
+        
+        for attendance in day_attendance:
+            user_id = attendance.user_id
+            # Only count if user is in filtered participant list
+            if user_id in participant_user_ids:
+                has_attendance_user_ids.add(user_id)
+                if attendance.check_out_time is None:
+                    signed_in_user_ids.add(user_id)
+        
+        # Calculate counts
+        signed_in_count = len(signed_in_user_ids)
+        
+        # Not Signed In: Users who have attendance but are NOT currently signed in
+        not_signed_in_user_ids = has_attendance_user_ids - signed_in_user_ids
+        not_signed_in_count = len(not_signed_in_user_ids)
+        
+        # Did Not Turn Up: Participants with NO attendance records for this day
+        did_not_turn_up_user_ids = participant_user_ids - has_attendance_user_ids
+        did_not_turn_up_count = len(did_not_turn_up_user_ids)
+        
+        result = {
+            'date': day_param,
+            'total_participants': total_participants,
+            'signed_in': signed_in_count,
+            'not_signed_in': not_signed_in_count,
+            'did_not_turn_up': did_not_turn_up_count,
+            'filters': {
+                'cluster': cluster,
+                'chapter': chapter,
+                'area': area
+            }
+        }
+        
+        return Response(result)
+    
+    @action(detail=True, methods=['get'], url_name="outstanding_payments_by_location", url_path="live-dashboard/outstanding-payments")
+    def outstanding_payments_by_location(self, request, id=None):
+        """
+        Get outstanding payments aggregated by location (Area level).
+        Supports toggle between amount and count.
+        
+        Query params:
+        - cluster: Filter by cluster (shows all chapters/areas under it)
+        - chapter: Filter by chapter (shows all areas under it)
+        - area: Filter by specific area
+        - metric: 'amount' or 'count' (default: 'amount')
+        """
+        from django.db.models import Sum, Count, Q
+        from decimal import Decimal
+        from collections import defaultdict
+        
+        # Get event directly without queryset filters
+        event = get_object_or_404(Event, id=id)
+        
+        # Check permissions
+        if not has_event_permission(request.user, event, 'can_access_live_dashboard'):
+            return Response(
+                {'error': 'You do not have permission to access live dashboard statistics'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get parameters
+        cluster = request.query_params.get('cluster')
+        chapter = request.query_params.get('chapter')
+        area = request.query_params.get('area')
+        metric = request.query_params.get('metric', 'amount')  # 'amount' or 'count'
+        
+        # Get participants with their outstanding payments
+        participants = EventParticipant.objects.filter(event=event).select_related(
+            'user',
+            'user__area_from',
+            'user__area_from__unit',
+            'user__area_from__unit__chapter',
+            'user__area_from__unit__chapter__cluster'
+        )
+        
+        # Apply location filters - if chapter selected, show dropdown to select from chapters in that cluster
+        if area:
+            participants = participants.filter(user__area_from__area_name__icontains=area)
+        elif chapter:
+            participants = participants.filter(user__area_from__unit__chapter__chapter_name__icontains=chapter)
+        elif cluster:
+            participants = participants.filter(user__area_from__unit__chapter__cluster__cluster_id__icontains=cluster)
+        
+        # Aggregate by Area
+        location_data = defaultdict(lambda: {'area_name': '', 'outstanding_amount': Decimal('0.00'), 'participant_count': 0})
+        
+        for participant in participants:
+            if not participant.user or not participant.user.area_from:
+                continue
+            
+            area_name = participant.user.area_from.area_name
+            
+            # Calculate outstanding amount for this participant
+            # total_cost = participant.total_cost or Decimal('0.00')
+            # paid_amount = participant.paid_amount or Decimal('0.00')
+            outstanding = participant.total_outstanding
+            
+            if outstanding > 0:
+                location_data[area_name]['area_name'] = area_name
+                location_data[area_name]['outstanding_amount'] += outstanding
+                location_data[area_name]['participant_count'] += 1
+        
+        # Convert to list and sort
+        data = sorted(
+            [v for v in location_data.values()],
+            key=lambda x: x['outstanding_amount'] if metric == 'amount' else x['participant_count'],
+            reverse=True
+        )
+        
+        result = {
+            'metric': metric,
+            'data': data,
+            'filters': {
+                'cluster': cluster,
+                'chapter': chapter,
+                'area': area
+            }
+        }
+        
+        return Response(result)
+    
+    @action(detail=True, methods=['get'], url_name="attendance_trends", url_path="live-dashboard/attendance-trends")
+    def attendance_trends(self, request, id=None):
+        """
+        Get check-in and check-out trends over time.
+        Supports multiple granularities.
+        
+        Query params:
+        - start_date: Start date (ISO format, default: event start)
+        - end_date: End date (ISO format, default: event end)
+        - granularity: 'hourly', 'daily', or 'event_days' (default: 'daily')
+        - cluster: Filter by cluster (optional)
+        - chapter: Filter by chapter (optional)
+        - area: Filter by area (optional)
+        """
+        from django.db.models import Count, Q
+        from django.db.models.functions import TruncHour, TruncDate
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+        
+        # Get event directly without queryset filters
+        event = get_object_or_404(Event, id=id)
+        
+        # Check permissions
+        if not has_event_permission(request.user, event, 'can_access_live_dashboard'):
+            return Response(
+                {'error': 'You do not have permission to access live dashboard statistics'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get parameters
+        granularity = request.query_params.get('granularity', 'daily')
+        cluster = request.query_params.get('cluster')
+        chapter = request.query_params.get('chapter')
+        area = request.query_params.get('area')
+        
+        # Date range
+        start_date_param = request.query_params.get('start_date')
+        end_date_param = request.query_params.get('end_date')
+        
+        if start_date_param:
+            try:
+                start_date = datetime.strptime(start_date_param, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid start_date format. Use YYYY-MM-DD'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            start_date = event.start_date.date() if hasattr(event.start_date, 'date') else event.start_date
+        
+        if end_date_param:
+            try:
+                end_date = datetime.strptime(end_date_param, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid end_date format. Use YYYY-MM-DD'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            end_date = event.end_date.date() if hasattr(event.end_date, 'date') else event.end_date
+        
+        # Get attendance records
+        attendance_records = EventDayAttendance.objects.filter(
+            event=event,
+            check_in_time__date__gte=start_date,
+            check_in_time__date__lte=end_date
+        ).select_related(
+            'user',
+            'user__area_from',
+            'user__area_from__unit',
+            'user__area_from__unit__chapter',
+            'user__area_from__unit__chapter__cluster'
+        )
+        
+        # Apply location filters
+        if area:
+            attendance_records = attendance_records.filter(user__area_from__area_name__icontains=area)
+        elif chapter:
+            attendance_records = attendance_records.filter(user__area_from__unit__chapter__chapter_name__icontains=chapter)
+        elif cluster:
+            attendance_records = attendance_records.filter(user__area_from__unit__chapter__cluster__cluster_id__icontains=cluster)
+        
+        # Aggregate based on granularity
+        trends_data = defaultdict(lambda: {'check_ins': 0, 'check_outs': 0})
+        
+        if granularity == 'hourly':
+            for record in attendance_records:
+                hour_key = record.check_in_time.strftime('%Y-%m-%d %H:00')
+                trends_data[hour_key]['check_ins'] += 1
+                
+                if record.check_out_time:
+                    checkout_hour_key = record.check_out_time.strftime('%Y-%m-%d %H:00')
+                    trends_data[checkout_hour_key]['check_outs'] += 1
+        
+        elif granularity == 'event_days':
+            for record in attendance_records:
+                day_index = record.day_index
+                if day_index:
+                    day_key = f"Day {day_index}"
+                    trends_data[day_key]['check_ins'] += 1
+                    
+                    if record.check_out_time:
+                        trends_data[day_key]['check_outs'] += 1
+        
+        else:  # daily (default)
+            for record in attendance_records:
+                day_key = record.check_in_time.strftime('%Y-%m-%d')
+                trends_data[day_key]['check_ins'] += 1
+                
+                if record.check_out_time:
+                    checkout_day_key = record.check_out_time.strftime('%Y-%m-%d')
+                    trends_data[checkout_day_key]['check_outs'] += 1
+        
+        # Convert to list and sort
+        data = [
+            {
+                'period': k,
+                'check_ins': v['check_ins'],
+                'check_outs': v['check_outs']
+            }
+            for k, v in sorted(trends_data.items())
+        ]
+        
+        result = {
+            'granularity': granularity,
+            'start_date': str(start_date),
+            'end_date': str(end_date),
+            'data': data,
+            'filters': {
+                'cluster': cluster,
+                'chapter': chapter,
+                'area': area
+            }
+        }
+        
+        return Response(result)
     
     @action(detail=True, methods=['post'], url_name="admin_delete", url_path="admin-delete")
     def admin_delete_event(self, request, id=None):

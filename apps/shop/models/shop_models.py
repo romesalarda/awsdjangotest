@@ -480,6 +480,15 @@ class EventCart(models.Model):
 
         return super().save(*args, **kwargs)
     
+    @property
+    def total_amount(self):
+        """Calculate total amount including shipping"""
+        product_total = sum(
+            order.price_at_purchase * order.quantity 
+            for order in self.orders.filter(status=EventProductOrder.Status.PURCHASED)
+        )
+        return round(product_total + float(self.shipping_cost), 2)
+    
 class EventProductOrder(models.Model):
     '''
     Product order within an event cart.

@@ -1214,6 +1214,16 @@ class EventParticipant(models.Model):
             if len(self.event_pax_id) > 20:
                 self.event_pax_id = self.event_pax_id[:20]  
         super().save(*args, **kwargs)
+        
+    @property
+    def total_outstanding(self):
+        from apps.shop.models import EventCart
+        
+        carts = EventCart.objects.filter(event=self.event, user=self.user, approved=False, submitted=False)
+        event_payment = self.event.event_payments.filter(verified=False).first()
+        total = sum(cart.total_amount for cart in carts) + (event_payment.amount if event_payment else 0)
+        return total
+    
 
 # EVENT PROPER MODELS
     
