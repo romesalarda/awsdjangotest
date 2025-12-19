@@ -61,14 +61,18 @@ class SecureTokenObtainView(APIView):
         }, status=status.HTTP_200_OK)
 
         # Set secure HTTPOnly cookies
+        # NOTE: For cross-origin requests (localhost:3000 -> localhost:8000),
+        # browsers REQUIRE secure=True when samesite='None', even in development.
+        # This works because browsers allow secure cookies over localhost HTTP.
+        
         # Access token (shorter lifetime)
         response.set_cookie(
             key='access_token',
             value=access_token,
             max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
             httponly=True,  # Prevents JavaScript access (XSS protection)
-            secure=not settings.DEBUG,  # HTTPS only in production
-            samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin with credentials
+            secure=True,  # Required for samesite='None' (works on localhost)
+            samesite='None',  # Required for cross-origin requests
             path='/'
         )
 
@@ -78,8 +82,8 @@ class SecureTokenObtainView(APIView):
             value=refresh_token,
             max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
             httponly=True,  # Prevents JavaScript access (XSS protection)
-            secure=not settings.DEBUG,  # HTTPS only in production
-            samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin with credentials
+            secure=True,  # Required for samesite='None' (works on localhost)
+            samesite='None',  # Required for cross-origin requests
             path='/'
         )
 
@@ -118,8 +122,8 @@ class SecureTokenRefreshView(APIView):
                 value=access_token,
                 max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
                 httponly=True,
-                secure=not settings.DEBUG,
-                samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin
+                secure=True,  # Required for samesite='None'
+                samesite='None',  # Required for cross-origin
                 path='/'
             )
 
@@ -134,8 +138,8 @@ class SecureTokenRefreshView(APIView):
                     value=new_refresh_token,
                     max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
                     httponly=True,
-                    secure=not settings.DEBUG,
-                    samesite='None' if not settings.DEBUG else 'Lax',  # 'None' required for cross-origin
+                    secure=True,  # Required for samesite='None'
+                    samesite='None',  # Required for cross-origin
                     path='/'
                 )
 
@@ -172,15 +176,15 @@ class SecureLogoutView(APIView):
 
         # Clear all auth cookies - using set_cookie with max_age=0 for more reliable deletion
         # This is more reliable than delete_cookie() in some browsers
-        samesite_value = 'None' if not settings.DEBUG else 'Lax'
+        # IMPORTANT: Cookie deletion settings must match creation settings
         cookie_settings = {
             'value': '',
             'max_age': 0,
             'expires': 'Thu, 01 Jan 1970 00:00:00 GMT',
             'path': '/',
             'httponly': True,
-            'secure': not settings.DEBUG,
-            'samesite': samesite_value  # Must match original cookie settings
+            'secure': True,  # Must match original cookie settings
+            'samesite': 'None'  # Must match original cookie settings
         }
         
         # Delete access token

@@ -609,7 +609,10 @@ class OrderRefund(models.Model):
         return True, "Refund can be processed"
     
     def restore_stock(self):
-        """Restore product stock for all items in the cart"""
+        """
+        Restore product stock for all items in the cart.
+        Uses variant-aware stock restoration to ensure correct size quantities are updated.
+        """
         if self.stock_restored:
             return False, "Stock already restored"
         
@@ -618,19 +621,34 @@ class OrderRefund(models.Model):
             orders = EventProductOrder.objects.filter(cart=self.cart)
             
             restored_items = []
+            failed_items = []
+            
             for order in orders:
                 if order.product:
-                    # Increment product stock
-                    order.product.stock += order.quantity
-                    order.product.save()
-                    restored_items.append(f"{order.product.title} (+{order.quantity})")
+                    try:
+                        # NEW: Use variant-aware stock restoration
+                        size_id = order.size.id if order.size else None
+                        order.product.increment_stock(order.quantity, size_id=size_id)
+                        
+                        size_info = f" (Size: {order.size.get_size_display()})" if order.size else ""
+                        restored_items.append(f"{order.product.title}{size_info} (+{order.quantity})")
+                    except Exception as e:
+                        size_info = f" (Size: {order.size.get_size_display()})" if order.size else ""
+                        failed_items.append(f"{order.product.title}{size_info}: {str(e)}")
             
+            # Mark as restored even if some items failed (partial restoration)
             self.stock_restored = True
             self.stock_restored_at = timezone.now()
             self.save()
             
+            if failed_items:
+                return True, f"Stock partially restored. Success: {len(restored_items)}, Failed: {len(failed_items)}. Failures: {'; '.join(failed_items)}"
+            
             return True, f"Stock restored for {len(restored_items)} items: {', '.join(restored_items)}"
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception(f"Critical error restoring stock for refund {self.refund_reference}")
             return False, f"Failed to restore stock: {str(e)}"
 
 

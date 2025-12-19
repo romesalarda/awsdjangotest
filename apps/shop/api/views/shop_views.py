@@ -224,12 +224,21 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 
                 # Check size is valid for product first
                 size_object = None
+                size_id = None
                 if size:
-                    size_object = ProductSize.objects.filter(size=size, product=product_object).first()
+                    size_object = ProductSize.objects.select_for_update().filter(
+                        size=size, product=product_object
+                    ).first()
                     if not size_object:
                         raise serializers.ValidationError(
                             f"Size {size} not available for product {product_object.title}"
                         )
+                    size_id = size_object.id
+                elif product_object.uses_sizes:
+                    # Product requires size but none provided
+                    raise serializers.ValidationError(
+                        f"Product {product_object.title} requires a size selection."
+                    )
                 
                 # Check if order already exists for this product+size in the cart
                 existing_order = EventProductOrder.objects.filter(
@@ -271,19 +280,24 @@ class EventCartViewSet(viewsets.ModelViewSet):
                         if not can_purchase:
                             raise serializers.ValidationError(error_msg)
                     
-                    # Check stock for additional quantity (only if stock tracking enabled)
-                    if product_object.stock > 0 and product_object.stock < quantity:
+                    # NEW: Variant-aware stock validation
+                    can_fulfill, available, stock_error = product_object.can_fulfill_order(
+                        quantity=quantity,  # Only checking the ADDITIONAL quantity
+                        size_id=size_id
+                    )
+                    
+                    if not can_fulfill:
                         raise serializers.ValidationError(
-                            f"Insufficient stock for additional {product_object.title}. Available: {product_object.stock}, Requested: {quantity}"
+                            f"Cannot add {quantity} more of {product_object.title}: {stock_error}"
                         )
                     
-                    # Decrement stock atomically for additional quantity (only if stock > 0)
-                    if product_object.stock > 0:
-                        stock_decremented = product_object.decrement_stock(quantity)
-                        if not stock_decremented:
-                            raise serializers.ValidationError(
-                                f"Failed to reserve stock for {product_object.title}. Please try again."
-                            )
+                    # Decrement stock atomically (variant-aware)
+                    try:
+                        product_object.decrement_stock(quantity, size_id=size_id)
+                    except Exception as e:
+                        raise serializers.ValidationError(
+                            f"Failed to reserve stock for {product_object.title}: {str(e)}"
+                        )
                     
                     existing_order.quantity = new_quantity
                     existing_order.price_at_purchase = discounted_price
@@ -322,19 +336,24 @@ class EventCartViewSet(viewsets.ModelViewSet):
                                 f"already in cart: {cart_quantity})."
                             )
                     
-                    # Check stock availability (only if stock > 0, else infinite/made-to-order)
-                    if product_object.stock > 0 and product_object.stock < quantity:
+                    # NEW: Variant-aware stock validation
+                    can_fulfill, available, stock_error = product_object.can_fulfill_order(
+                        quantity=quantity,
+                        size_id=size_id
+                    )
+                    
+                    if not can_fulfill:
                         raise serializers.ValidationError(
-                            f"Insufficient stock for {product_object.title}. Available: {product_object.stock}, Requested: {quantity}"
+                            f"Cannot add {quantity} of {product_object.title}: {stock_error}"
                         )
                     
-                    # Decrement stock atomically before creating order (only if stock > 0)
-                    if product_object.stock > 0:
-                        stock_decremented = product_object.decrement_stock(quantity)
-                        if not stock_decremented:
-                            raise serializers.ValidationError(
-                                f"Insufficient stock for {product_object.title}. Please try again."
-                            )
+                    # Decrement stock atomically before creating order (variant-aware)
+                    try:
+                        product_object.decrement_stock(quantity, size_id=size_id)
+                    except Exception as e:
+                        raise serializers.ValidationError(
+                            f"Failed to reserve stock for {product_object.title}: {str(e)}"
+                        )
                     
                     # Create the order with discount information
                     order = EventProductOrder.objects.create(
@@ -443,17 +462,25 @@ class EventCartViewSet(viewsets.ModelViewSet):
             # Process removals
             for order in orders_to_remove:
                 product = order.product
+                size_id = order.size.id if order.size else None
                 
-                # Restore stock (only if stock tracking enabled)
-                if product.stock > 0:
-                    product.increment_stock(order.quantity)
+                # NEW: Restore stock using variant-aware method
+                try:
+                    product.increment_stock(order.quantity, size_id=size_id)
+                    stock_restored = True
+                except Exception as e:
+                    # Log but don't fail - removal should still proceed
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to restore stock for {product.title}: {str(e)}")
+                    stock_restored = False
                 
                 removed_products.append({
                     'order_id': order.id,
                     'product': product.title,
                     'size': order.size.size if order.size else None,
                     'quantity': order.quantity,
-                    'stock_restored': product.stock > 0
+                    'stock_restored': stock_restored
                 })
                 
                 # Delete the order
@@ -566,13 +593,19 @@ class EventCartViewSet(viewsets.ModelViewSet):
             calculated_total = 0
             stock_issues = []
             
-            for order in cart.orders.select_related('product').select_for_update():
+            for order in cart.orders.select_related('product', 'size').select_for_update():
                 product = order.product
+                size_id = order.size.id if order.size else None
                 
-                # Check stock availability
-                if not product.in_stock or product.stock < order.quantity:
+                # NEW: Variant-aware stock validation
+                can_fulfill, available, stock_error = product.can_fulfill_order(
+                    quantity=order.quantity,
+                    size_id=size_id
+                )
+                
+                if not can_fulfill:
                     stock_issues.append(
-                        f"{product.title} (requested: {order.quantity}, available: {product.stock})"
+                        f"{product.title} (Size: {order.size.get_size_display() if order.size else 'N/A'}): {stock_error}"
                     )
                     continue
                 
@@ -588,7 +621,7 @@ class EventCartViewSet(viewsets.ModelViewSet):
                     stock_issues.append(f"{product.title}: {error_msg}")
                     continue
                 
-                # Reserve inventory (we don't deduct yet - that happens on payment success)
+                # Calculate total (stock is already reserved from add_to_cart, just validating here)
                 calculated_total += (order.price_at_purchase or product.price) * order.quantity
             
             if stock_issues:
@@ -818,6 +851,15 @@ class EventCartViewSet(viewsets.ModelViewSet):
             for order in list(cart.orders.all()):
                 key = (str(order.product.uuid), order.size.size if order.size else None)
                 if key not in new_product_keys:
+                    # NEW: Restore stock when removing order
+                    try:
+                        size_id = order.size.id if order.size else None
+                        order.product.increment_stock(order.quantity, size_id=size_id)
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Failed to restore stock when removing order: {str(e)}")
+                    
                     removed_products.append(
                         f"Removed {order.product.title} (size: {order.size.size if order.size else 'N/A'})"
                     )
@@ -837,20 +879,22 @@ class EventCartViewSet(viewsets.ModelViewSet):
                         f"Product {product_object.title} does not belong to the same event as the cart."
                     )
                 
-                # Check stock
-                if product_object.stock < quantity:
-                    raise serializers.ValidationError(
-                        f"Insufficient stock for {product_object.title}. Available: {product_object.stock}"
-                    )
-                
                 # Find size object if specified
                 size_object = None
+                size_id = None
                 if size:
-                    size_object = ProductSize.objects.filter(size=size, product=product_object).first()
+                    size_object = ProductSize.objects.select_for_update().filter(
+                        size=size, product=product_object
+                    ).first()
                     if not size_object:
                         raise serializers.ValidationError(
                             f"Size {size} not available for product {product_object.title}"
                         )
+                    size_id = size_object.id
+                elif product_object.uses_sizes:
+                    raise serializers.ValidationError(
+                        f"Product {product_object.title} requires a size selection."
+                    )
 
                 # Look for existing order by product, cart, size
                 order = EventProductOrder.objects.filter(
@@ -862,6 +906,9 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 if order:
                     # Only validate and update if quantity has actually changed
                     if order.quantity != quantity:
+                        # Calculate the quantity change
+                        quantity_change = quantity - order.quantity
+                        
                         # Validate maximum_order_quantity for the NEW quantity
                         if quantity > product_object.maximum_order_quantity:
                             raise serializers.ValidationError(
@@ -869,21 +916,47 @@ class EventCartViewSet(viewsets.ModelViewSet):
                             )
                         
                         # Validate max_purchase_per_person if there's a limit
-                        # Calculate the difference to see if we're adding or removing
-                        quantity_change = quantity - order.quantity
-                        
                         if quantity_change > 0 and product_object.max_purchase_per_person != -1:
                             # Only validate if increasing quantity and there's a limit
                             # Exclude current order from cart count to avoid double-counting
                             can_purchase, remaining, error_msg = ProductPurchaseTracker.can_purchase(
                                 user=cart.user,
                                 product=product_object,
-                                quantity=quantity_change,  # Only check the additional amount
+                                quantity=quantity,  # Validate the full new quantity
                                 exclude_order_id=order.id  # Exclude current order to prevent double-counting
                             )
                             
                             if not can_purchase:
                                 raise serializers.ValidationError(error_msg)
+                        
+                        # NEW: Handle stock adjustments for quantity changes
+                        if quantity_change > 0:
+                            # Increasing quantity - validate and decrement stock
+                            can_fulfill, available, stock_error = product_object.can_fulfill_order(
+                                quantity=quantity_change,  # Only check the additional amount
+                                size_id=size_id
+                            )
+                            
+                            if not can_fulfill:
+                                raise serializers.ValidationError(
+                                    f"Cannot increase quantity for {product_object.title}: {stock_error}"
+                                )
+                            
+                            try:
+                                product_object.decrement_stock(quantity_change, size_id=size_id)
+                            except Exception as e:
+                                raise serializers.ValidationError(
+                                    f"Failed to reserve additional stock for {product_object.title}: {str(e)}"
+                                )
+                        
+                        elif quantity_change < 0:
+                            # Decreasing quantity - restore stock
+                            try:
+                                product_object.increment_stock(abs(quantity_change), size_id=size_id)
+                            except Exception as e:
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                logger.warning(f"Failed to restore stock when decreasing quantity: {str(e)}")
                         
                         # Update the order
                         order.quantity = quantity
@@ -910,6 +983,24 @@ class EventCartViewSet(viewsets.ModelViewSet):
                         
                         if not can_purchase:
                             raise serializers.ValidationError(error_msg)
+                    
+                    # NEW: Validate and decrement stock
+                    can_fulfill, available, stock_error = product_object.can_fulfill_order(
+                        quantity=quantity,
+                        size_id=size_id
+                    )
+                    
+                    if not can_fulfill:
+                        raise serializers.ValidationError(
+                            f"Cannot add {quantity} of {product_object.title}: {stock_error}"
+                        )
+                    
+                    try:
+                        product_object.decrement_stock(quantity, size_id=size_id)
+                    except Exception as e:
+                        raise serializers.ValidationError(
+                            f"Failed to reserve stock for {product_object.title}: {str(e)}"
+                        )
                     
                     # Create new order
                     order = EventProductOrder.objects.create(

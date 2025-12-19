@@ -49,11 +49,46 @@ class ProductImageSerializer(serializers.ModelSerializer):
         
 class ProductSizeSerializer(serializers.ModelSerializer):
     '''
-    Serializer for ProductSize model
+    Serializer for ProductSize model with stock validation
     '''
     product_title = serializers.CharField(source="product.title", read_only=True)
     product_uuid = serializers.UUIDField(source="product.uuid", read_only=True)
+    size_display = serializers.CharField(source="get_size_display", read_only=True)
+    is_available = serializers.SerializerMethodField()
+    final_price = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductSize
-        fields = ["id", "product", "product_title", "product_uuid", "size", "price_modifier"]
+        fields = [
+            "id", "product", "product_title", "product_uuid", 
+            "size", "size_display", "quantity", "price_modifier",
+            "is_available", "final_price"
+        ]
+        read_only_fields = ["id", "product_title", "product_uuid", "size_display", "is_available", "final_price"]
+    
+    def get_is_available(self, obj):
+        """Check if this size variant has stock"""
+        return obj.is_available()
+    
+    def get_final_price(self, obj):
+        """Get the final price including modifier"""
+        return float(obj.get_final_price())
+    
+    def validate_quantity(self, value):
+        """Ensure quantity is non-negative"""
+        if value < 0:
+            raise serializers.ValidationError("Quantity cannot be negative.")
+        return value
+    
+    def validate(self, attrs):
+        """Additional validation for size creation/update"""
+        # Check for duplicate size on creation
+        if not self.instance:  # Creating new
+            product = attrs.get('product')
+            size = attrs.get('size')
+            if product and size:
+                if ProductSize.objects.filter(product=product, size=size).exists():
+                    raise serializers.ValidationError({
+                        "size": f"Size {size} already exists for this product."
+                    })
+        return attrs

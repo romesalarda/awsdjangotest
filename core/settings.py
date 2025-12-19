@@ -78,7 +78,7 @@ try:
     ssm_client = boto3.client('ssm', region_name='eu-west-2')
     sts = boto3.client('sts')
     sts.get_caller_identity()  # This will raise an exception if credentials are invalid
-    USE_SSM = True 
+    # USE_SSM = True 
     print("### Using AWS SSM for secrets ###")
 except (NoCredentialsError, Exception) as e:
     print(f"### AWS SSM not available ({type(e).__name__}), using environment variables ###")
@@ -488,6 +488,15 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': datetime.timedelta(days=1),
 }
 
+# JWT Cookie settings - Always use secure=True and samesite='None' for cross-origin
+# Modern browsers (Chrome 80+) REQUIRE secure=True when using samesite='None'
+# This works even in development because browsers allow secure cookies over localhost HTTP
+# 
+# Why this is necessary:
+# - Frontend (localhost:3000) and Backend (localhost:8000) are different origins
+# - Cross-origin POST requests (like /auth/refresh/) need samesite='None'
+# - Browsers enforce secure=True requirement for samesite='None'
+# - Localhost is treated as a secure context, so secure=True works over HTTP
 JWT_AUTH_COOKIE_SAMESITE = 'None'
 JWT_AUTH_COOKIE_SECURE = True
 

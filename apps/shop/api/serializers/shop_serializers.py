@@ -57,6 +57,11 @@ class EventProductSerializer(serializers.ModelSerializer):
     in_stock = serializers.BooleanField(read_only=True)
     user_purchased_count = serializers.SerializerMethodField()
     
+    # Stock availability fields (variant-aware)
+    total_variant_stock = serializers.SerializerMethodField()
+    available_stock = serializers.SerializerMethodField()
+    size_stock_info = serializers.SerializerMethodField()
+    
     # Product availability fields
     can_purchase = serializers.SerializerMethodField()
     availability_reason = serializers.SerializerMethodField()
@@ -129,6 +134,40 @@ class EventProductSerializer(serializers.ModelSerializer):
     def get_sizes(self, obj):
         """Get list of available sizes"""
         return obj.available_sizes
+    
+    def get_total_variant_stock(self, obj):
+        """Get total stock across all size variants (None if product doesn't use sizes)"""
+        return obj.get_total_variant_stock()
+    
+    def get_available_stock(self, obj):
+        """
+        Get available stock for this product.
+        Returns total variant stock if uses_sizes=True, otherwise product-level stock.
+        """
+        stock, uses_variants = obj.get_available_stock()
+        return stock
+    
+    def get_size_stock_info(self, obj):
+        """
+        Get detailed stock information for each size variant.
+        Returns None if product doesn't use sizes.
+        Returns list of {size, size_display, quantity, is_available, final_price} for variants.
+        """
+        if not obj.uses_sizes:
+            return None
+        
+        return [
+            {
+                'id': size.id,
+                'size': size.size,
+                'size_display': size.get_size_display(),
+                'quantity': size.quantity,
+                'is_available': size.is_available(),
+                'price_modifier': float(size.price_modifier),
+                'final_price': float(size.get_final_price())
+            }
+            for size in obj.product_sizes.all()
+        ]
     
     def get_user_purchased_count(self, obj):
         """Get the count of how many of this product the requesting user has purchased AND currently has in cart"""
@@ -254,6 +293,8 @@ class EventProductSerializer(serializers.ModelSerializer):
             "in_stock", "imageUrl", "sizes", "colors",
             "categories", "materials", "images", "product_sizes", "maximum_order_quantity",
             "max_purchase_per_person", "user_purchased_count",
+            # Stock availability fields (variant-aware)
+            "total_variant_stock", "available_stock", "size_stock_info",
             # Availability and purchase control fields
             "can_purchase", "availability_reason", "remaining_purchase_quantity", 
             "is_available", "is_preview", "requires_size",
@@ -269,7 +310,8 @@ class EventProductSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes", 
-            "user_purchased_count", "can_purchase", "availability_reason", 
+            "user_purchased_count", "total_variant_stock", "available_stock", "size_stock_info",
+            "can_purchase", "availability_reason", 
             "remaining_purchase_quantity", "is_available", "is_preview", "requires_size",
             "has_service_team_discount", "user_specific_price", "discount_info"
         ]

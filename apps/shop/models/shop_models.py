@@ -140,9 +140,10 @@ class EventProduct(models.Model):
         return f"{self.title} {self.event.event_code}"
     
     def save(self, *args, **kwargs):
-        # Auto-set in_stock based on stock quantity
-        
         # Ensure colors JSON field is a list if None
+        if isinstance(self.stock, int):
+            self.in_stock = self.stock > 0
+        
         if self.colors is None:
             self.colors = []
             
@@ -343,49 +344,160 @@ class EventProduct(models.Model):
         
         return True, None
     
-    def decrement_stock(self, quantity):
+    def get_total_variant_stock(self):
         """
-        Atomically decrement product stock.
-        Returns True if successful, False if insufficient stock.
-        Only applies if stock > 0 (0 means infinite/made-to-order).
+        Calculate total stock across all size variants.
+        Returns sum of all variant quantities, or None if product doesn't use sizes.
         """
+        if not self.uses_sizes:
+            return None
+        
+        from django.db.models import Sum
+        total = self.product_sizes.aggregate(total=Sum('quantity'))['total']
+        return total or 0
+    
+    def get_available_stock(self, size_id=None):
+        """
+        Get available stock for a product.
+        
+        - If size_id provided: Returns stock for that specific variant
+        - If product uses sizes: Returns total across all variants
+        - Otherwise: Returns product-level stock
+        
+        Returns: (available_stock: int, uses_variants: bool)
+        """
+        if size_id:
+            try:
+                size_variant = self.product_sizes.get(pk=size_id)
+                return size_variant.quantity, True
+            except:
+                return 0, True
+        
+        if self.uses_sizes:
+            return self.get_total_variant_stock(), True
+        
+        return self.stock, False
+    
+    def can_fulfill_order(self, quantity, size_id=None):
+        """
+        Check if product can fulfill an order for the given quantity and optional size.
+        
+        Returns: (can_fulfill: bool, available: int, error_message: str or None)
+        """
+        from django.core.exceptions import ValidationError
+        
+        if quantity <= 0:
+            return False, 0, "Quantity must be greater than 0."
+        
+        # Size-specific validation
+        if self.uses_sizes:
+            if not size_id:
+                return False, 0, f"{self.title} requires a size selection."
+            
+            try:
+                size_variant = self.product_sizes.get(pk=size_id)
+                can_fulfill, available, error = size_variant.can_fulfill(quantity)
+                return can_fulfill, available, error
+            except self.product_sizes.model.DoesNotExist:
+                return False, 0, f"Invalid size selected for {self.title}."
+        
+        # Product-level validation (no sizes)
+        if self.stock == 0:  # Infinite/made-to-order
+            return True, float('inf'), None
+        
+        if self.stock < quantity:
+            return False, self.stock, f"Only {self.stock} available for {self.title}. You requested {quantity}."
+        
+        return True, self.stock, None
+    
+    def decrement_stock(self, quantity, size_id=None):
+        """
+        Atomically decrement stock.
+        
+        - If size_id provided: Decrements variant stock
+        - If product uses sizes but no size_id: Raises ValidationError
+        - Otherwise: Decrements product-level stock
+        
+        Returns True if successful, raises ValidationError if insufficient stock.
+        """
+        from django.db import transaction
+        from django.core.exceptions import ValidationError
+        
+        if quantity <= 0:
+            raise ValidationError(f"Cannot decrement stock by {quantity}. Quantity must be positive.")
+        
+        # Variant-level decrement
+        if self.uses_sizes:
+            if not size_id:
+                raise ValidationError(f"{self.title} requires a size selection for stock management.")
+            
+            try:
+                size_variant = self.product_sizes.get(pk=size_id)
+                return size_variant.decrement_stock(quantity)
+            except self.product_sizes.model.DoesNotExist:
+                raise ValidationError(f"Invalid size selected for {self.title}.")
+        
+        # Product-level decrement (backward compatibility)
         if self.stock == 0:  # Infinite stock
             return True
         
-        from django.db.models import F
-        from django.db import transaction
-        
         with transaction.atomic():
-            # Lock the row and refresh from DB
+            from django.db.models import F
             product = EventProduct.objects.select_for_update().get(uuid=self.uuid)
             
             if product.stock < quantity:
-                return False
+                raise ValidationError(
+                    f"Insufficient stock for {self.title}. "
+                    f"Requested: {quantity}, Available: {product.stock}"
+                )
             
             product.stock = F('stock') - quantity
             product.save(update_fields=['stock'])
             product.refresh_from_db()
+            self.stock = product.stock
             
-            return True
+        return True
     
-    def increment_stock(self, quantity):
+    def increment_stock(self, quantity, size_id=None):
         """
-        Atomically increment product stock (when removing from cart or cancelling).
-        Only applies if stock was originally > 0.
+        Atomically increment stock (when removing from cart or refund).
+        
+        - If size_id provided: Increments variant stock
+        - If product uses sizes but no size_id: Raises ValidationError
+        - Otherwise: Increments product-level stock
+        
+        Returns True if successful.
         """
+        from django.db import transaction
+        from django.core.exceptions import ValidationError
+        
+        if quantity <= 0:
+            raise ValidationError(f"Cannot increment stock by {quantity}. Quantity must be positive.")
+        
+        # Variant-level increment
+        if self.uses_sizes:
+            if not size_id:
+                raise ValidationError(f"{self.title} requires a size selection for stock management.")
+            
+            try:
+                size_variant = self.product_sizes.get(pk=size_id)
+                return size_variant.increment_stock(quantity)
+            except self.product_sizes.model.DoesNotExist:
+                raise ValidationError(f"Invalid size selected for {self.title}.")
+        
+        # Product-level increment (backward compatibility)
         if self.stock == 0:  # Was infinite stock, no need to increment
             return True
         
-        from django.db.models import F
-        from django.db import transaction
-        
         with transaction.atomic():
+            from django.db.models import F
             product = EventProduct.objects.select_for_update().get(uuid=self.uuid)
             product.stock = F('stock') + quantity
             product.save(update_fields=['stock'])
             product.refresh_from_db()
+            self.stock = product.stock
             
-            return True
+        return True
 
 
 class EventCart(models.Model):

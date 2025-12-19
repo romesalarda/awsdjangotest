@@ -48,15 +48,47 @@ class ProductImageAdmin(admin.ModelAdmin):
 class ProductSizeInline(admin.StackedInline):
     model = ProductSize
     extra = 0
+    fields = ['size', 'quantity', 'price_modifier']
+    readonly_fields = []
+    
+    def get_readonly_fields(self, request, obj=None):
+        """Show warnings for low stock"""
+        if obj and obj.quantity < 5:
+            return ['low_stock_warning']
+        return []
     
 @admin.register(EventProduct)
 class EventProductAdmin(admin.ModelAdmin):
-    list_display = ("title", "event", "seller", "price", "discount")
-    list_filter = ("event", "seller", "categories", "materials")
+    list_display = ("title", "event", "seller", "price", "discount", "uses_sizes", "stock_status", "total_stock")
+    list_filter = ("event", "seller", "categories", "materials", "uses_sizes", "featured", "in_stock")
     search_fields = ("title", "description", "seller__email")
     filter_horizontal = ("categories", "materials")
     ordering = ("title",)
     inlines = [ProductSizeInline]
+    
+    def stock_status(self, obj):
+        """Show stock status with color coding"""
+        if obj.uses_sizes:
+            total = obj.get_total_variant_stock()
+            if total == 0:
+                return "⚠️ Out of Stock (Variants)"
+            elif total < 10:
+                return f"🔶 Low ({total} total)"
+            return f"✅ {total} total"
+        else:
+            if obj.stock == 0:
+                return "∞ Infinite/Made-to-Order"
+            elif obj.stock < 10:
+                return f"🔶 Low ({obj.stock})"
+            return f"✅ {obj.stock}"
+    stock_status.short_description = "Stock Status"
+    
+    def total_stock(self, obj):
+        """Show total stock across variants or product-level"""
+        if obj.uses_sizes:
+            return obj.get_total_variant_stock()
+        return obj.stock if obj.stock > 0 else "∞"
+    total_stock.short_description = "Total Available"
 
 
 
@@ -82,10 +114,24 @@ class EventProductOrderAdmin(admin.ModelAdmin):
     
 @admin.register(ProductSize)
 class ProductSizeAdmin(admin.ModelAdmin):
-    list_display = ("product", "size", "price_modifier")
-    list_filter = ("size", "product")
+    list_display = ("product", "size", "quantity", "price_modifier", "is_available", "stock_warning")
+    list_filter = ("size", "product__event")
     search_fields = ("product__title",)
     ordering = ("product", "size")
+    
+    def is_available(self, obj):
+        """Show availability status"""
+        return "✅ Yes" if obj.is_available() else "❌ No"
+    is_available.short_description = "Available"
+    
+    def stock_warning(self, obj):
+        """Show warning for low stock"""
+        if obj.quantity == 0:
+            return "🚫 Out of Stock"
+        elif obj.quantity < 5:
+            return f"⚠️ Low Stock ({obj.quantity})"
+        return "✅ OK"
+    stock_warning.short_description = "Stock Status"
     
 admin.site.register(ProductPaymentLog)
 admin.site.register(OrderRefund)
