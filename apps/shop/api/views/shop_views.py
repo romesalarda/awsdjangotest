@@ -132,28 +132,6 @@ class EventCartViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created", "total", "shipping_cost"]
     ordering = ["-created"]
     
-    def get_queryset(self):
-        user = self.request.user
-        # if user.is_superuser or getattr(user, 'is_encoder', False):
-        #     return self.queryset  # admins and encoders can see all carts
-        return self.queryset.filter(user=user)  # regular users can only see their own carts
-    
-    def perform_create(self, serializer):
-        """
-        Restrict cart creation to staff and superusers only.
-        Regular users cannot create carts themselves - only admins can create carts for participants.
-        """
-        user = self.request.user
-        
-        # Only staff and superusers can create carts
-        # if not (user.is_staff or user.is_superuser):
-        #     raise exceptions.PermissionDenied(
-        #         "Only administrators can create merchandise carts. "
-        #         "If you need a cart created, please contact the event service team."
-        #     )
-        
-        serializer.save()
-    
     @action(detail=True, methods=['post'], url_name='add', url_path='add')
     def add_to_cart(self, request, *args, **kwargs):
         '''
@@ -593,9 +571,11 @@ class EventCartViewSet(viewsets.ModelViewSet):
             calculated_total = 0
             stock_issues = []
             
-            for order in cart.orders.select_related('product', 'size').select_for_update():
+            # Lock orders first (without select_related on nullable size field)
+            for order in cart.orders.select_related('product').select_for_update():
                 product = order.product
-                size_id = order.size.id if order.size else None
+                # Fetch size separately if needed (avoid outer join with select_for_update)
+                size_id = order.size_id
                 
                 # NEW: Variant-aware stock validation
                 can_fulfill, available, stock_error = product.can_fulfill_order(
@@ -604,8 +584,17 @@ class EventCartViewSet(viewsets.ModelViewSet):
                 )
                 
                 if not can_fulfill:
+                    # Get size display name if size exists
+                    size_display = 'N/A'
+                    if size_id:
+                        try:
+                            size_obj = ProductSize.objects.get(id=size_id)
+                            size_display = size_obj.get_size_display()
+                        except ProductSize.DoesNotExist:
+                            pass
+                    
                     stock_issues.append(
-                        f"{product.title} (Size: {order.size.get_size_display() if order.size else 'N/A'}): {stock_error}"
+                        f"{product.title} (Size: {size_display}): {stock_error}"
                     )
                     continue
                 

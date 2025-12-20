@@ -53,8 +53,8 @@ class ProductSizeInline(admin.StackedInline):
     
     def get_readonly_fields(self, request, obj=None):
         """Show warnings for low stock"""
-        if obj and obj.quantity < 5:
-            return ['low_stock_warning']
+        # if obj and obj.quantity < 5:
+        #     return ['low_stock_warning']
         return []
     
 @admin.register(EventProduct)

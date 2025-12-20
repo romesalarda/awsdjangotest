@@ -89,6 +89,11 @@ class EventProductSerializer(serializers.ModelSerializer):
         required=False,
         help_text="JSON string of sizes to create for this product"
     )
+    size_quantities = serializers.CharField(
+        write_only=True,
+        required=False,
+        help_text="JSON string of quantities per size (e.g., {'SM': 10, 'MD': 20})"
+    )
     category_ids = serializers.CharField(
         write_only=True,
         required=False,
@@ -307,6 +312,7 @@ class EventProductSerializer(serializers.ModelSerializer):
             # Service team discount fields
             "discount_for_service_team", "service_team_discount_type", "service_team_discount_value",
             "has_service_team_discount", "user_specific_price", "discount_info",
+            "size_quantities"
         ]
         read_only_fields = [
             "seller", "seller_email", "uuid", "event_name", "in_stock", "imageUrl", "sizes", 
@@ -321,6 +327,7 @@ class EventProductSerializer(serializers.ModelSerializer):
         import json
         image_uploads = validated_data.pop('image_uploads', [])
         size_list_raw = validated_data.pop('size_list', '')
+        size_quantities_raw = validated_data.pop('size_quantities', '')  # NEW
         category_ids_raw = validated_data.pop('category_ids', '')
         material_ids_raw = validated_data.pop('material_ids', '')
         
@@ -331,6 +338,14 @@ class EventProductSerializer(serializers.ModelSerializer):
                 size_list = json.loads(size_list_raw)
             except json.JSONDecodeError:
                 size_list = [size_list_raw] if size_list_raw else []
+        
+        # NEW: Parse size quantities
+        size_quantities = {}
+        if size_quantities_raw:
+            try:
+                size_quantities = json.loads(size_quantities_raw)
+            except json.JSONDecodeError:
+                size_quantities = {}
                 
         category_ids = []
         if category_ids_raw:
@@ -404,18 +419,18 @@ class EventProductSerializer(serializers.ModelSerializer):
         for size_name in size_list:
             size_key = size_name.strip().upper().replace(' ', '_')
             
+            # Get quantity for this size (default to 0 if not provided)
+            quantity = size_quantities.get(size_name, 0)
+            
             # Handle special cases
             if size_key in ['ONE_SIZE', 'ONESIZE', 'ONE SIZE']:
                 # For "One Size", use Medium as default
-                ProductSize.objects.create(product=product, size=ProductSize.Sizes.MEDIUM)
-                print(f"DEBUG - Created One Size as MEDIUM")
+                ProductSize.objects.create(product=product, size=ProductSize.Sizes.MEDIUM, quantity=quantity)
             elif size_key in size_mapping:
-                ProductSize.objects.create(product=product, size=size_mapping[size_key])
-                print(f"DEBUG - Created size: {size_mapping[size_key]}")
+                ProductSize.objects.create(product=product, size=size_mapping[size_key], quantity=quantity)
             else:
                 # Default fallback
-                ProductSize.objects.create(product=product, size=ProductSize.Sizes.MEDIUM)
-                print(f"DEBUG - Created fallback size: MEDIUM for '{size_name}'")
+                ProductSize.objects.create(product=product, size=ProductSize.Sizes.MEDIUM, quantity=quantity)
         
         # Handle categories and materials
         if category_ids:
