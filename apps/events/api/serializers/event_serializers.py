@@ -16,17 +16,18 @@ import pprint
 
 from apps.events.models import (
     EventDayAttendance, QuestionAnswer, ParticipantQuestion,
-    EventServiceTeamMember, EventPaymentMethod, EventPaymentPackage, EventPayment
+    EventServiceTeamMember, EventPaymentMethod, EventPaymentPackage, EventPayment,
+    ServiceTeamPermission,
     )
 from apps.users.api.serializers import (
     SimpleEmergencyContactSerializer, SimplifiedCommunityUserSerializer, 
     SimpleAllergySerializer, SimpleMedicalConditionSerializer,
 )
-from apps.users.models import CommunityUser, MedicalCondition, Allergy, EmergencyContact
-from .location_serializers import EventVenueSerializer, AreaLocationSerializer
-from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer, QuestionChoiceSerializer
+from apps.users.models import MedicalCondition, Allergy, EmergencyContact
+from .location_serializers import EventVenueSerializer
+from .registration_serializers import ExtraQuestionSerializer, QuestionAnswerSerializer
 from .payment_serializers import EventPaymentPackageSerializer, EventPaymentMethodSerializer, EventPaymentSerializer
-from .permission_serializers import ServiceTeamPermissionSummarySerializer, ServiceTeamPermissionSerializer
+from .permission_serializers import ServiceTeamPermissionSerializer
 from .organisation_serializers import OrganisationSerializer
 
 from apps.shop.api import serializers as shop_serializers
@@ -1005,6 +1006,10 @@ class EventSerializer(serializers.ModelSerializer):
                         member.roles.set([e_head, e_team_leader])
                         member.head_of_role = True
                         member.save()
+                        ServiceTeamPermission.objects.get_or_create(
+                            service_team_member=member,
+                            role=ServiceTeamPermission.PermissionRole.ADMIN
+                        )
 
             if supervising_adults:
                 instance.supervising_CFC_coordinators.set(supervising_adults)
@@ -1018,6 +1023,10 @@ class EventSerializer(serializers.ModelSerializer):
                         member.roles.set([e_cfc, e_team_leader, e_head])
                         member.head_of_role = True
                         member.save()
+                        ServiceTeamPermission.objects.get_or_create(
+                            service_team_member=member,
+                            role=ServiceTeamPermission.PermissionRole.ADMIN
+                        )
                         
             # Resources - Handle CRUD operations
             if resource_data is not None:

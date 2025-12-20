@@ -300,6 +300,16 @@ class EventViewSet(viewsets.ModelViewSet):
                 )
             
             try:
+                if event.supervising_youth_heads.filter(id=user_id).exists():
+                    return Response(
+                        {'error': 'Cannot remove a supervising youth head from the service team, remove them from supervising youth heads first'}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                elif event.supervising_CFC_coordinators.filter(id=user_id).exists():
+                    return Response(
+                        {'error': 'Cannot remove a supervising adult coordinator from the service team, remove them from supervising adult coordinators first'}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
                 service_member = EventServiceTeamMember.objects.get(event=event, user_id=user_id)
                 service_member.delete()  # Permissions will be deleted via CASCADE
                 return Response(
