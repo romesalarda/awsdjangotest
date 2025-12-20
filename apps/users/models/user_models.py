@@ -3,7 +3,7 @@ from django.conf import settings
 from django.utils.text import slugify
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.utils.translation import gettext_lazy as _
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator, EmailValidator, RegexValidator
 
 import datetime
 import uuid
@@ -19,7 +19,6 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     Main AUTH class to authenticate users, all users signing in for events must have an account
     '''
     class MinistryType(models.TextChoices):
-        #! these should only be assigned by encoders and not by those who register
         YFC = "YFC", _("Youth for Christ")
         CFC = "CFC", _("Couples for Christ")
         SFC = "SFC", _("Singles for Christ")
@@ -53,8 +52,8 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     member_id = models.CharField(max_length=100, unique=True, editable=False,verbose_name=_("member ID"))
     username = models.CharField(max_length=100, unique=True, verbose_name=_("username"))
     # contact information
-    primary_email = models.EmailField(unique=True, blank=True, null=True,verbose_name=_("primary email address"))
-    secondary_email = models.EmailField(unique=True, blank=True, null=True,verbose_name=_("secondary email address"))
+    primary_email = models.EmailField(unique=True, blank=True, null=True,verbose_name=_("primary email address"), validators=[EmailValidator()])
+    secondary_email = models.EmailField(unique=True, blank=True, null=True,verbose_name=_("secondary email address"), validators=[EmailValidator()])
     phone_number = models.CharField(max_length=20,blank=True,null=True, verbose_name=_("phone number"))
     
     # identity information
@@ -70,15 +69,10 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     area_from = models.ForeignKey("events.AreaLocation", on_delete=models.SET_NULL, 
                                   verbose_name=_("area of residence"), blank=True, null=True
                                   )
-    # TODO: DEPRECATE
-    address_line_1 = models.CharField(verbose_name=_("address line 1"), blank=True, null=True)
-    address_line_2 = models.CharField(verbose_name=_("address line 2"), blank=True, null=True)
-    postcode = models.CharField(verbose_name=_("postcode"), blank=True, null=True)
-
     # auth checks
-    is_active = models.BooleanField(default=True,verbose_name=_("active"))
-    is_staff = models.BooleanField(default=False,verbose_name=_("staff status"))
-    is_encoder = models.BooleanField(default=False,verbose_name=_("encoder status"))
+    is_active = models.BooleanField(default=True,verbose_name=_("active")) # able to login
+    is_staff = models.BooleanField(default=False,verbose_name=_("staff status")) # able to access django admin
+    is_encoder = models.BooleanField(default=False,verbose_name=_("encoder status")) # able to create events but not django admin
     
     # profile information
     profile_picture = models.ImageField(
@@ -90,13 +84,8 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
     profile_picture_uploaded_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name=_("profile picture uploaded at")
-    )
-    # TODO: DEPRECATE
-    marital_status = models.CharField(verbose_name=_("marital status"), 
-                                      choices=MaritalType.choices, 
-                                      default=MaritalType.SINGLE, 
-                                      blank=True, null=True
-                                      )
+    )   
+    
     # safeguarding information
     allergies = models.ManyToManyField(
         "Allergy",
@@ -110,15 +99,6 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
         through="UserMedicalCondition",
         related_name="condition_users",
         blank=True
-    )
-    
-    # TODO: DEPRECATE
-    blood_type = models.CharField( 
-        max_length=3,
-        choices=BloodType.choices,
-        blank=True,
-        null=True,
-        verbose_name=_("blood type"),
     )
         
     # service information
@@ -182,13 +162,13 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
             self.age = today.year - self.date_of_birth.year - (
                 (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day)
             )
-        
+        self.first_name = self.first_name.strip().capitalize()
+        self.last_name = self.last_name.strip().capitalize()
+        self.preferred_name = self.preferred_name.strip().capitalize() if self.preferred_name else None
         # First save to get the UUID if this is a new instance
         super().save(*args, **kwargs)
-        print("requires new id? " + str(needs_member_id) + " new uuid generated :" + str(self.id))
         # Generate member ID after we have the UUID
         if needs_member_id:
-            print("building new id")
             # Generate member ID using the now-available UUID
             name_slug = slugify(
                 f"{self.first_name[:MAX_MEMBER_ID_FIRST_NAME]}{self.last_name[:MAX_MEMBER_ID_LAST_NAME]}"
@@ -259,15 +239,18 @@ class CommunityRole(models.Model):
     
     role_description = models.TextField(
         max_length=500,
-        verbose_name=_("role description")
+        verbose_name=_("role description"),
+        blank=True, 
+        null=True
     )
-    
     is_core = models.BooleanField(
         default=False, 
         verbose_name=_("is core role"),
         help_text=_("Defines if the role is a core role")
     )
-    authority_level = models.IntegerField(verbose_name=_("community authority"), help_text=_("helper field to determine logical ranking of roles if many are assigned"), default=0)
+    authority_level = models.IntegerField(verbose_name=_("community authority"), help_text=_("helper field to determine logical ranking of roles if many are assigned (max is 10)"), default=0, 
+                                          validators=[MinValueValidator(0), MaxValueValidator(10)]
+                                          )
     visible_role = models.BooleanField(verbose_name=_("defines if this is a public role to see"), default=True)
     
     class Meta:

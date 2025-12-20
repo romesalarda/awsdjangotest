@@ -604,9 +604,8 @@ class EventCart(models.Model):
 class EventProductOrder(models.Model):
     '''
     Product order within an event cart.
-    '''
-    # TODO-FUTMIG: switch integer id to uuid
-    
+    '''    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order_reference_id = models.CharField(_("Order ID"), max_length=100, unique=True, blank=True, null=True) # required for tracking order references
     product = models.ForeignKey(EventProduct, on_delete=models.CASCADE, related_name="orders")
     cart = models.ForeignKey(EventCart, on_delete=models.CASCADE, related_name="orders")

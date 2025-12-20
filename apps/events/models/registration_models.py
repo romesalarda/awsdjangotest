@@ -28,7 +28,7 @@ class ExtraQuestion(models.Model):
     question_type = models.CharField(_("question type"), max_length=20, choices=QuestionType.choices)
     required = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)  # useful for sorting
-
+    
     def __str__(self):
         return f"{self.question_name} ({self.get_question_type_display()})"
     

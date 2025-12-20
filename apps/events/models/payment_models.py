@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from django.utils.text import slugify
 from django.core import validators
 import uuid
 
@@ -12,8 +13,7 @@ class EventPaymentMethod(models.Model):
     Payment method/configuration available for an event.
     """
     
-    # TODO-FUTMIG: migrate from integer id to uuid field?
-    # id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     class MethodType(models.TextChoices):
         STRIPE = "STRIPE", _("Stripe")
@@ -39,9 +39,9 @@ class EventPaymentMethod(models.Model):
     account_name = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("account name"))
     account_number = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("account number"))
     sort_code = models.CharField(max_length=20, blank=True, null=True, verbose_name=_("sort code"))
-    reference_instruction = models.TextField(max_length=100, blank=True, null=True, verbose_name=_("reference instruction"), help_text=_("E.g., 'Use your full name as reference'"))
+    reference_instruction = models.TextField(max_length=400, blank=True, null=True, verbose_name=_("reference instruction"), help_text=_("E.g., 'Use your full name as reference'"))
     reference_example = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("reference example"), help_text=_("E.g., 'John Smith'"))
-    important_information = models.TextField(blank=True, null=True, verbose_name=_("important information"), help_text=_("E.g., 'Payments may take 2-3 business days to process.'"))
+    important_information = models.TextField(max_length=400, blank=True, null=True, verbose_name=_("important information"), help_text=_("E.g., 'Payments may take 2-3 business days to process.'"))
     
     instructions = models.TextField(
         blank=True,
@@ -97,23 +97,27 @@ class EventPaymentMethod(models.Model):
     def __str__(self):
         return f"{self.get_method_display()} ({self.event})"
 
+    def validate_sort_code(self):
+        """
+        Validates UK sort code format (e.g., '12-34-56' or '123456')
+        """
+        import re
+        pattern = r'^\d{2}-?\d{2}-?\d{2}$'
+        return re.match(pattern, self.sort_code) is not None
+
 class EventPaymentPackage(models.Model):
     """
     Represents different ticket/package options for an event.
     Example: £50 VIP (includes food + merch), £10 General Admission
     """
     
-    # TODO-FUTMIG: migrate from integer id to uuid field?
-    # id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-
-
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event = models.ForeignKey(
         "Event",
         on_delete=models.CASCADE,
         related_name="payment_packages",
         verbose_name=_("event"),
     )
-
     name = models.CharField(max_length=100, verbose_name=_("package name"))
     description = models.TextField(blank=True, null=True, verbose_name=_("package description"), help_text=_("E.g., short description of this package/ticket type"))
     package_date_starts = models.DateField(blank=True, null=True, verbose_name=_("package start date"), auto_now=True)
@@ -141,6 +145,7 @@ class EventPaymentPackage(models.Model):
         null=True,
         verbose_name=_("max capacity"),
         help_text=_("Optional: limit how many people can buy this package"),
+        validators=[validators.MinValueValidator(1)],
     )
     
     resources = models.ManyToManyField(EventResource, blank=True, verbose_name=_("related package resources"))
@@ -162,6 +167,10 @@ class EventPaymentPackage(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.price} {self.currency.upper()}"
+    
+    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
+        self.name = slugify(self.name.capitalize().strip())
+        return super().save(force_insert, force_update, using, update_fields)
     
     def get_user_discounted_price(self, user):
         """
@@ -296,8 +305,7 @@ class EventPayment(models.Model):
     Tracks a user's payment for an event
     """
     
-    # TODO-FUTMIG: maybe migrate uuid for payments to be a uuid field instead of integer id?
-    # id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     class PaymentStatus(models.TextChoices):
         PENDING = "PENDING", _("Pending")
@@ -338,7 +346,9 @@ class EventPayment(models.Model):
     amount = models.DecimalField(
         max_digits=10, 
         decimal_places=2, 
-        help_text=_("Amount in pounds (e.g., 30.00 for £30.00)")
+        help_text=_("Amount in pounds (e.g., 30.00 for £30.00)"),
+        verbose_name=_("payment amount"),
+        validators=[validators.MinValueValidator(0)],
     )
     currency = models.CharField(max_length=10, default="gbp")
 
@@ -440,7 +450,8 @@ class ParticipantRefund(models.Model):
         max_digits=10,
         decimal_places=2,
         verbose_name=_("event registration refund amount"),
-        help_text=_("Amount to refund for event registration only. Merchandise refunds tracked separately via OrderRefund.")
+        help_text=_("Amount to refund for event registration only. Merchandise refunds tracked separately via OrderRefund."),
+        validators=[validators.MinValueValidator(0)],
     )
     currency = models.CharField(max_length=10, default="gbp")
     
@@ -493,7 +504,8 @@ class ParticipantRefund(models.Model):
         blank=True,
         null=True,
         verbose_name=_("participant email"),
-        help_text=_("Email address at time of refund creation")
+        help_text=_("Email address at time of refund creation"),
+        validators=[validators.EmailValidator()]
     )
     participant_name = models.CharField(
         max_length=200,
@@ -504,7 +516,8 @@ class ParticipantRefund(models.Model):
     )
     refund_contact_email = models.EmailField(
         verbose_name=_("refund contact email"),
-        help_text=_("Email address participants should contact for refund inquiries (secretariat/organizer)")
+        help_text=_("Email address participants should contact for refund inquiries (secretariat/organizer)"),
+        validators=[validators.EmailValidator()]
     )
     
     # Payment method details (for refund processing)

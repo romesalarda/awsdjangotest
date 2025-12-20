@@ -108,8 +108,6 @@ class CommunityUserViewSet(viewsets.ModelViewSet):
 
         data = {
             "gender": choices_to_list(UserModel.GenderType.choices),
-            "marital_status": choices_to_list(UserModel.MaritalType.choices),
-            "blood_type": choices_to_list(UserModel.BloodType.choices),
             "ministry": choices_to_list(UserModel.MinistryType.choices),
         }
         return response.Response(data)

@@ -4,12 +4,12 @@ from django.utils.translation import gettext_lazy as _
 from apps.shop.models.shop_models import EventProduct, EventCart, EventProductOrder
 from django.utils import timezone
 import uuid
+
 class ProductPaymentMethod(models.Model):
     """
     Payment method/configuration available for product purchases.
     """
-    # TODO-FUTMIG: migrate this
-    # id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     class MethodType(models.TextChoices):
         STRIPE = "STRIPE", _("Stripe")

@@ -62,7 +62,7 @@ class CommunityUserAdmin(UserAdmin):
             "preferred_name", "primary_email", "secondary_email", "phone_number", "area_from"
         )}),
         (_("Demographic Info"), {"fields": (
-            "ministry", "gender", "date_of_birth", "age", "marital_status", "blood_type"
+            "ministry", "gender", "date_of_birth", "age"
         )}),
         (_("Permissions"), {"fields": (
             "is_active", "is_staff", "is_encoder", "is_superuser",

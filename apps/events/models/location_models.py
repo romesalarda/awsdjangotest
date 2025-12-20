@@ -2,7 +2,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django_countries.fields import CountryField
 from django.utils.text import slugify
-
+from django.core import validators
 import uuid
 
 
@@ -64,7 +64,7 @@ class CountryLocation (models.Model):
     '''
     specific country internationally
     '''
-    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     country = CountryField(blank=True, null=True, unique=True) # only one country in the database
     general_sector = models.CharField(verbose_name="general world sector", choices=GeneralSectorType)
     specific_sector = models.CharField(verbose_name="specific world sector", choices=SpecificSectorType)
@@ -76,14 +76,16 @@ class ClusterLocation (models.Model):
     '''
     clusters are specific to country - cluster head - major sections of the country
     '''
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     cluster_id = models.CharField(verbose_name="cluster-name", max_length=2)
     world_location = models.ForeignKey(CountryLocation, on_delete=models.CASCADE, related_name="clusters")
-    cluster_description = models.TextField(blank=True, null=True)
+    cluster_description = models.TextField(blank=True, null=True, help_text="description of the cluster location", max_length=400)
     active = models.BooleanField(verbose_name="is-active-cluster", default=True)
     number_of_parishes = models.IntegerField(verbose_name="number-of-parish-communities", default=0)
     established_date = models.DateField(verbose_name="established-date", blank=True, null=True, auto_now_add=True)
   
     def __str__(self):
+        self.cluster_id = slugify(self.cluster_id.upper().strip())
         return f"{str(self.world_location)} -> Cluster {self.cluster_id}"
     
 MAX_LENGTH_LOCATION_ID = 20
@@ -115,10 +117,12 @@ class ChapterLocation (models.Model):
         unique_together = ("chapter_name", "cluster")
         
     def save(self, *args, **kwargs):
-        
         if not self.chapter_id:
+            super().save(*args, **kwargs)
             chapter_id = slugify(self.chapter_code).upper() # SOE-D20FAG2FSDS
             self.chapter_id = chapter_id + str(self.id)[:MAX_LENGTH_LOCATION_ID - len(chapter_id)]
+            
+        self.chapter_name = slugify(self.chapter_name.capitalize().strip())
         super().save(*args, **kwargs)
     
     def __str__(self):
@@ -131,7 +135,7 @@ class UnitLocation (models.Model):
     '''
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)    
     unit_id = models.CharField(verbose_name="unit-id", blank=True, null=True) # single letter/2
-    unit_name = models.CharField(verbose_name="unit name", max_length=2)
+    unit_name = models.CharField(verbose_name="unit name", max_length=2, default="A")
     chapter = models.ForeignKey(ChapterLocation, on_delete=models.CASCADE, related_name="units")
  
     class Meta:
@@ -142,7 +146,7 @@ class UnitLocation (models.Model):
         if not self.unit_id: # E.G. D-SOUTHEAST-D20FAG2FSDS
             unit_id = slugify(self.unit_name + "-" + self.chapter.chapter_name).upper() 
             self.unit_id = unit_id + str(self.id)[:MAX_LENGTH_LOCATION_ID - len(unit_id)]
-          
+        self.unit_name = slugify(self.unit_name.upper().strip())
         super().save(*args, **kwargs)
     
     def __str__(self):
@@ -154,33 +158,32 @@ class AreaLocation (models.Model):
     
     Generally represents an Area where events are regularly held.
     '''
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)    
-    area_id = models.CharField(verbose_name="area-id", blank=True, null=True)
-    area_name = models.CharField(verbose_name="name-of-area", max_length=150)
-    area_code = models.CharField(verbose_name="area-code", max_length=3, unique=True, null=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False) # DB primary key
+    area_id = models.CharField(verbose_name="area-id", blank=True, null=True) # unique area identifier (readable)
+    area_name = models.CharField(verbose_name="name-of-area", max_length=150) # verbose and nice name
+    area_code = models.CharField(verbose_name="area-code", max_length=3, unique=True, null=True) # for id purposes
+    
     unit = models.ForeignKey(UnitLocation, on_delete=models.CASCADE, related_name="areas")
-    general_address = models.CharField(max_length=100, help_text="general postcode/address")
-    location_description = models.TextField(blank=True, null=True)
+    general_address = models.CharField(max_length=50, help_text="general postcode/address", blank=True, null=True)
+    location_description = models.TextField(blank=True, null=True, help_text="description of the area location", max_length=400)
     
-    active_members = models.IntegerField(verbose_name="number-of-active-members", default=0)
+    active_members = models.IntegerField(verbose_name="number-of-active-members", default=0, help_text="Number of active members in this area", 
+                                         validators=[validators.MinValueValidator(0)]
+                                         )
     active = models.BooleanField(verbose_name="is-active-area", default=True)
-    parish_communities = models.IntegerField(verbose_name="number-of-parish-communities", default=0)
-    #? Add m2m field to show which users are incharge of this area or have a flag on the user model to show they are incharge of this area?
-    #? Or have a separate model that links users to areas they are incharge of?
-    # this is also the same for each location
-    # well user model already has a role field, so can just use that to filter users by role and area they are incharge of.
-    
+    parish_communities = models.IntegerField(verbose_name="number-of-parish-communities", default=0, help_text="Number of parish communities in this area", 
+                                             validators=[validators.MinValueValidator(0)]
+                                             )    
     class Meta:
         unique_together = ("area_name", "unit")
         
     def save(self, *args, **kwargs):
-        
         if not self.area_id:
             if not self.area_code: # populate area code if not provided, but it is mandatory to set anyway
                 self.area_code = self.area_name.upper()[:3]
             area_id = slugify(self.area_code + "-" + self.unit.chapter.chapter_name).upper() # E.G. FRM-SOUTHEAST-D20FAG2FSDS
             self.area_id = area_id + str(self.id)[:MAX_LENGTH_LOCATION_ID - len(area_id)]
-        self.area_name = slugify(self.area_name.lower().strip())
+        self.area_name = slugify(self.area_name.capitalize().strip())
         super().save(*args, **kwargs)
     
     def __str__(self):
@@ -198,7 +201,7 @@ class SearchAreaSupportLocation (models.Model):
     relative_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, null=True, related_name="relative_search_areas")
     
     def save(self, *args, **kwargs):
-        self.name = self.name.lower().strip()
+        self.name = slugify(self.name.capitalize().strip())
         return super().save(*args, **kwargs)
 
 class EventVenue (models.Model):
@@ -222,8 +225,8 @@ class EventVenue (models.Model):
     general_area = models.ForeignKey(AreaLocation, on_delete=models.SET_NULL, verbose_name=_("community general area"), related_name="event_venues", null=True, blank=True)
     primary_venue = models.BooleanField(verbose_name=_("is primary venue"), default=True, blank=True, null=True)
     
-    contact_phone_number = models.CharField(verbose_name=_("contact phone number"), max_length=15, blank=True, null=True)
-    contact_email = models.EmailField(verbose_name=_("contact email"), blank=True, null=True)
+    contact_phone_number = models.CharField(verbose_name=_("contact phone number"), max_length=15, blank=True, null=True, validators=[validators.MinLengthValidator(3), validators.MaxLengthValidator(20)])
+    contact_email = models.EmailField(verbose_name=_("contact email"), blank=True, null=True, validators=[validators.EmailValidator()])
     
     def __str__(self):
         return f"{self.name} ({self.venue_type})"
@@ -237,5 +240,6 @@ class EventVenue (models.Model):
         # ensure there is only one main venue
         if self.venue_type == self.VenueType.MAIN_VENUE and self.primary_venue:
             EventVenue.objects.filter(general_area=self.general_area, primary_venue=True).update(primary_venue=False)
+        self.name = slugify(self.name.capitalize().strip())
         return super().save(force_insert=force_insert, force_update=force_update, using=using, update_fields=update_fields)
 

@@ -4,6 +4,7 @@ from django.core import validators
 from django.conf import settings
 from django.forms import ValidationError
 from django.utils.translation import gettext_lazy as _
+from django.utils.text import slugify
 
 from .location_models import (
     AreaLocation, ChapterLocation, EventVenue)
@@ -24,9 +25,8 @@ class EventResource(models.Model):
         SOCIAL_MEDIA = "SOCIAL_MEDIA", _("Social Media")
 
     id = models.UUIDField(verbose_name=_("resource id"), default=uuid.uuid4, editable=False, primary_key=True)
-    resource_name = models.CharField(verbose_name=_("public resource name"))
-    # types
-    resource_link = models.CharField(verbose_name=_("public resource link"), blank=True, null=True)
+    resource_name = models.CharField(verbose_name=_("public resource name"), max_length=200)
+    resource_link = models.CharField(verbose_name=_("public resource link"), blank=True, null=True, validators=[validators.URLValidator()])
     resource_file = models.FileField(verbose_name=("file resource"), upload_to="public-event-file-resources", blank=True, null=True)
     image = models.FileField(verbose_name=("image resource"), upload_to="public-event-image-resources", blank=True, null=True)
     
@@ -47,6 +47,11 @@ class EventResource(models.Model):
     # if used for events, can be gatekept until data is available
     release_date = models.DateTimeField(verbose_name=_("resource release date"), blank=True, null=True)
     expiry_date = models.DateTimeField(verbose_name=_("resource expiry date"), blank=True, null=True)
+    
+    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
+        self.resource_name = slugify(self.resource_name.strip().capitalize()) if self.resource_name else None
+        self.word_descriptor = slugify(self.word_descriptor.strip().capitalize()) if self.word_descriptor else None
+        return super().save(force_insert, force_update, using, update_fields)
     
 
 class Event(models.Model):
@@ -118,7 +123,7 @@ class Event(models.Model):
     ])
     theme = models.CharField(_("event theme"), max_length=200, blank=True, null=True)
     anchor_verse = models.CharField(_("anchor verse"), max_length=200, blank=True, null=True)
-    age_range = models.CharField(_("age range"), max_length=100, blank=True, null=True, help_text=_("E.g. 11-30"))
+    age_range = models.CharField(_("age range"), max_length=20, blank=True, null=True, help_text=_("E.g. 11-30"))
     expected_attendees = models.IntegerField(_("expected attendees"), blank=True, null=True, default=0, validators=[
         validators.MinValueValidator(0)
     ])
@@ -256,7 +261,7 @@ class Event(models.Model):
     status = models.CharField(_("event status"), max_length=20, choices=EventStatus.choices, default=EventStatus.PLANNING)  
     
     auto_approve_participants = models.BooleanField(verbose_name=_("auto approve participants"), default=False)
-    # to integrate with OGD system    
+    
     required_existing_id = models.BooleanField(default=False, help_text=_("Upon registration, the user must enter a specific ID that is linked to another system E.g. OGD"))
     format_verifier = models.CharField(max_length=100, blank=True, null=True, help_text=_("For requiring existing id, this can be used to match a given format I.e. %%%%-%%%%-%%%%"))
     existing_id_name = models.CharField(max_length=100, blank=True, null=True, help_text=_("existing name for this id E.g. Members-ID"))
@@ -331,10 +336,7 @@ class Event(models.Model):
             if not self.name_code:
                 self.name_code = self.name.upper()[:MAX_LENGTH_EVENT_NAME_CODE]
             self.event_code = f"{self.get_event_type_display()}{str(self.start_date.year)}{self.name_code}"
-            
-        # if not self.duration_days and self.start_date and self.end_date:
-        #     self.duration_days = (self.end_date - self.start_date).days + 1
-        
+                    
         return super().save(*args, **kwargs)
     
     def __str__(self):
@@ -932,7 +934,7 @@ class EventRole(models.Model):
         verbose_name = _("Event Role")
         verbose_name_plural = _("Event Roles")
         ordering = ['role_name']
-    
+            
     def __str__(self):
         return self.get_role_name_display()
 
@@ -964,7 +966,7 @@ class EventRoleDiscount(models.Model):
         blank=True,
         null=True,
         verbose_name=_("registration discount type"),
-        help_text=_("Discount type for registration for this role in this event")
+        help_text=_("Discount type for registration for this role in this event"),
     )
     registration_discount_value = models.DecimalField(
         max_digits=10,
@@ -1157,7 +1159,7 @@ class EventParticipant(models.Model):
     news_letter_consent = models.BooleanField(default=False)
 
     # Payment information (if applicable)
-    paid_amount = models.DecimalField(_("paid amount"), max_digits=10, decimal_places=2, default=0.00)
+    paid_amount = models.DecimalField(_("paid amount"), max_digits=10, decimal_places=2, default=0.00, validators=[validators.MinValueValidator(0)])
     payment_date = models.DateTimeField(_("most recent payment date"), blank=True, null=True)
     
     notes = models.TextField(_("notes"), blank=True, null=True)
@@ -1226,10 +1228,10 @@ class EventParticipant(models.Model):
     
 
 # EVENT PROPER MODELS
-    
+
 class EventTalk(models.Model):
     '''
-    Represents talks/sessions within an event
+    !NOT IN USE
     '''
     class TalkType(models.TextChoices):
         TALK = "TALK", _("Talk")
@@ -1279,7 +1281,7 @@ class EventTalk(models.Model):
 
 class EventWorkshop(models.Model):
     '''
-    Represents workshops within an event
+    !NOT IN USE
     '''
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

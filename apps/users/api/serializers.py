@@ -322,9 +322,9 @@ class CommunityUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunityUser
         fields = ('member_id','roles', 'id', 'username', 'full_name', 'short_name','password', 'first_name', 'last_name', 'middle_name', 'preferred_name',
-                  'primary_email', 'secondary_email', 'phone_number', 'address_line_1', 'address_line_2', 'postcode', 'area_from',
+                  'primary_email', 'secondary_email', 'phone_number', 'area_from',
                   'emergency_contacts', 'alergies', 'medical_conditions', "is_encoder", "is_active", "date_of_birth", 
-                  'gender', 'age', 'marital_status', 'blood_type', 'ministry', 
+                  'gender', 'age', 'ministry', 
                   'profile_picture', 'profile_picture_uploaded_at', 'last_login', 'user_uploaded_at',
                   "chapter", "cluster", "area_from_display", "area_full_display",
                   # Write-only nested data fields
@@ -645,17 +645,12 @@ class CommunityUserSerializer(serializers.ModelSerializer):
                 "gender": rep.get("gender"),
                 "age": rep.get("age"),
                 "date_of_birth": rep.get("date_of_birth"),
-                "marital_status": rep.get("marital_status"),
-                "blood_type": rep.get("blood_type"),
             },
             "contact": {
                 "primary_email": rep.get("primary_email"),
                 "secondary_email": rep.get("secondary_email"),
                 "phone_number": rep.get("phone_number"),
                 "address": {
-                    "line1": rep.get("address_line_1"),
-                    "line2": rep.get("address_line_2"),
-                    "postcode": rep.get("postcode"),
                     "area_from": rep.get("area_from"),
                     "area_from_display": rep.get("area_from_display"),
                     "area_full_display": rep.get("area_full_display"),
@@ -727,17 +722,14 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
         fields = (
             'first_name', 'last_name', 'middle_name', 'preferred_name',
             'primary_email', 'secondary_email', 'phone_number',
-            'address_line_1', 'address_line_2', 'postcode',
             'area_from', 'area_from_id', 'gender', 'date_of_birth',
-            'marital_status', 'blood_type', 'ministry', 'profile_picture',
+            'ministry', 'profile_picture',
             'emergency_contacts_data', 'allergies_data', 'medical_conditions_data'
         )
         extra_kwargs = {
             'area_from': {'read_only': True},
             'profile_picture': {'required': False},
             'gender': {'required': False, 'allow_null': True},
-            'marital_status': {'required': False, 'allow_null': True},
-            'blood_type': {'required': False, 'allow_null': True},
             'ministry': {'required': False},
         }
     
@@ -778,7 +770,7 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
         
         # Normalize empty string choices to None or skip
         # Only pop if the value is truly empty (empty string, None, or whitespace-only)
-        for choice_field in ['gender', 'marital_status', 'blood_type', 'ministry']:
+        for choice_field in ['gender', 'ministry']:
             if choice_field in attrs:
                 value = attrs[choice_field]
                 # Check if value is None, empty string, or whitespace-only string
@@ -865,7 +857,7 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
         """
         Accept nested payloads from the frontend in the same shape as the read representation:
         - identity.name.{first,last,middle,preferred}
-        - identity.{gender,date_of_birth,marital_status,blood_type}
+        - identity.{gender,date_of_birth}
         - contact.{primary_email,secondary_email,phone_number}
         - contact.address.{line1,line2,postcode,area_from}
         - community.{ministry}
@@ -887,7 +879,7 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
                 if 'preferred' in name:
                     data['preferred_name'] = name.get('preferred')
 
-            for k in ['gender', 'date_of_birth', 'marital_status', 'blood_type']:
+            for k in ['gender', 'date_of_birth']:
                 if k in identity:
                     data[k] = identity.get(k)
 
@@ -900,13 +892,6 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
 
             address = contact.get('address') or {}
             if isinstance(address, dict):
-                # map to model fields
-                if 'line1' in address:
-                    data['address_line_1'] = address.get('line1')
-                if 'line2' in address:
-                    data['address_line_2'] = address.get('line2')
-                if 'postcode' in address:
-                    data['postcode'] = address.get('postcode')
                 # area selection can be provided as numeric id
                 if 'area_from' in address and address.get('area_from') not in [None, '', 'null']:
                     data['area_from_id'] = address.get('area_from')
