@@ -919,7 +919,7 @@ class EventRole(models.Model):
         COMPETITIONS = "COMPETITIONS", _("Competitions")
         PROMOTIIONS = "PROMOTIONS", _("Promotions")
         DOCUMENTATION = "DOCUMENTATION", _("Documentation")      
-        EVENT_HEADS = "EVENT_HEADS", _("Event_heads")
+        EVENT_HEADS = "EVENT_HEADS", _("Event Heads")
         GENERAL_SERVICES = "GENERAL_SERVICES", _("General Services")
         CATERING = "CATERING", _("Catering")
         
