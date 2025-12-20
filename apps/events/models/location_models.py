@@ -83,9 +83,12 @@ class ClusterLocation (models.Model):
     active = models.BooleanField(verbose_name="is-active-cluster", default=True)
     number_of_parishes = models.IntegerField(verbose_name="number-of-parish-communities", default=0)
     established_date = models.DateField(verbose_name="established-date", blank=True, null=True, auto_now_add=True)
+    
+    def save(self, *args, **kwargs):
+        self.cluster_id = slugify(self.cluster_id).upper().strip()
+        return super().save(*args, **kwargs)
   
     def __str__(self):
-        self.cluster_id = slugify(self.cluster_id.upper().strip())
         return f"{str(self.world_location)} -> Cluster {self.cluster_id}"
     
 MAX_LENGTH_LOCATION_ID = 20
@@ -146,7 +149,7 @@ class UnitLocation (models.Model):
         if not self.unit_id: # E.G. D-SOUTHEAST-D20FAG2FSDS
             unit_id = slugify(self.unit_name + "-" + self.chapter.chapter_name).upper() 
             self.unit_id = unit_id + str(self.id)[:MAX_LENGTH_LOCATION_ID - len(unit_id)]
-        self.unit_name = slugify(self.unit_name.upper().strip())
+        self.unit_name = slugify(self.unit_name).upper().strip()
         super().save(*args, **kwargs)
     
     def __str__(self):
@@ -183,7 +186,7 @@ class AreaLocation (models.Model):
                 self.area_code = self.area_name.upper()[:3]
             area_id = slugify(self.area_code + "-" + self.unit.chapter.chapter_name).upper() # E.G. FRM-SOUTHEAST-D20FAG2FSDS
             self.area_id = area_id + str(self.id)[:MAX_LENGTH_LOCATION_ID - len(area_id)]
-        self.area_name = slugify(self.area_name.capitalize().strip())
+        self.area_name = slugify(self.area_name).capitalize().strip()
         super().save(*args, **kwargs)
     
     def __str__(self):

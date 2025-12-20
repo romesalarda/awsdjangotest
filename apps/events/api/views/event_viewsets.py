@@ -713,14 +713,14 @@ class EventViewSet(viewsets.ModelViewSet):
                         errors.append({'error': 'role_id is required', 'data': discount_data})
                         continue
                     
-                    incoming_role_ids.add(int(role_id))
+                    incoming_role_ids.add(role_id)
                     
                     # If ID is provided, update existing
                     if discount_id:
-                        incoming_discount_ids.add(int(discount_id))
+                        incoming_discount_ids.add(discount_id)
                         try:
                             role_discount = EventRoleDiscount.objects.get(id=discount_id, event=event)
-                            role_discount.role_id = role_id
+                            role_discount.role = get_object_or_404(EventRole, id=role_id)
                             role_discount.registration_discount_type = discount_data.get('registration_discount_type')
                             role_discount.registration_discount_value = discount_data.get('registration_discount_value', 0)
                             role_discount.product_discount_type = discount_data.get('product_discount_type')

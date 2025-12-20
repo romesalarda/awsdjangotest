@@ -48,12 +48,11 @@ class EventResource(models.Model):
     release_date = models.DateTimeField(verbose_name=_("resource release date"), blank=True, null=True)
     expiry_date = models.DateTimeField(verbose_name=_("resource expiry date"), blank=True, null=True)
     
-    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
-        self.resource_name = slugify(self.resource_name.strip().capitalize()) if self.resource_name else None
-        self.word_descriptor = slugify(self.word_descriptor.strip().capitalize()) if self.word_descriptor else None
-        return super().save(force_insert, force_update, using, update_fields)
+    def save(self, *args, **kwargs):
+        self.resource_name = slugify(self.resource_name).strip().capitalize() if self.resource_name else None
+        self.word_descriptor = slugify(self.word_descriptor).strip().capitalize() if self.word_descriptor else None
+        return super().save(*args, **kwargs)
     
-
 class Event(models.Model):
     '''
     Represents various types of events in the YFC Community
@@ -332,6 +331,7 @@ class Event(models.Model):
     
     
     def save(self, *args, **kwargs):
+        self.name = self.name.strip().replace(" ", "-") if self.name else None
         if not self.event_code:
             if not self.name_code:
                 self.name_code = self.name.upper()[:MAX_LENGTH_EVENT_NAME_CODE]

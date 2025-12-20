@@ -30,9 +30,9 @@ class Organisation(models.Model):
     email = models.CharField(verbose_name=_("organsiation email"), max_length=100, blank=True, null=True, validators=[validators.EmailValidator()])
     external_link = models.CharField(verbose_name=_("organsiation website link"), max_length=100, blank=True, null=True, validators=[validators.URLValidator()])
     
-    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
-        self.name = slugify(self.name.capitalize().strip())
-        return super().save(force_insert, force_update, using, update_fields)
+    def save(self, *args, **kwargs):
+        self.name = self.name.strip()
+        return super().save(*args, **kwargs)
     
     def __str__(self):
         return self.name
@@ -48,9 +48,9 @@ class OrganisationSocialMediaLink(models.Model):
     description = models.CharField(verbose_name=_("organisation description"), blank=True, null=True)
     organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name="social_media_links")
     
-    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
+    def save(self, *args, **kwargs):
         self.name = slugify(self.name.capitalize().strip())
-        return super().save(force_insert, force_update, using, update_fields)
+        return super().save(*args, **kwargs)
     
     def __str__(self):
         return "(%s) %s" % (self.organisation.name, self.name)

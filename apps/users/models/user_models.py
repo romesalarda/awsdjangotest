@@ -234,7 +234,8 @@ class CommunityRole(models.Model):
         max_length=20,  # FIXED: Added max_length
         choices=RoleType.choices,  # FIXED: Added .choices
         default=RoleType.MEMBER,
-        verbose_name=_("role name")
+        verbose_name=_("role name"),
+        unique=True
     )
     
     role_description = models.TextField(

@@ -168,9 +168,9 @@ class EventPaymentPackage(models.Model):
     def __str__(self):
         return f"{self.name} - {self.price} {self.currency.upper()}"
     
-    def save(self, force_insert = ..., force_update = ..., using = ..., update_fields = ...):
-        self.name = slugify(self.name.capitalize().strip())
-        return super().save(force_insert, force_update, using, update_fields)
+    def save(self, *args, **kwargs):
+        self.name = slugify(self.name).strip().capitalize()
+        return super().save(*args, **kwargs)
     
     def get_user_discounted_price(self, user):
         """

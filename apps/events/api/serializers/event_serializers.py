@@ -1094,6 +1094,7 @@ class EventSerializer(serializers.ModelSerializer):
                         'currency': package_data.get('currency', 'GBP').lower(),
                         'capacity': package_data.get('capacity'),
                         'is_active': package_data.get('is_active', True),
+                        'whats_included': package_data.get('whats_included', '')
                     }
                     
                     # Handle datetime conversion for available_from
