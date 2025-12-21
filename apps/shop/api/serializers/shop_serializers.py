@@ -454,12 +454,15 @@ class EventProductSerializer(serializers.ModelSerializer):
         # print(f"DEBUG UPDATE - Instance: {instance.title} (ID: {instance.uuid})")
         # print(f"DEBUG UPDATE - Validated data keys: {list(validated_data.keys())}")
         # print(f"DEBUG UPDATE - Validated data: {validated_data}")
-
+        print(validated_data)
         image_uploads = validated_data.pop('image_uploads', None)
         size_list_raw = validated_data.pop('size_list', None)
         category_ids_raw = validated_data.pop('category_ids', None)
         material_ids_raw = validated_data.pop('material_ids', None)
-
+        try:
+            size_quantities_raw = json.loads(validated_data.pop('size_quantities', None)) # NEW
+        except KeyError:
+            size_quantities_raw = {}
         # print(f"DEBUG UPDATE - Extracted data: images={len(image_uploads) if image_uploads else 0}, sizes={size_list_raw}, categories={category_ids_raw}, materials={material_ids_raw}")
 
         # Parse JSON strings
@@ -540,6 +543,7 @@ class EventProductSerializer(serializers.ModelSerializer):
             }
 
             print(f"DEBUG UPDATE - Creating {len(size_list)} new sizes: {size_list}")
+            new_stock = 0
             for size_name in size_list:
                 size_key = size_name.strip().upper().replace(' ', '_')
                 print(f"DEBUG UPDATE - Processing size: '{size_name}' -> '{size_key}'")
@@ -549,7 +553,8 @@ class EventProductSerializer(serializers.ModelSerializer):
                     ProductSize.objects.create(product=product, size=ProductSize.Sizes.MEDIUM)
                     print(f"DEBUG UPDATE - Created One Size as MEDIUM")
                 elif size_key in size_mapping:
-                    ProductSize.objects.create(product=product, size=size_mapping[size_key])
+                    quantity = size_quantities_raw.get(size_name, 0) if size_quantities_raw else 0  # NEW
+                    ProductSize.objects.create(product=product, size=size_mapping[size_key], quantity=quantity)
                     print(f"DEBUG UPDATE - Created size: {size_mapping[size_key]}")
                 else:
                     # Default fallback

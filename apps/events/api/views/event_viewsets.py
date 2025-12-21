@@ -3839,6 +3839,15 @@ class EventViewSet(viewsets.ModelViewSet):
             name_warnings = self._check_name_similarity(first_name, last_name, user_id)
             if name_warnings:
                 warnings['name_similarity'] = name_warnings
+                
+        # area_id = data.get('area_id')
+        # if not area_id:
+        #     errors['area_id'] = 'Area selection is required'
+        # else:
+        #     try:
+        #         area = AreaLocation.objects.get(area_name=area_id)
+        #     except AreaLocation.DoesNotExist:
+        #         errors['area_id'] = 'Selected area does not exist'
         
         return Response({
             'valid': len(errors) == 0,

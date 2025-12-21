@@ -133,14 +133,20 @@ class EventCartViewSet(viewsets.ModelViewSet):
     ordering = ["-created"]
     
     @action(detail=True, methods=['post'], url_name='add', url_path='add')
-    def add_to_cart(self, request, *args, **kwargs):
+    def add_to_cart(self, request, pk, *args, **kwargs):
         '''
         Bulk add products to the cart with max purchase validation and stock locking.
         E.g. {"products": [{"product_id": "uuid1", "quantity": 2, "size": "M"}, {"product_id": "uuid2", "quantity": 1}]}
         
         SECURITY: Only staff and superusers can add products to carts.
         '''
-        cart: EventCart = self.get_object()
+        #! Critical issue, 1, not enough info passed to this method to validate the cart, large issue arrises if a cart isnt created when a user is added to an event
+        if EventCart.objects.filter(user=request.user, cart_status=EventCart.CartStatus.LOCKED).exists():
+            raise serializers.ValidationError("You have a locked cart for this event. Please complete or wait for it to expire before adding more products.")
+        
+        
+        cart, created = EventCart.objects.get_or_create(user=request.user, )
+        
         
         # Security check: Only staff/superusers can add products to carts
         # if not (request.user.is_staff or request.user.is_superuser):

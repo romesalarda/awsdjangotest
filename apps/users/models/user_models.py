@@ -157,7 +157,7 @@ class CommunityUser(AbstractBaseUser, PermissionsMixin):
             counter += 1
                 
         # Calculate age from date of birth if provided
-        if self.date_of_birth and not self.age:
+        if self.date_of_birth:
             today = datetime.date.today()
             self.age = today.year - self.date_of_birth.year - (
                 (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day)
