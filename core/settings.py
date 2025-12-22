@@ -55,6 +55,7 @@ SSM_PARAM_SUFFIX = "/prod/amdg/v1/"
 
 # Check if we should use SSM or environment variables
 USE_SSM = False
+_FORCE_NO_SSM = True
 ssm_client = None
 _SECRET_CACHE = {}  # In-memory cache for secrets loaded at startup
 
@@ -72,18 +73,21 @@ REQUIRED_SECRETS = [
     'AWS_STORAGE_BUCKET_NAME',
     'AWS_S3_REGION_NAME',
 ]
+if _FORCE_NO_SSM:
+    try:
 
-try:
-    # Try to initialize SSM client and verify AWS credentials
-    ssm_client = boto3.client('ssm', region_name='eu-west-2')
-    sts = boto3.client('sts')
-    sts.get_caller_identity()  # This will raise an exception if credentials are invalid
-    # USE_SSM = True 
-    print("### Using AWS SSM for secrets ###")
-except (NoCredentialsError, Exception) as e:
-    print(f"### AWS SSM not available ({type(e).__name__}), using environment variables ###")
-    USE_SSM = False
-
+        # Try to initialize SSM client and verify AWS credentials
+        ssm_client = boto3.client('ssm', region_name='eu-west-2')
+        sts = boto3.client('sts')
+        sts.get_caller_identity()  # This will raise an exception if credentials are invalid
+        # USE_SSM = True 
+        print("### Using AWS SSM for secrets ###")
+    except (NoCredentialsError, Exception) as e:
+        print(f"### AWS SSM not available ({type(e).__name__}), using environment variables ###")
+        USE_SSM = False
+else:
+    print("### WARNING: Forced to NOT use AWS SSM, using environment variables ###")
+    
 def _chunked(iterable, size=10):
     for i in range(0, len(iterable), size):
         yield iterable[i:i + size]

@@ -79,11 +79,26 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             verified=True,
             status=EventPayment.PaymentStatus.SUCCEEDED
         ).count()
+        verified_product_payments = ProductPayment.objects.filter(
+            cart__event=event,
+            approved=True,
+            status=ProductPayment.PaymentStatus.SUCCEEDED
+        ).count()
+        verified_payments += verified_product_payments
+        
+        # Pending payments
+        
         pending_payments = EventPayment.objects.filter(
             event=event,
             verified=False,
             status__in=[EventPayment.PaymentStatus.SUCCEEDED, EventPayment.PaymentStatus.PENDING]
         ).count()
+        pending_product_payments = ProductPayment.objects.filter(
+            cart__event=event,
+            approved=False,
+            status__in=[ProductPayment.PaymentStatus.SUCCEEDED, ProductPayment.PaymentStatus.PENDING]
+        ).count()
+        pending_payments += pending_product_payments
         
         # Calculate average payment
         average_payment = Decimal('0.00')
@@ -300,6 +315,7 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
         if include_pending:
             product_payment_filter &= Q(status__in=[
                 ProductPayment.PaymentStatus.SUCCEEDED,
+                ProductPayment.PaymentStatus.PENDING,
                 ProductPayment.PaymentStatus.REFUND_PROCESSING,
                 ProductPayment.PaymentStatus.REFUNDED
             ])
@@ -312,9 +328,9 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             verified_amount=Coalesce(Sum('amount', filter=Q(approved=True, 
                                                             status__in=[ProductPayment.PaymentStatus.SUCCEEDED]
                                                             )), Decimal('0.00')),
-            pending_amount=Coalesce(Sum('amount', filter=Q(approved=False)), Decimal('0.00'))
+            pending_amount=Coalesce(Sum('amount', filter=Q(approved=False) | Q(status__in=[ProductPayment.PaymentStatus.PENDING])), Decimal('0.00'))
         )
-        
+                
         # Donations
         donation_filter = Q(event=event)
         if include_pending:
@@ -388,25 +404,22 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             product_payments['total'] +
             donations['total']
         )
-        
-        total_refund_processed = participant_refunds['processed_amount'] + order_refunds['processed_amount']
-        net_revenue = gross_revenue - total_refund_processed
-        
-        # Verified revenue = verified payments - refunds on verified payments only
         total_verified_before_refunds = (
             event_payments['verified_amount'] +
             product_payments['verified_amount'] +
             donations['verified_amount']
         )
-        print(total_verified_before_refunds)
-        print(participant_refunds_on_verified, order_refunds_on_approved)
         total_verified = total_verified_before_refunds - (participant_refunds_on_verified + order_refunds_on_approved)
-        
+        total_refund_processed = participant_refunds['processed_amount'] + order_refunds['processed_amount']
         total_pending = (
-            event_payments['pending_amount'] +
-            product_payments['pending_amount'] +
-            donations['pending_amount']
-        )
+                    event_payments['pending_amount'] +
+                    product_payments['pending_amount'] +
+                    donations['pending_amount']
+                )
+        
+        net_revenue = gross_revenue - total_refund_processed - total_pending
+        
+        # Verified revenue = verified payments - refunds on verified payments only
         
         return {
             'event_registration_revenue': event_payments['total'],
@@ -425,7 +438,7 @@ class PaymentOverviewViewSet(viewsets.ViewSet):
             'total_refunds': participant_refunds['total'] + order_refunds['total'],
             'refund_count': participant_refunds['count'] + order_refunds['count'],
             'processed_refunds': total_refund_processed,
-            'pending_refunds': participant_refunds['pending_amount'] + order_refunds['pending_amount'],
+            'pending_refunds': participant_refunds['pending_amount'] + order_refunds['pending_amount'] + product_payments['pending_amount'],
             # Participant refunds breakdown
             'participant_refunds': participant_refunds['total'],
             'participant_refund_count': participant_refunds['count'],

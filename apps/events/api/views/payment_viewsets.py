@@ -64,6 +64,7 @@ class EventPaymentViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(payment)
         participant.status = EventParticipant.ParticipantStatus.CONFIRMED
+        participant.verified = True
         participant.save()
         return Response({
             "status": "payment verified",

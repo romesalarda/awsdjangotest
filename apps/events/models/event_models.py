@@ -1214,7 +1214,7 @@ class EventParticipant(models.Model):
                 self.id = uuid.uuid4()
                 self.event_pax_id = f"{self.event.event_code}-{self.id}".upper()
             if len(self.event_pax_id) > 20:
-                self.event_pax_id = self.event_pax_id[:20]  
+                self.event_pax_id = self.event_pax_id[:20]                  
         super().save(*args, **kwargs)
         
     @property

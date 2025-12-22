@@ -132,6 +132,14 @@ class EventCartViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created", "total", "shipping_cost"]
     ordering = ["-created"]
     
+    @action(detail=False, methods=['get'], url_name='my-cart', url_path='my-cart')
+    def my_cart(self, request):
+        event_id = request.query_params.get('event')
+        if not event_id:
+            raise serializers.ValidationError("Event parameter is required to retrieve your cart.")
+        cart = get_object_or_404(EventCart, user=request.user, active=True, submitted=False, event__pk=event_id)
+        return Response(self.get_serializer(cart).data)
+    
     @action(detail=True, methods=['post'], url_name='add', url_path='add')
     def add_to_cart(self, request, pk, *args, **kwargs):
         '''
@@ -142,20 +150,10 @@ class EventCartViewSet(viewsets.ModelViewSet):
         '''
         #! Critical issue, 1, not enough info passed to this method to validate the cart, large issue arrises if a cart isnt created when a user is added to an event
         if EventCart.objects.filter(user=request.user, cart_status=EventCart.CartStatus.LOCKED).exists():
-            raise serializers.ValidationError("You have a locked cart for this event. Please complete or wait for it to expire before adding more products.")
+            raise serializers.ValidationError({"error": "You have a locked cart for this event. Please complete or wait for it to expire before adding more products."})
         
+        cart, created = EventCart.objects.get_or_create(user=request.user, cart__pk=pk, active=True, submitted=False)
         
-        cart, created = EventCart.objects.get_or_create(user=request.user, )
-        
-        
-        # Security check: Only staff/superusers can add products to carts
-        # if not (request.user.is_staff or request.user.is_superuser):
-        #     raise exceptions.PermissionDenied(
-        #         "Only administrators can add products to carts. "
-        #         "If you need items added to your cart, please contact the event service team."
-        #     )
-        
-        # Additional check: ensure authorized user is modifying the cart
         self.check_object_permissions(request, cart)
         
         # Check if user can purchase merch for this event

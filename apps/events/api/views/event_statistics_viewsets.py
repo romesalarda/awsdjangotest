@@ -201,7 +201,8 @@ class EventStatisticsViewSet(viewsets.ViewSet):
             
             # Get all product orders for this event
             product_orders = EventProductOrder.objects.filter(
-                cart__event=event
+                cart__event=event,
+                status__in=[EventProductOrder.Status.PURCHASED, EventProductOrder.Status.PENDING]
             ).select_related('product', 'size').values(
                 'product__title',
                 'product__uuid',
@@ -315,7 +316,8 @@ class EventStatisticsViewSet(viewsets.ViewSet):
             
             # Merch stats
             total_merch_orders = EventProductOrder.objects.filter(
-                cart__event=event
+                cart__event=event,
+                status=EventProductOrder.Status.PURCHASED
             ).count()
             
             participants_with_merch = EventParticipant.objects.filter(
