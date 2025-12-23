@@ -385,22 +385,22 @@ class DonationPaymentSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     amount_display = serializers.SerializerMethodField()
     participant_details = serializers.SerializerMethodField(read_only=True)
-    participant_user_email = serializers.CharField(source="user.user.primary_email", read_only=True)
+    # participant_user_email = serializers.CharField(source="user.user.primary_email", read_only=True)
     event_name = serializers.CharField(source="event.name", read_only=True)
     method_display = serializers.CharField(source="method.get_method_display", read_only=True)
 
     class Meta:
         model = DonationPayment
         fields = [
-            "id", "user", "participant_details", "participant_user_email", 
+            "id", "user", "participant_details", 
             "event", "event_name", "method", "method_display", 
-            "stripe_payment_intent", "amount", "amount_display", "currency", 
+            "amount", "amount_display", "currency", 
             "status", "status_display", "event_payment_tracking_number", 
             "bank_reference", "verified", "pay_to_event", 
             "paid_at", "created_at", "updated_at"
         ]
         read_only_fields = (
-            "id", "participant_details", "participant_user_email", 
+            "id", "participant_details", 
             "event_name", "method_display", "created_at", "updated_at"
         )
 
@@ -414,14 +414,27 @@ class DonationPaymentSerializer(serializers.ModelSerializer):
         Returns comprehensive participant information for donation tracking.
         """
         if obj.user and obj.user.user:
-            return {
+            user = obj.user.user
+            details = {
                 "participant_id": str(obj.user.id),
                 "event_pax_id": obj.user.event_pax_id,
-                "full_name": f"{obj.user.user.first_name} {obj.user.user.last_name}",
-                "email": obj.user.user.primary_email,
+                "full_name": f"{user.first_name} {user.last_name}",
+                "email": user.primary_email,
+                "phone": user.contact_number if hasattr(user, 'contact_number') else None,
                 "participant_type": obj.user.participant_type,
                 "status": obj.user.status,
+                "area": None,
+                "chapter": None,
             }
+            
+            # Add area and chapter information
+            if hasattr(user, 'area_from') and user.area_from:
+                details["area"] = user.area_from.area_name
+                if hasattr(user.area_from, 'unit') and user.area_from.unit:
+                    if hasattr(user.area_from.unit, 'chapter') and user.area_from.unit.chapter:
+                        details["chapter"] = user.area_from.unit.chapter.chapter_name
+            
+            return details
         return None
     
     def validate(self, attrs):
@@ -484,6 +497,8 @@ class DonationPaymentListSerializer(serializers.ModelSerializer):
     participant_name = serializers.SerializerMethodField()
     participant_email = serializers.CharField(source="user.user.primary_email", read_only=True)
     participant_event_pax_id = serializers.CharField(source="user.event_pax_id", read_only=True)
+    participant_area = serializers.SerializerMethodField()
+    participant_chapter = serializers.SerializerMethodField()
     
     event_name = serializers.CharField(source="event.name", read_only=True)
     payment_method = serializers.CharField(source="method.get_method_display", read_only=True)
@@ -496,8 +511,8 @@ class DonationPaymentListSerializer(serializers.ModelSerializer):
         model = DonationPayment
         fields = [
             "id", "participant_id", "participant_name", "participant_email", 
-            "participant_event_pax_id", "event_name",
-            "event_payment_tracking_number", "bank_reference",
+            "participant_event_pax_id", "participant_area", "participant_chapter",
+            "event_name", "event_payment_tracking_number", "bank_reference",
             "payment_method", "payment_method_type",
             "amount", "amount_display", "currency", 
             "status", "status_display", "verified", "pay_to_event",
@@ -509,6 +524,20 @@ class DonationPaymentListSerializer(serializers.ModelSerializer):
         if obj.user and obj.user.user:
             return f"{obj.user.user.first_name} {obj.user.user.last_name}"
         return "Unknown"
+    
+    def get_participant_area(self, obj):
+        """Get participant's area name"""
+        if obj.user and obj.user.user and hasattr(obj.user.user, 'area_from') and obj.user.user.area_from:
+            return obj.user.user.area_from.area_name
+        return None
+    
+    def get_participant_chapter(self, obj):
+        """Get participant's chapter name"""
+        if obj.user and obj.user.user and hasattr(obj.user.user, 'area_from') and obj.user.user.area_from:
+            area = obj.user.user.area_from
+            if hasattr(area, 'unit') and area.unit and hasattr(area.unit, 'chapter') and area.unit.chapter:
+                return area.unit.chapter.chapter_name
+        return None
     
     def get_amount_display(self, obj):
         """Format amount with currency symbol"""

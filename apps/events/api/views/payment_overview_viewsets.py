@@ -24,9 +24,11 @@ from apps.events.api.serializers.payment_overview_serializers import (
     RevenueBreakdownSerializer,
     PaymentMethodBreakdownSerializer,
     LocationPaymentBreakdownSerializer,
-    DonationListSerializer,
-    DonationDetailSerializer,
     DonationSummarySerializer
+)
+from apps.events.api.serializers.payment_serializers import (
+    DonationPaymentSerializer,
+    DonationPaymentListSerializer
 )
 from core.event_permissions import has_event_permission
 
@@ -823,7 +825,6 @@ class DonationViewSet(viewsets.ReadOnlyModelViewSet):
     ).all()
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    serializer_class = DonationDetailSerializer
     filterset_fields = {
         'event': ['exact'],
         'status': ['exact', 'in'],
@@ -845,6 +846,12 @@ class DonationViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ['amount', 'created_at', 'paid_at', 'status']
     ordering = ['-created_at']
     
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action"""
+        if self.action == 'list':
+            return DonationPaymentListSerializer
+        return DonationPaymentSerializer
+    
     def get_queryset(self):
         """Filter queryset based on permissions"""
         queryset = super().get_queryset()
@@ -865,22 +872,22 @@ class DonationViewSet(viewsets.ReadOnlyModelViewSet):
         return queryset
     
     def list(self, request, *args, **kwargs):
-        """List donations with serialized data"""
+        """List donations with proper serialization"""
         queryset = self.filter_queryset(self.get_queryset())
         
         page = self.paginate_queryset(queryset)
         if page is not None:
-            data = self._serialize_donations(page)
-            return self.get_paginated_response(data)
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         
-        data = self._serialize_donations(queryset)
-        return Response(data)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     
     def retrieve(self, request, *args, **kwargs):
         """Get detailed donation information"""
         instance = self.get_object()
-        data = self._serialize_donation_detail(instance)
-        return Response(data)
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
     
     @action(detail=False, methods=['get'], url_path='event/(?P<event_id>[^/.]+)/summary')
     def event_summary(self, request, event_id=None):
@@ -917,111 +924,3 @@ class DonationViewSet(viewsets.ReadOnlyModelViewSet):
         summary['currency'] = 'gbp'
         serializer = DonationSummarySerializer(summary)
         return Response(serializer.data)
-    
-    def _serialize_donations(self, queryset):
-        """Serialize donations for list view"""
-        data = []
-        for donation in queryset:
-            data.append({
-                'id': str(donation.id),
-                'donor_name': self._get_donor_name(donation),
-                'donor_email': self._get_donor_email(donation),
-                'amount': float(donation.amount),
-                'currency': donation.currency,
-                'payment_method': donation.method.get_method_display() if donation.method else 'Unknown',
-                'status': donation.status,
-                'status_display': donation.get_status_display(),
-                'verified': donation.verified,
-                'pay_to_event': donation.pay_to_event,
-                'tracking_number': donation.event_payment_tracking_number,
-                'created_at': donation.created_at,
-                'paid_at': donation.paid_at,
-                'participant_area': self._get_participant_area(donation),
-                'participant_chapter': self._get_participant_chapter(donation)
-            })
-        return data
-    
-    def _serialize_donation_detail(self, donation):
-        """Serialize donation for detail view"""
-        return {
-            'id': str(donation.id),
-            'donor_name': self._get_donor_name(donation),
-            'donor_email': self._get_donor_email(donation),
-            'donor_phone': self._get_donor_phone(donation),
-            'amount': float(donation.amount),
-            'currency': donation.currency,
-            'payment_method': donation.method.method if donation.method else None,
-            'payment_method_display': donation.method.get_method_display() if donation.method else 'Unknown',
-            'status': donation.status,
-            'status_display': donation.get_status_display(),
-            'verified': donation.verified,
-            'pay_to_event': donation.pay_to_event,
-            'tracking_number': donation.event_payment_tracking_number,
-            'bank_reference': donation.bank_reference,
-            'stripe_payment_intent': donation.stripe_payment_intent,
-            'created_at': donation.created_at,
-            'paid_at': donation.paid_at,
-            'updated_at': donation.updated_at,
-            'participant_details': self._get_participant_details(donation)
-        }
-    
-    def _get_donor_name(self, donation:DonationPayment):
-        """Get donor full name"""
-        if donation.user and donation.user.user and donation.user.user.area_from:
-            profile = donation.user.user
-            return f"{profile.first_name} {profile.last_name}"
-        elif donation.user and donation.user.user:
-            return donation.user.user.get_full_name()
-        return "Anonymous"
-    
-    def _get_donor_email(self, donation):
-        """Get donor email"""
-        if donation.user and donation.user.user:
-            if donation.user.user:
-                return donation.user.user.primary_email
-            return donation.user.user.primary_email
-        return None
-    
-    def _get_donor_phone(self, donation):
-        """Get donor phone"""
-        if donation.user and donation.user.user:
-            return donation.user.user.phone_number
-        return None
-    
-    def _get_participant_area(self, donation):
-        """Get participant area name"""
-        if donation.user and donation.user.user.area_from:
-            return donation.user.user.area_from.area_name
-        return None
-    
-    def _get_participant_chapter(self, donation):
-        """Get participant chapter name"""
-        if donation.user and donation.user.user.area_from and donation.user.user.area_from.unit:
-            return donation.user.user.area_from.unit.chapter.chapter_name
-        return None
-    
-    def _get_participant_details(self, donation):
-        """Get detailed participant information"""
-        if not donation.user:
-            return None
-        
-        details = {
-            'event_pax_id': donation.user.event_pax_id,
-            'status': donation.user.user.get_status_display()
-        }
-        
-        if donation.user.area:
-            details['area'] = {
-                'id': str(donation.user.user.area_from.id),
-                'name': donation.user.user.area_from.area_name,
-                'code': donation.user.user.area_from.area_code
-            }
-            
-            if donation.user.area.unit:
-                details['chapter'] = {
-                    'id': str(donation.user.user.area_from.unit.chapter.id),
-                    'name': donation.user.user.area_from.unit.chapter.chapter_name,
-                    'code': donation.user.user.area_from.unit.chapter.chapter_code
-                }
-        
-        return details

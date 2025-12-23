@@ -1380,6 +1380,8 @@ class EventParticipantSerializer(serializers.ModelSerializer):
         - Ensures consistency between event and participant organisation relationships
         '''        
         # User must be logged in to register for an event
+        
+        pprint.pprint(validated_data)
         user = self.context['request'].user
         if not user.is_authenticated:
             raise serializers.ValidationError({"user": _("Authentication required to register for an event.")})
@@ -1486,6 +1488,8 @@ class EventParticipantSerializer(serializers.ModelSerializer):
                         
             payment_method: EventPaymentMethod = validated_data.pop('payment_methods', None)
             payment_package: EventPaymentPackage = validated_data.pop('payment_packages', None)
+            
+
             
             event_pax_id = validated_data.pop("event_pax_id", None) # by default not allowed to be overriden so use as a secondary
             

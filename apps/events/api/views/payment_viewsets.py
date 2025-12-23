@@ -163,7 +163,7 @@ class DonationPaymentViewSet(viewsets.ModelViewSet):
         
         return queryset
     
-    @action(detail=True, methods=['post'], url_name='mark-paid', url_path='mark-paid', permission_classes=[permissions.IsAdminUser])
+    @action(detail=True, methods=['post'], url_name='mark-paid', url_path='mark-paid', permission_classes=[permissions.IsAuthenticated])
     def mark_paid(self, request, pk=None):
         """
         Admin action to mark a donation payment as paid/succeeded.
@@ -188,6 +188,7 @@ class DonationPaymentViewSet(viewsets.ModelViewSet):
         from django.utils import timezone
         donation.status = DonationPayment.PaymentStatus.SUCCEEDED
         donation.paid_at = timezone.now()
+        donation.verified = True
         donation.save()
         
         serializer = self.get_serializer(donation)

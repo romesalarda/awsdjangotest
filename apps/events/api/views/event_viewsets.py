@@ -4219,6 +4219,8 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
         
         Expected payload includes optional donation_amount for combined payment.
         """
+        print("🆕 EventParticipantViewSet.create called")
+        print(request.data)
         # First, create the participant using parent serializer
         response = super().create(request, *args, **kwargs)
         data = response.data
@@ -4371,9 +4373,9 @@ class EventParticipantViewSet(viewsets.ModelViewSet):
                         "donation_payment_id": str(donation_payment.id) if donation_payment else None,
                         "event_payment_tracking": event_payment.event_payment_tracking_number,
                         "donation_tracking": donation_payment.event_payment_tracking_number if donation_payment else None,
-                        "total_amount": float(event_payment.amount + (donation_payment.amount if donation_payment else 0)),
+                        "total_amount": float(event_payment.amount) + (float(donation_payment.amount) if donation_payment else 0.0),
                         "event_amount": float(event_payment.amount),
-                        "donation_amount": float(donation_payment.amount) if donation_payment else 0,
+                        "donation_amount": float(donation_payment.amount) if donation_payment else 0.0,
                         "currency": event_payment.currency,
                         "bank_reference": event_payment.bank_reference,
                         "instructions": instructions,

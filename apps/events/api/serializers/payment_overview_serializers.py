@@ -5,6 +5,7 @@ Handles serialization for comprehensive payment analytics, revenue tracking, and
 
 from rest_framework import serializers
 from decimal import Decimal
+from .payment_serializers import DonationPaymentSerializer, DonationPaymentListSerializer
 
 
 class PaymentTimelineSerializer(serializers.Serializer):
@@ -125,50 +126,9 @@ class PaymentOverviewSerializer(serializers.Serializer):
     generated_at = serializers.DateTimeField()
 
 
-class DonationListSerializer(serializers.Serializer):
-    """
-    Serializer for donation list view.
-    """
-    id = serializers.CharField()
-    donor_name = serializers.CharField()
-    donor_email = serializers.EmailField()
-    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
-    currency = serializers.CharField(default='gbp')
-    payment_method = serializers.CharField()
-    status = serializers.CharField()
-    status_display = serializers.CharField()
-    verified = serializers.BooleanField()
-    pay_to_event = serializers.BooleanField()
-    tracking_number = serializers.CharField()
-    created_at = serializers.DateTimeField()
-    paid_at = serializers.DateTimeField(allow_null=True)
-    participant_area = serializers.CharField(allow_null=True)
-    participant_chapter = serializers.CharField(allow_null=True)
-
-
-class DonationDetailSerializer(serializers.Serializer):
-    """
-    Serializer for detailed donation view.
-    """
-    id = serializers.CharField()
-    donor_name = serializers.CharField()
-    donor_email = serializers.EmailField()
-    donor_phone = serializers.CharField(allow_null=True)
-    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
-    currency = serializers.CharField(default='gbp')
-    payment_method = serializers.CharField()
-    payment_method_display = serializers.CharField()
-    status = serializers.CharField()
-    status_display = serializers.CharField()
-    verified = serializers.BooleanField()
-    pay_to_event = serializers.BooleanField()
-    tracking_number = serializers.CharField()
-    bank_reference = serializers.CharField(allow_null=True)
-    stripe_payment_intent = serializers.CharField(allow_null=True)
-    created_at = serializers.DateTimeField()
-    paid_at = serializers.DateTimeField(allow_null=True)
-    updated_at = serializers.DateTimeField()
-    participant_details = serializers.DictField(allow_null=True)
+# DonationListSerializer and DonationDetailSerializer are now imported from payment_serializers.py
+# Use DonationPaymentListSerializer for list views
+# Use DonationPaymentSerializer for detail views
 
 
 class DonationSummarySerializer(serializers.Serializer):
