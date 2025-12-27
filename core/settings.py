@@ -73,7 +73,7 @@ REQUIRED_SECRETS = [
     'AWS_STORAGE_BUCKET_NAME',
     'AWS_S3_REGION_NAME',
 ]
-if _FORCE_NO_SSM:
+if not _FORCE_NO_SSM:
     try:
 
         # Try to initialize SSM client and verify AWS credentials
